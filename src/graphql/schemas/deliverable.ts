@@ -1,6 +1,12 @@
 import { gql } from 'graphql-tag';
 
 export const deliverableTypeDefs = gql`
+  enum AcceptanceStatus {
+    PENDING
+    ACCEPTED
+    REJECTED
+  }
+
   type Deliverable {
     id: ID!
     project: Project!
@@ -9,6 +15,7 @@ export const deliverableTypeDefs = gql`
     status: DeliverableStatus!
     progress: Int!
     assignedTalent: User
+    acceptanceStatus: AcceptanceStatus
     deadline: DateTime
     versions: [Version!]!
     workflow: [WorkflowPhase!]!

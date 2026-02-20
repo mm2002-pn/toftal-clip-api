@@ -20,6 +20,10 @@ router.delete('/:id', deliverablesController.deleteDeliverable);
 router.patch('/:id/assign', validate(assignTalentValidation), deliverablesController.assignTalent);
 router.patch('/:id/status', validate(updateStatusValidation), deliverablesController.updateStatus);
 
+// Assignment acceptance
+router.patch('/:id/accept', deliverablesController.acceptAssignment);
+router.patch('/:id/reject', deliverablesController.rejectAssignment);
+
 // Versions (Create only - Read via GraphQL)
 router.post('/:id/versions', validate(addVersionValidation), deliverablesController.addVersion);
 

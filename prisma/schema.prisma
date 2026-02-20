@@ -37,6 +37,12 @@ enum VersionStatus {
   APPROVED
 }
 
+enum AcceptanceStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+}
+
 enum FeedbackType {
   TEXT
   AUDIO
@@ -111,6 +117,7 @@ model Deliverable {
   status           DeliverableStatus @default(NOT_STARTED)
   progress         Int               @default(0)
   assignedTalentId String?           @map("assigned_talent_id")
+  acceptanceStatus AcceptanceStatus? @map("acceptance_status")
   deadline         DateTime?
   createdAt        DateTime          @default(now()) @map("created_at")
   updatedAt        DateTime          @updatedAt @map("updated_at")
