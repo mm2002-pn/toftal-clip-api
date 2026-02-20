@@ -1,0 +1,406 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ==================== ENUMS ====================
+
+enum UserRole {
+  CLIENT
+  TALENT
+  ADMIN
+}
+
+enum ProjectStatus {
+  DRAFT
+  MATCHING
+  IN_PROGRESS
+  REVIEW
+  COMPLETED
+}
+
+enum DeliverableStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  REVIEW
+  COMPLETED
+}
+
+enum VersionStatus {
+  PROCESSING
+  NEEDS_REVIEW
+  CHANGES_REQUESTED
+  APPROVED
+}
+
+enum FeedbackType {
+  TEXT
+  AUDIO
+}
+
+enum OpportunityType {
+  Shorts
+  YouTube_Long
+  Podcast
+  Miniatures
+}
+
+enum OpportunityLevel {
+  Confirme
+  Expert
+}
+
+// ==================== MODELS ====================
+
+model User {
+  id           String    @id @default(uuid())
+  email        String    @unique
+  passwordHash String    @map("password_hash")
+  name         String
+  role         UserRole  @default(CLIENT)
+  avatarUrl    String?   @map("avatar_url")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  // Relations
+  clientProjects   Project[]       @relation("ClientProjects")
+  talentProjects   Project[]       @relation("TalentProjects")
+  assignedDeliverables Deliverable[]
+  uploadedVersions Version[]
+  feedbacks        Feedback[]
+  reviews          Review[]        @relation("ReviewAuthor")
+  talentProfile    TalentProfile?
+  opportunities    Opportunity[]
+  notifications    Notification[]
+  workspaceMembers WorkspaceMember[]
+  ownedWorkspaces  Workspace[]
+
+  @@map("users")
+}
+
+model Project {
+  id        String        @id @default(uuid())
+  title     String
+  clientId  String        @map("client_id")
+  talentId  String?       @map("talent_id")
+  status    ProjectStatus @default(DRAFT)
+  deadline  DateTime?
+  brief     Json?
+  aiScore   Int?          @map("ai_score")
+  createdAt DateTime      @default(now()) @map("created_at")
+  updatedAt DateTime      @updatedAt @map("updated_at")
+
+  // Relations
+  client       User          @relation("ClientProjects", fields: [clientId], references: [id], onDelete: Cascade)
+  talent       User?         @relation("TalentProjects", fields: [talentId], references: [id], onDelete: SetNull)
+  deliverables Deliverable[]
+  mediaResources MediaResource[]
+
+  @@map("projects")
+}
+
+model Deliverable {
+  id               String            @id @default(uuid())
+  projectId        String            @map("project_id")
+  title            String
+  type             String?
+  status           DeliverableStatus @default(NOT_STARTED)
+  progress         Int               @default(0)
+  assignedTalentId String?           @map("assigned_talent_id")
+  deadline         DateTime?
+  createdAt        DateTime          @default(now()) @map("created_at")
+  updatedAt        DateTime          @updatedAt @map("updated_at")
+
+  // Relations
+  project        Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  assignedTalent User?            @relation(fields: [assignedTalentId], references: [id], onDelete: SetNull)
+  versions       Version[]
+  workflowPhases WorkflowPhase[]
+  mediaResources MediaResource[]
+
+  @@map("deliverables")
+}
+
+model Version {
+  id            String        @id @default(uuid())
+  deliverableId String        @map("deliverable_id")
+  versionNumber Int           @map("version_number")
+  videoUrl      String        @map("video_url")
+  description   String?
+  status        VersionStatus @default(NEEDS_REVIEW)
+  uploadedById  String?       @map("uploaded_by_id")
+  aiAnalysis    Json?         @map("ai_analysis")
+  uploadedAt    DateTime      @default(now()) @map("uploaded_at")
+  createdAt     DateTime      @default(now()) @map("created_at")
+
+  // Relations
+  deliverable Deliverable @relation(fields: [deliverableId], references: [id], onDelete: Cascade)
+  uploadedBy  User?       @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
+  feedbacks   Feedback[]
+
+  @@map("versions")
+}
+
+model WorkflowPhase {
+  id            String   @id @default(uuid())
+  deliverableId String   @map("deliverable_id")
+  title         String
+  status        String   @default("pending")
+  orderIndex    Int      @default(0) @map("order_index")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  // Relations
+  deliverable Deliverable    @relation(fields: [deliverableId], references: [id], onDelete: Cascade)
+  tasks       WorkflowTask[]
+
+  @@map("workflow_phases")
+}
+
+model WorkflowTask {
+  id         String   @id @default(uuid())
+  phaseId    String   @map("phase_id")
+  title      String
+  completed  Boolean  @default(false)
+  assignedTo String?  @map("assigned_to")
+  orderIndex Int      @default(0) @map("order_index")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  // Relations
+  phase WorkflowPhase @relation(fields: [phaseId], references: [id], onDelete: Cascade)
+
+  @@map("workflow_tasks")
+}
+
+model Feedback {
+  id             String       @id @default(uuid())
+  versionId      String       @map("version_id")
+  authorId       String       @map("author_id")
+  rawText        String       @map("raw_text")
+  structuredText String?      @map("structured_text")
+  type           FeedbackType @default(TEXT)
+  createdAt      DateTime     @default(now()) @map("created_at")
+
+  // Relations
+  version       Version        @relation(fields: [versionId], references: [id], onDelete: Cascade)
+  author        User           @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  revisionTasks RevisionTask[]
+
+  @@map("feedbacks")
+}
+
+model RevisionTask {
+  id          String   @id @default(uuid())
+  feedbackId  String   @map("feedback_id")
+  description String
+  completed   Boolean  @default(false)
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  // Relations
+  feedback Feedback @relation(fields: [feedbackId], references: [id], onDelete: Cascade)
+
+  @@map("revision_tasks")
+}
+
+model MediaResource {
+  id            String   @id @default(uuid())
+  projectId     String   @map("project_id")
+  deliverableId String?  @map("deliverable_id")
+  name          String
+  url           String
+  type          String   @default("FOLDER")
+  category      String?
+  addedBy       String?  @map("added_by")
+  dateAdded     DateTime @default(now()) @map("date_added")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  // Relations
+  project     Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  deliverable Deliverable? @relation(fields: [deliverableId], references: [id], onDelete: SetNull)
+
+  @@map("media_resources")
+}
+
+// ==================== TALENT MODELS ====================
+
+model TalentProfile {
+  id                String   @id @default(uuid())
+  userId            String   @unique @map("user_id")
+  bio               String?
+  location          String?
+  languages         String[] @default([])
+  skills            String[] @default([])
+  videoType         String?  @map("video_type")
+  responseTime      String?  @map("response_time")
+  rating            Float    @default(0)
+  reviewsCount      Int      @default(0) @map("reviews_count")
+  completedProjects Int      @default(0) @map("completed_projects")
+  startingPrice     String?  @map("starting_price")
+  verified          Boolean  @default(false)
+  coverImage        String?  @map("cover_image")
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  // Relations
+  user      User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  portfolio PortfolioItem[]
+  reviews   Review[]
+  packages  Package[]
+
+  @@map("talent_profiles")
+}
+
+model PortfolioItem {
+  id        String   @id @default(uuid())
+  talentId  String   @map("talent_id")
+  thumbnail String
+  title     String
+  views     String?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  // Relations
+  talent TalentProfile @relation(fields: [talentId], references: [id], onDelete: Cascade)
+
+  @@map("portfolio_items")
+}
+
+model Review {
+  id        String   @id @default(uuid())
+  talentId  String   @map("talent_id")
+  authorId  String   @map("author_id")
+  rating    Int
+  text      String?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  // Relations
+  talent TalentProfile @relation(fields: [talentId], references: [id], onDelete: Cascade)
+  author User          @relation("ReviewAuthor", fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@map("reviews")
+}
+
+model Package {
+  id          String   @id @default(uuid())
+  talentId    String   @map("talent_id")
+  name        String
+  price       String
+  description String?
+  features    String[] @default([])
+  isPopular   Boolean  @default(false) @map("is_popular")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  // Relations
+  talent TalentProfile @relation(fields: [talentId], references: [id], onDelete: Cascade)
+
+  @@map("packages")
+}
+
+// ==================== OPPORTUNITY MODELS ====================
+
+model Opportunity {
+  id             String            @id @default(uuid())
+  title          String
+  clientId       String            @map("client_id")
+  clientName     String?           @map("client_name")
+  clientAvatar   String?           @map("client_avatar")
+  type           OpportunityType
+  volume         String?
+  duration       String?
+  style          String?
+  deadline       String?
+  level          OpportunityLevel?
+  description    String?
+  isVerified     Boolean           @default(false) @map("is_verified")
+  isRecurring    Boolean           @default(false) @map("is_recurring")
+  whatsappNumber String?           @map("whatsapp_number")
+  createdAt      DateTime          @default(now()) @map("created_at")
+
+  // Relations
+  client       User          @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  applications Application[]
+
+  @@map("opportunities")
+}
+
+model Application {
+  id            String   @id @default(uuid())
+  opportunityId String   @map("opportunity_id")
+  talentId      String   @map("talent_id")
+  message       String?
+  status        String   @default("PENDING")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  // Relations
+  opportunity Opportunity @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+
+  @@map("applications")
+}
+
+// ==================== STUDIO MODELS ====================
+
+model Studio {
+  id            String   @id @default(uuid())
+  name          String
+  location      String?
+  pricePerHour  String?  @map("price_per_hour")
+  rating        Float    @default(0)
+  thumbnail     String?
+  gallery       String[] @default([])
+  tags          String[] @default([])
+  description   String?
+  whatsappNumber String? @map("whatsapp_number")
+  features      String[] @default([])
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@map("studios")
+}
+
+// ==================== NOTIFICATION MODELS ====================
+
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  type      String
+  title     String
+  message   String?
+  link      String?
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("notifications")
+}
+
+// ==================== WORKSPACE MODELS ====================
+
+model Workspace {
+  id        String   @id @default(uuid())
+  name      String
+  ownerId   String   @map("owner_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  // Relations
+  owner   User              @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  members WorkspaceMember[]
+
+  @@map("workspaces")
+}
+
+model WorkspaceMember {
+  id          String   @id @default(uuid())
+  workspaceId String   @map("workspace_id")
+  userId      String   @map("user_id")
+  role        String   @default("MEMBER")
+  joinedAt    DateTime @default(now()) @map("joined_at")
+
+  // Relations
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, userId])
+  @@map("workspace_members")
+}
