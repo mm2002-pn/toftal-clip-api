@@ -1,7 +1,9 @@
+import { createServer } from 'http';
 import { createApp } from './app';
 import { config } from './config';
 import { connectDatabase, disconnectDatabase } from './config/database';
 import { logger } from './utils/logger';
+import { socketService } from './services/socketService';
 
 const startServer = async (): Promise<void> => {
   try {
@@ -11,8 +13,14 @@ const startServer = async (): Promise<void> => {
     // Create Express app
     const app = await createApp();
 
+    // Create HTTP server for Socket.io
+    const httpServer = createServer(app);
+
+    // Initialize Socket.io
+    socketService.initialize(httpServer);
+
     // Start server
-    const server = app.listen(config.port, () => {
+    const server = httpServer.listen(config.port, () => {
       logger.info(`
 ========================================
   Server started successfully!
@@ -22,6 +30,7 @@ const startServer = async (): Promise<void> => {
 
   REST API: http://localhost:${config.port}/api/${config.apiVersion}
   GraphQL:  http://localhost:${config.port}/graphql
+  WebSocket: ws://localhost:${config.port}
   Health:   http://localhost:${config.port}/health
 ========================================
       `);

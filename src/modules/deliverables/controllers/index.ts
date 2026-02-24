@@ -2,6 +2,10 @@ import { Request, Response, NextFunction } from 'express';
 import { prisma } from '../../../config/database';
 import { ApiResponse } from '../../../utils/apiResponse';
 import { NotFoundError } from '../../../utils/errors';
+import { sendEmail, emailTemplates } from '../../../config/email';
+import { socketService } from '../../../services/socketService';
+
+const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
 
 export const updateDeliverable = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
@@ -41,22 +45,42 @@ export const assignTalent = async (req: Request, res: Response, next: NextFuncti
         acceptanceStatus: talentId ? 'PENDING' : null,
       },
       include: {
-        assignedTalent: { select: { id: true, name: true, avatarUrl: true } },
+        assignedTalent: { select: { id: true, name: true, email: true, avatarUrl: true } },
         project: { select: { id: true, title: true, clientId: true } },
       },
     });
 
-    // Create notification for the assigned talent
-    if (talentId && deliverable.project) {
-      await prisma.notification.create({
+    // Create notification and send email for the assigned talent
+    if (talentId && deliverable.project && deliverable.assignedTalent) {
+      const notification = await prisma.notification.create({
         data: {
           userId: talentId,
           type: 'TALENT_ASSIGNED',
-          title: 'Nouveau livrable assigné',
-          message: `Vous avez été assigné au livrable "${deliverable.title}" du projet "${deliverable.project.title}"`,
+          title: 'Nouvelle vidéo assignée',
+          message: `Vous avez été assigné à la vidéo "${deliverable.title}" du projet "${deliverable.project.title}"`,
           link: `/workspace/${deliverable.project.id}`,
         },
       });
+
+      // Emit real-time notification
+      socketService.emitToUser(talentId, 'notification:new', notification);
+
+      // Send email notification
+      try {
+        const workspaceUrl = `${FRONTEND_URL}/#/workspace/${deliverable.project.id}`;
+        await sendEmail(
+          deliverable.assignedTalent.email,
+          emailTemplates.talentAssigned(
+            deliverable.assignedTalent.name,
+            deliverable.title,
+            deliverable.project.title,
+            workspaceUrl
+          )
+        );
+      } catch (emailError) {
+        console.error('Failed to send assignment email:', emailError);
+        // Don't fail the request if email fails
+      }
     }
 
     ApiResponse.success(res, deliverable, 'Talent assigned');
@@ -73,7 +97,17 @@ export const updateStatus = async (req: Request, res: Response, next: NextFuncti
     const deliverable = await prisma.deliverable.update({
       where: { id },
       data: { status, progress },
+      include: { project: { select: { id: true } } },
     });
+
+    // Emit deliverable status change to project room
+    if (deliverable.project?.id) {
+      socketService.emitToProject(deliverable.project.id, 'deliverable:status', {
+        id: deliverable.id,
+        status: deliverable.status,
+        projectId: deliverable.project.id,
+      });
+    }
 
     ApiResponse.success(res, deliverable, 'Status updated');
   } catch (error) {
@@ -120,7 +154,13 @@ export const addVersion = async (req: Request, res: Response, next: NextFunction
 
     // Notify the client that a new version was uploaded
     if (deliverable.project?.clientId) {
-      await prisma.notification.create({
+      // Get client info for email
+      const client = await prisma.user.findUnique({
+        where: { id: deliverable.project.clientId },
+        select: { name: true, email: true },
+      });
+
+      const notification = await prisma.notification.create({
         data: {
           userId: deliverable.project.clientId,
           type: 'VERSION_UPLOADED',
@@ -129,7 +169,38 @@ export const addVersion = async (req: Request, res: Response, next: NextFunction
           link: `/workspace/${deliverable.project.id}`,
         },
       });
+
+      // Emit real-time notification
+      socketService.emitToUser(deliverable.project.clientId, 'notification:new', notification);
+
+      // Send email notification
+      if (client?.email) {
+        try {
+          const workspaceUrl = `${FRONTEND_URL}/#/workspace/${deliverable.project.id}`;
+          await sendEmail(
+            client.email,
+            emailTemplates.newVersion(
+              client.name,
+              deliverable.title,
+              deliverable.project.title,
+              versionNumber,
+              workspaceUrl
+            )
+          );
+        } catch (emailError) {
+          console.error('Failed to send new version email:', emailError);
+        }
+      }
     }
+
+    // Emit version:new to project room
+    socketService.emitToProject(deliverable.project!.id, 'version:new', {
+      id: version.id,
+      versionNumber: version.versionNumber,
+      status: version.status,
+      deliverableId: id,
+      projectId: deliverable.project!.id,
+    });
 
     ApiResponse.created(res, version, 'Version added');
   } catch (error) {
@@ -223,15 +294,48 @@ export const acceptAssignment = async (req: Request, res: Response, next: NextFu
 
     // Notify the client that the talent accepted
     if (deliverable.project?.clientId) {
-      await prisma.notification.create({
+      // Get client and talent info for email
+      const client = await prisma.user.findUnique({
+        where: { id: deliverable.project.clientId },
+        select: { name: true, email: true },
+      });
+
+      const talent = await prisma.user.findUnique({
+        where: { id: req.user!.id },
+        select: { name: true },
+      });
+
+      const notification = await prisma.notification.create({
         data: {
           userId: deliverable.project.clientId,
           type: 'ASSIGNMENT_ACCEPTED',
           title: 'Mission acceptée',
-          message: `Le talent a accepté de travailler sur "${deliverable.title}"`,
+          message: `${talent?.name || 'Le talent'} a accepté de travailler sur "${deliverable.title}"`,
           link: `/workspace/${deliverable.project.id}`,
         },
       });
+
+      // Emit real-time notification
+      socketService.emitToUser(deliverable.project.clientId, 'notification:new', notification);
+
+      // Send email notification
+      if (client?.email) {
+        try {
+          const workspaceUrl = `${FRONTEND_URL}/#/workspace/${deliverable.project.id}`;
+          await sendEmail(
+            client.email,
+            emailTemplates.assignmentAccepted(
+              client.name,
+              talent?.name || 'Le talent',
+              deliverable.title,
+              deliverable.project.title,
+              workspaceUrl
+            )
+          );
+        } catch (emailError) {
+          console.error('Failed to send acceptance email:', emailError);
+        }
+      }
     }
 
     ApiResponse.success(res, updated, 'Assignment accepted');
@@ -270,7 +374,13 @@ export const rejectAssignment = async (req: Request, res: Response, next: NextFu
 
     // Notify the client that the talent rejected
     if (deliverable.project?.clientId) {
-      await prisma.notification.create({
+      // Get client info for email
+      const client = await prisma.user.findUnique({
+        where: { id: deliverable.project.clientId },
+        select: { name: true, email: true },
+      });
+
+      const notification = await prisma.notification.create({
         data: {
           userId: deliverable.project.clientId,
           type: 'ASSIGNMENT_REJECTED',
@@ -279,6 +389,29 @@ export const rejectAssignment = async (req: Request, res: Response, next: NextFu
           link: `/workspace/${deliverable.project.id}`,
         },
       });
+
+      // Emit real-time notification
+      socketService.emitToUser(deliverable.project.clientId, 'notification:new', notification);
+
+      // Send email notification
+      if (client?.email) {
+        try {
+          const workspaceUrl = `${FRONTEND_URL}/#/workspace/${deliverable.project.id}`;
+          await sendEmail(
+            client.email,
+            emailTemplates.assignmentRejected(
+              client.name,
+              deliverable.assignedTalent?.name || 'Le talent',
+              deliverable.title,
+              deliverable.project.title,
+              reason || null,
+              workspaceUrl
+            )
+          );
+        } catch (emailError) {
+          console.error('Failed to send rejection email:', emailError);
+        }
+      }
     }
 
     ApiResponse.success(res, updated, 'Assignment rejected');

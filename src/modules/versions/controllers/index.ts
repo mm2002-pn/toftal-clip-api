@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import { prisma } from '../../../config/database';
 import { ApiResponse } from '../../../utils/apiResponse';
 import { NotFoundError } from '../../../utils/errors';
+import { socketService } from '../../../services/socketService';
 
 export const updateVersion = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
@@ -49,7 +50,7 @@ export const updateStatus = async (req: Request, res: Response, next: NextFuncti
 
     // Notify talent when version is approved
     if (status === 'APPROVED' && version.deliverable?.assignedTalent?.id) {
-      await prisma.notification.create({
+      const notification = await prisma.notification.create({
         data: {
           userId: version.deliverable.assignedTalent.id,
           type: 'VERSION_APPROVED',
@@ -58,11 +59,14 @@ export const updateStatus = async (req: Request, res: Response, next: NextFuncti
           link: `/workspace/${version.deliverable.project?.id}`,
         },
       });
+
+      // Emit real-time notification
+      socketService.emitToUser(version.deliverable.assignedTalent.id, 'notification:new', notification);
     }
 
     // Notify talent when changes are requested
     if (status === 'CHANGES_REQUESTED' && version.deliverable?.assignedTalent?.id) {
-      await prisma.notification.create({
+      const notification = await prisma.notification.create({
         data: {
           userId: version.deliverable.assignedTalent.id,
           type: 'VERSION_CHANGES_REQUESTED',
@@ -70,6 +74,20 @@ export const updateStatus = async (req: Request, res: Response, next: NextFuncti
           message: `Des modifications ont été demandées sur la version ${version.versionNumber} de "${version.deliverable.title}"`,
           link: `/workspace/${version.deliverable.project?.id}`,
         },
+      });
+
+      // Emit real-time notification
+      socketService.emitToUser(version.deliverable.assignedTalent.id, 'notification:new', notification);
+    }
+
+    // Emit version status change to project room
+    if (version.deliverable?.project?.id) {
+      socketService.emitToProject(version.deliverable.project.id, 'version:status', {
+        id: version.id,
+        versionNumber: version.versionNumber,
+        status: version.status,
+        deliverableId: version.deliverableId,
+        projectId: version.deliverable.project.id,
       });
     }
 
@@ -127,7 +145,7 @@ export const addFeedback = async (req: Request, res: Response, next: NextFunctio
 
     // Notify the assigned talent that feedback was received
     if (version.deliverable?.assignedTalent?.id && version.deliverable.assignedTalent.id !== req.user!.id) {
-      await prisma.notification.create({
+      const notification = await prisma.notification.create({
         data: {
           userId: version.deliverable.assignedTalent.id,
           type: 'FEEDBACK_RECEIVED',
@@ -135,6 +153,21 @@ export const addFeedback = async (req: Request, res: Response, next: NextFunctio
           message: `Un feedback a été ajouté sur la version ${version.versionNumber} de "${version.deliverable.title}"`,
           link: `/workspace/${version.deliverable.project?.id}`,
         },
+      });
+
+      // Emit real-time notification
+      socketService.emitToUser(version.deliverable.assignedTalent.id, 'notification:new', notification);
+    }
+
+    // Emit feedback event to project room
+    if (version.deliverable?.project?.id) {
+      socketService.emitToProject(version.deliverable.project.id, 'feedback:new', {
+        id: feedback.id,
+        versionId: id,
+        authorId: req.user!.id,
+        authorName: feedback.author?.name || 'Unknown',
+        type: feedback.type,
+        projectId: version.deliverable.project.id,
       });
     }
 

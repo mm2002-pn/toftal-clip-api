@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import { prisma } from '../../../config/database';
 import { ApiResponse } from '../../../utils/apiResponse';
 import { NotFoundError, ForbiddenError } from '../../../utils/errors';
+import { socketService } from '../../../services/socketService';
 
 // Create project
 export const createProject = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
@@ -21,6 +22,30 @@ export const createProject = async (req: Request, res: Response, next: NextFunct
         talent: { select: { id: true, name: true, email: true, avatarUrl: true } },
       },
     });
+
+    // Notify the talent if assigned
+    if (talentId) {
+      const notification = await prisma.notification.create({
+        data: {
+          userId: talentId,
+          type: 'PROJECT_ASSIGNED',
+          title: 'Nouveau projet assigné',
+          message: `Vous avez été assigné au projet "${title}"`,
+          link: `/workspace/${project.id}`,
+        },
+      });
+
+      // Emit real-time notification to talent
+      socketService.emitToUser(talentId, 'notification:new', notification);
+
+      // Emit project:new event to talent
+      socketService.emitToUser(talentId, 'project:new', {
+        id: project.id,
+        title: project.title,
+        clientId: project.clientId,
+        talentId: project.talentId,
+      });
+    }
 
     ApiResponse.created(res, project, 'Project created successfully');
   } catch (error) {
@@ -60,6 +85,24 @@ export const updateProject = async (req: Request, res: Response, next: NextFunct
       },
     });
 
+    // Emit project:updated to all users in the project room
+    socketService.emitToProject(id, 'project:updated', {
+      id: project.id,
+      title: project.title,
+      status: project.status,
+      talentId: project.talentId,
+    });
+
+    // Also notify the talent if they're not in the project room
+    if (project.talentId) {
+      socketService.emitToUser(project.talentId, 'project:updated', {
+        id: project.id,
+        title: project.title,
+        status: project.status,
+        talentId: project.talentId,
+      });
+    }
+
     ApiResponse.success(res, project, 'Project updated successfully');
   } catch (error) {
     next(error);
@@ -75,6 +118,12 @@ export const updateProjectStatus = async (req: Request, res: Response, next: Nex
     const project = await prisma.project.update({
       where: { id },
       data: { status },
+    });
+
+    // Emit project status change to project room
+    socketService.emitToProject(id, 'project:status', {
+      id: project.id,
+      status: project.status,
     });
 
     ApiResponse.success(res, project, 'Project status updated');
@@ -124,12 +173,127 @@ export const getProjectDeliverables = async (req: Request, res: Response, next: 
   }
 };
 
+// Default workflow templates based on content type
+// assignedTo on phase level: 'TALENT' or 'CLIENT'
+const getDefaultWorkflow = (contentType?: string) => {
+  const type = (contentType || '').toLowerCase();
+
+  // Short Form (Reels, TikToks) - All phases visible to CLIENT only by default
+  if (type.includes('reel') || type.includes('tiktok') || type.includes('short')) {
+    return [
+      {
+        title: 'Stratégie & Concept',
+        assignedTo: 'CLIENT',
+        tasks: [
+          { title: 'Confirmer le Brief Créatif' },
+          { title: 'Validation Script & Accroche' },
+        ]
+      },
+      {
+        title: 'Production & Assets',
+        assignedTo: 'CLIENT',
+        tasks: [
+          { title: 'Organisation des Rushes' },
+          { title: 'Sélection Musicale (Tendance)' },
+          { title: 'Ours / Montage Brut (Rythme)' },
+        ]
+      },
+      {
+        title: 'Post-Production',
+        assignedTo: 'CLIENT',
+        tasks: [
+          { title: 'Motion Design & Textes' },
+          { title: 'Étalonnage & Filtres' },
+          { title: 'Sound Design & SFX' },
+          { title: 'Sous-titrage (SRT)' },
+        ]
+      },
+      {
+        title: 'Livraison',
+        assignedTo: 'CLIENT',
+        tasks: [
+          { title: 'Revue Client V1' },
+          { title: 'Export Final (4K)' },
+        ]
+      }
+    ];
+  }
+
+  // Long Form (YouTube, Doc, Corporate) - All phases visible to CLIENT only by default
+  if (type.includes('youtube') || type.includes('documentary') || type.includes('promo') || type.includes('long')) {
+    return [
+      {
+        title: 'Pré-Production',
+        assignedTo: 'CLIENT',
+        tasks: [
+          { title: 'Storyboard / Liste des plans' },
+          { title: 'Transfert des Assets (A-Roll & B-Roll)' },
+        ]
+      },
+      {
+        title: 'Montage Brut',
+        assignedTo: 'CLIENT',
+        tasks: [
+          { title: 'Sélection A-Roll' },
+          { title: 'Structure Narrative' },
+          { title: 'Intégration B-Roll' },
+        ]
+      },
+      {
+        title: 'Finitions',
+        assignedTo: 'CLIENT',
+        tasks: [
+          { title: 'Étalonnage Avancé' },
+          { title: 'Mixage Audio & Réduction Bruit' },
+        ]
+      },
+      {
+        title: 'Livraison Finale',
+        assignedTo: 'CLIENT',
+        tasks: [
+          { title: 'Options de Miniature' },
+          { title: 'Export Final' },
+        ]
+      }
+    ];
+  }
+
+  // Default Template - All phases visible to CLIENT only by default
+  // Client can toggle visibility for TALENT
+  return [
+    {
+      title: 'Démarrage',
+      assignedTo: 'CLIENT',
+      tasks: [
+        { title: 'Revue du Brief' },
+        { title: 'Réception des Fichiers' },
+      ]
+    },
+    {
+      title: 'Production',
+      assignedTo: 'CLIENT',
+      tasks: [
+        { title: 'Brouillon V1' },
+        { title: 'Révisions' },
+      ]
+    },
+    {
+      title: 'Livraison',
+      assignedTo: 'CLIENT',
+      tasks: [
+        { title: 'Fichiers Finaux' },
+      ]
+    }
+  ];
+};
+
 // Add deliverable to project
 export const addDeliverable = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const id = String(req.params.id);
-    const { title, type, deadline, assignedTalentId } = req.body;
+    const { title, type, deadline, assignedTalentId, createWorkflow = true } = req.body;
 
+    // Create deliverable
     const deliverable = await prisma.deliverable.create({
       data: {
         projectId: id,
@@ -140,7 +304,50 @@ export const addDeliverable = async (req: Request, res: Response, next: NextFunc
       },
     });
 
-    ApiResponse.created(res, deliverable, 'Deliverable added successfully');
+    // Create default workflow phases and tasks if requested
+    if (createWorkflow) {
+      const workflowTemplate = getDefaultWorkflow(type);
+
+      for (let i = 0; i < workflowTemplate.length; i++) {
+        const phaseTemplate = workflowTemplate[i];
+
+        // Create phase with assignedTo
+        const phase = await prisma.workflowPhase.create({
+          data: {
+            deliverableId: deliverable.id,
+            title: phaseTemplate.title,
+            status: i === 0 ? 'active' : 'pending',
+            assignedTo: phaseTemplate.assignedTo || 'TALENT',
+            orderIndex: i,
+          },
+        });
+
+        // Create tasks for the phase
+        for (let j = 0; j < phaseTemplate.tasks.length; j++) {
+          const taskTemplate = phaseTemplate.tasks[j];
+          await prisma.workflowTask.create({
+            data: {
+              phaseId: phase.id,
+              title: taskTemplate.title,
+              orderIndex: j,
+            },
+          });
+        }
+      }
+    }
+
+    // Fetch the complete deliverable with workflow
+    const completeDeliverable = await prisma.deliverable.findUnique({
+      where: { id: deliverable.id },
+      include: {
+        workflowPhases: {
+          include: { tasks: true },
+          orderBy: { orderIndex: 'asc' },
+        },
+      },
+    });
+
+    ApiResponse.created(res, completeDeliverable, 'Deliverable added successfully');
   } catch (error) {
     next(error);
   }
