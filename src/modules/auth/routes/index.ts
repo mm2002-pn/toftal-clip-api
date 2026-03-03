@@ -3,14 +3,24 @@ import { authLimiter } from '../../../middlewares/rateLimiter';
 import { authenticate } from '../../../middlewares/auth';
 import { validate } from '../../../middlewares/validate';
 import * as authController from '../controllers';
-import { registerValidation, loginValidation, changePasswordValidation } from '../validators';
+import {
+  registerValidation,
+  loginValidation,
+  changePasswordValidation,
+  googleAuthValidation,
+  verifyEmailValidation,
+  resendVerificationValidation
+} from '../validators';
 
 const router = Router();
 
 // Public routes (with rate limiting)
 router.post('/register', authLimiter, validate(registerValidation), authController.register);
 router.post('/login', authLimiter, validate(loginValidation), authController.login);
+router.post('/google', authLimiter, validate(googleAuthValidation), authController.googleAuth);
 router.post('/refresh', authController.refreshToken);
+router.post('/verify-email', validate(verifyEmailValidation), authController.verifyEmail);
+router.post('/resend-verification', authLimiter, validate(resendVerificationValidation), authController.resendVerification);
 
 // Protected routes
 router.post('/logout', authenticate, authController.logout);

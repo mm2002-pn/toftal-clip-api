@@ -9,6 +9,10 @@ dist/
 .env.local
 .env.*.local
 
+# Google Cloud Service Account Key
+gcs-key.json
+*-key.json
+
 # Logs
 logs/
 *.log
@@ -34,3 +38,7 @@ coverage/
 # Temp files
 *.tmp
 *.temp
+
+# Deployment sensitive files
+deployment-info.txt
+firebase-service-account.json

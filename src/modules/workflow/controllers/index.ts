@@ -20,11 +20,11 @@ export const createPhase = async (req: Request, res: Response, next: NextFunctio
 export const updatePhase = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const id = String(req.params.id);
-    const { title, status } = req.body;
+    const { title, status, assignedTo } = req.body;
 
     const phase = await prisma.workflowPhase.update({
       where: { id },
-      data: { title, status },
+      data: { title, status, assignedTo },
     });
 
     ApiResponse.success(res, phase, 'Phase updated');
@@ -96,6 +96,51 @@ export const toggleTask = async (req: Request, res: Response, next: NextFunction
     });
 
     ApiResponse.success(res, updated, 'Task toggled');
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const reorderTask = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const id = String(req.params.id);
+    const { targetPhaseId, newIndex } = req.body;
+
+    // Get the task
+    const task = await prisma.workflowTask.findUnique({ where: { id } });
+    if (!task) {
+      return ApiResponse.notFound(res, 'Task not found') as any;
+    }
+
+    // Get all tasks in the target phase ordered by orderIndex
+    const tasksInPhase = await prisma.workflowTask.findMany({
+      where: { phaseId: targetPhaseId },
+      orderBy: { orderIndex: 'asc' },
+    });
+
+    // If moving to a different phase, update the phaseId
+    if (task.phaseId !== targetPhaseId) {
+      await prisma.workflowTask.update({
+        where: { id },
+        data: { phaseId: targetPhaseId },
+      });
+    }
+
+    // Reorder: update orderIndex for all tasks in the phase
+    const filteredTasks = tasksInPhase.filter(t => t.id !== id);
+    filteredTasks.splice(newIndex, 0, { ...task, phaseId: targetPhaseId });
+
+    // Update orderIndex for all tasks
+    await Promise.all(
+      filteredTasks.map((t, index) =>
+        prisma.workflowTask.update({
+          where: { id: t.id },
+          data: { orderIndex: index },
+        })
+      )
+    );
+
+    ApiResponse.success(res, { id, targetPhaseId, newIndex }, 'Task reordered');
   } catch (error) {
     next(error);
   }

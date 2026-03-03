@@ -13,7 +13,11 @@ export type SocketEvent =
   | 'project:new'
   | 'project:updated'
   | 'project:status'
-  | 'deliverable:status';
+  | 'project:archived'
+  | 'project:restored'
+  | 'deliverable:status'
+  | 'deliverable:assigned'
+  | 'deliverable:created';
 
 // Payload types for each event
 export interface NotificationPayload {
@@ -65,6 +69,24 @@ export interface DeliverableStatusPayload {
   id: string;
   status: string;
   projectId: string;
+}
+
+export interface DeliverableAssignedPayload {
+  id: string;
+  projectId: string;
+  assignedTalentId: string | null;
+  assignedTalent?: {
+    id: string;
+    name: string;
+    avatarUrl?: string;
+  };
+}
+
+export interface DeliverableCreatedPayload {
+  id: string;
+  projectId: string;
+  title: string;
+  type?: string;
 }
 
 // JWT payload interface (matches auth service token structure)
@@ -120,6 +142,7 @@ class SocketService {
         return;
       }
 
+      console.log(`[SOCKET] New connection - Socket ID: ${socket.id}, User ID: ${userId}`);
       logger.info(`Socket connected: ${socket.id} for user: ${userId}`);
 
       // Track user's sockets
@@ -130,10 +153,12 @@ class SocketService {
 
       // Join user's personal room
       socket.join(`user:${userId}`);
+      console.log(`[SOCKET] Socket ${socket.id} joined personal room: user:${userId}`);
 
       // Handle joining project rooms
       socket.on('join:project', (projectId: string) => {
         socket.join(`project:${projectId}`);
+        console.log(`[SOCKET] Socket ${socket.id} (user: ${userId}) joined project:${projectId}`);
         logger.debug(`Socket ${socket.id} joined project:${projectId}`);
       });
 
@@ -167,6 +192,8 @@ class SocketService {
       return;
     }
 
+    const isConnected = this.isUserConnected(userId);
+    console.log(`[SOCKET EMIT] Emitting ${event} to user:${userId} (connected: ${isConnected})`, data);
     this.io.to(`user:${userId}`).emit(event, data);
     logger.debug(`Emitted ${event} to user:${userId}`);
   }
@@ -178,6 +205,10 @@ class SocketService {
       return;
     }
 
+    // Get all sockets in the project room
+    const roomSockets = this.io.sockets.adapter.rooms.get(`project:${projectId}`);
+    const socketCount = roomSockets?.size || 0;
+    console.log(`[SOCKET EMIT] Emitting ${event} to project:${projectId} (${socketCount} sockets in room)`, data);
     this.io.to(`project:${projectId}`).emit(event, data);
     logger.debug(`Emitted ${event} to project:${projectId}`);
   }

@@ -14,6 +14,10 @@ router.put('/:id', validate(updateProjectValidation), projectsController.updateP
 router.patch('/:id/status', validate(updateStatusValidation), projectsController.updateProjectStatus);
 router.delete('/:id', projectsController.deleteProject);
 
+// Archive and restore operations
+router.post('/:id/archive', projectsController.archiveProject);
+router.post('/:id/restore', projectsController.restoreProject);
+
 // Nested routes
 router.get('/:id/deliverables', projectsController.getProjectDeliverables);
 router.post('/:id/deliverables', projectsController.addDeliverable);

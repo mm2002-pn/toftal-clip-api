@@ -9,6 +9,8 @@ export const apiLimiter = rateLimit({
   message: 'Too many requests from this IP, please try again later.',
   standardHeaders: true,
   legacyHeaders: false,
+  // Skip rate limiting for health checks
+  skip: (req) => req.path === '/health',
   handler: (req, res) => {
     ApiResponse.tooManyRequests(res, 'Too many requests from this IP, please try again later.');
   },

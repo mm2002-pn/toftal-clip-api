@@ -132,10 +132,11 @@ export const updateProjectStatus = async (req: Request, res: Response, next: Nex
   }
 };
 
-// Delete project
+// Delete project (soft or hard delete)
 export const deleteProject = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const id = String(req.params.id);
+    const soft = req.query.soft === 'true';
 
     const existingProject = await prisma.project.findUnique({ where: { id } });
 
@@ -147,9 +148,98 @@ export const deleteProject = async (req: Request, res: Response, next: NextFunct
       throw new ForbiddenError('You do not have permission to delete this project');
     }
 
-    await prisma.project.delete({ where: { id } });
+    if (soft) {
+      // Soft delete: mark as deleted
+      await prisma.project.update({
+        where: { id },
+        data: { deletedAt: new Date() },
+      });
+      ApiResponse.success(res, null, 'Project soft deleted successfully');
+    } else {
+      // Hard delete: permanently remove
+      await prisma.project.delete({ where: { id } });
+      ApiResponse.success(res, null, 'Project deleted successfully');
+    }
+  } catch (error) {
+    next(error);
+  }
+};
 
-    ApiResponse.success(res, null, 'Project deleted successfully');
+// Archive project
+export const archiveProject = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const id = String(req.params.id);
+
+    const existingProject = await prisma.project.findUnique({ where: { id } });
+
+    if (!existingProject) {
+      throw new NotFoundError('Project not found');
+    }
+
+    if (existingProject.clientId !== req.user!.id && req.user!.role !== 'ADMIN') {
+      throw new ForbiddenError('You do not have permission to archive this project');
+    }
+
+    const project = await prisma.project.update({
+      where: { id },
+      data: {
+        isArchived: true,
+        archivedAt: new Date(),
+      },
+      include: {
+        client: { select: { id: true, name: true, email: true, avatarUrl: true } },
+        talent: { select: { id: true, name: true, email: true, avatarUrl: true } },
+      },
+    });
+
+    // Emit project:archived event
+    socketService.emitToProject(id, 'project:archived', {
+      id: project.id,
+      isArchived: project.isArchived,
+    });
+
+    ApiResponse.success(res, project, 'Project archived successfully');
+  } catch (error) {
+    next(error);
+  }
+};
+
+// Restore archived or deleted project
+export const restoreProject = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const id = String(req.params.id);
+
+    const existingProject = await prisma.project.findUnique({ where: { id } });
+
+    if (!existingProject) {
+      throw new NotFoundError('Project not found');
+    }
+
+    if (existingProject.clientId !== req.user!.id && req.user!.role !== 'ADMIN') {
+      throw new ForbiddenError('You do not have permission to restore this project');
+    }
+
+    const project = await prisma.project.update({
+      where: { id },
+      data: {
+        isArchived: false,
+        archivedAt: null,
+        deletedAt: null,
+      },
+      include: {
+        client: { select: { id: true, name: true, email: true, avatarUrl: true } },
+        talent: { select: { id: true, name: true, email: true, avatarUrl: true } },
+      },
+    });
+
+    // Emit project:restored event
+    socketService.emitToProject(id, 'project:restored', {
+      id: project.id,
+      isArchived: project.isArchived,
+      deletedAt: project.deletedAt,
+    });
+
+    ApiResponse.success(res, project, 'Project restored successfully');
   } catch (error) {
     next(error);
   }
@@ -346,6 +436,17 @@ export const addDeliverable = async (req: Request, res: Response, next: NextFunc
         },
       },
     });
+
+    // Emit deliverable creation event to project room for real-time updates
+    const { socketService } = await import('../../../services/socketService');
+    const creationPayload = {
+      id: deliverable.id,
+      projectId: id,
+      title: deliverable.title,
+      type: deliverable.type,
+    };
+    console.log('[SOCKET] Emitting deliverable:created to project:', id, creationPayload);
+    socketService.emitToProject(id, 'deliverable:created', creationPayload);
 
     ApiResponse.created(res, completeDeliverable, 'Deliverable added successfully');
   } catch (error) {

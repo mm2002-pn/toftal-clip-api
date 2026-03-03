@@ -3,87 +3,125 @@ import { prisma } from '../../../config/database';
 import { ApiResponse } from '../../../utils/apiResponse';
 import {
   uploadToCloudinary,
-  uploadVideoToCloudinary,
   deleteFromCloudinary,
   generateUploadSignature,
   uploadOptions
 } from '../../../config/cloudinary';
+import {
+  uploadVideoToGCS,
+  uploadDocumentToGCS,
+  deleteFromGCS,
+  getSignedUrl,
+  getUploadSignedUrl
+} from '../../../config/gcs';
 import fs from 'fs';
 
+/**
+ * Upload file - Routes to appropriate service based on file type
+ * - Images → Cloudinary (transformations, optimization)
+ * - Videos → Google Cloud Storage (large files, no size limit)
+ * - PDFs/Documents → Google Cloud Storage
+ */
 export const uploadFile = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     if (!req.file) {
       return ApiResponse.badRequest(res, 'No file uploaded') as any;
     }
 
-    // Determine upload options based on file type
-    let options: Record<string, any>;
     const mimeType = req.file.mimetype;
+    let result: any;
 
+    // Images → Cloudinary
     if (mimeType.startsWith('image/')) {
-      options = uploadOptions.image;
-    } else if (mimeType.startsWith('video/')) {
-      options = uploadOptions.video;
-    } else if (mimeType.startsWith('audio/')) {
-      options = {
-        folder: 'toftal-clip/audio',
-        resource_type: 'video' as const, // Cloudinary uses 'video' for audio
-      };
-    } else {
-      // Documents, PDFs, archives, etc.
-      options = {
-        folder: 'toftal-clip/documents',
-        resource_type: 'raw' as const,
+      const cloudinaryResult = await uploadToCloudinary(req.file.path, uploadOptions.image);
+      result = {
+        url: cloudinaryResult.secure_url,
+        publicId: cloudinaryResult.public_id,
+        format: cloudinaryResult.format,
+        width: cloudinaryResult.width,
+        height: cloudinaryResult.height,
+        provider: 'cloudinary',
       };
     }
-
-    const result = await uploadToCloudinary(req.file.path, options);
+    // Videos → Google Cloud Storage
+    else if (mimeType.startsWith('video/')) {
+      const gcsResult = await uploadVideoToGCS(req.file.path, req.file.originalname);
+      result = {
+        url: gcsResult.url,
+        fileName: gcsResult.fileName,
+        format: gcsResult.contentType,
+        size: gcsResult.size,
+        provider: 'gcs',
+      };
+    }
+    // Audio → Google Cloud Storage
+    else if (mimeType.startsWith('audio/')) {
+      const gcsResult = await uploadDocumentToGCS(req.file.path, req.file.originalname);
+      result = {
+        url: gcsResult.url,
+        fileName: gcsResult.fileName,
+        format: gcsResult.contentType,
+        size: gcsResult.size,
+        provider: 'gcs',
+      };
+    }
+    // Documents (PDF, etc.) → Google Cloud Storage
+    else {
+      const gcsResult = await uploadDocumentToGCS(req.file.path, req.file.originalname);
+      result = {
+        url: gcsResult.url,
+        fileName: gcsResult.fileName,
+        format: gcsResult.contentType,
+        size: gcsResult.size,
+        provider: 'gcs',
+      };
+    }
 
     // Delete local file
     fs.unlinkSync(req.file.path);
 
-    ApiResponse.success(res, {
-      url: result.secure_url,
-      publicId: result.public_id,
-      format: result.format,
-      width: result.width,
-      height: result.height,
-      duration: result.duration,
-    }, 'File uploaded successfully');
+    ApiResponse.success(res, result, 'File uploaded successfully');
   } catch (error) {
     // Clean up local file on error
-    if (req.file?.path) {
+    if (req.file?.path && fs.existsSync(req.file.path)) {
       fs.unlinkSync(req.file.path);
     }
     next(error);
   }
 };
 
+/**
+ * Upload video specifically to Google Cloud Storage
+ */
 export const uploadVideo = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     if (!req.file) {
       return ApiResponse.badRequest(res, 'No file uploaded') as any;
     }
 
-    const result = await uploadVideoToCloudinary(req.file.path);
+    const gcsResult = await uploadVideoToGCS(req.file.path, req.file.originalname);
 
     // Delete local file
     fs.unlinkSync(req.file.path);
 
     ApiResponse.success(res, {
-      url: result.secure_url,
-      publicId: result.public_id,
-      format: result.format,
-      duration: result.duration,
+      url: gcsResult.url,
+      fileName: gcsResult.fileName,
+      format: gcsResult.contentType,
+      size: gcsResult.size,
+      provider: 'gcs',
     }, 'Video uploaded successfully');
   } catch (error) {
-    if (req.file?.path) {
+    if (req.file?.path && fs.existsSync(req.file.path)) {
       fs.unlinkSync(req.file.path);
     }
     next(error);
   }
 };
 
+/**
+ * Delete media from appropriate provider
+ */
 export const deleteMedia = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const id = String(req.params.id);
@@ -91,8 +129,18 @@ export const deleteMedia = async (req: Request, res: Response, next: NextFunctio
     const media = await prisma.mediaResource.findUnique({ where: { id } });
 
     if (media) {
-      // Extract public ID from URL and delete from Cloudinary
-      // This is a simplified version - you'd want to store publicId in DB
+      // Determine provider from URL
+      if (media.url.includes('storage.googleapis.com')) {
+        // Extract fileName from GCS URL
+        const fileName = media.url.replace(`https://storage.googleapis.com/toftal-clip-media/`, '');
+        await deleteFromGCS(fileName);
+      } else if (media.url.includes('cloudinary.com')) {
+        // Extract publicId from Cloudinary URL
+        // This is simplified - ideally store publicId in DB
+        const publicId = media.url.split('/').slice(-1)[0].split('.')[0];
+        await deleteFromCloudinary(publicId);
+      }
+
       await prisma.mediaResource.delete({ where: { id } });
     }
 
@@ -106,7 +154,9 @@ export const deleteMedia = async (req: Request, res: Response, next: NextFunctio
 // DIRECT UPLOAD (Frontend -> Cloudinary)
 // ============================================
 
-// Get signature for direct upload to Cloudinary
+/**
+ * Get signature for direct upload to Cloudinary (images only)
+ */
 export const getUploadSignature = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { folder, resourceType } = req.body;
@@ -122,7 +172,32 @@ export const getUploadSignature = async (req: Request, res: Response, next: Next
   }
 };
 
-// Register media after frontend uploads to Cloudinary
+/**
+ * Get signed URL for GCS upload (write access)
+ */
+export const getGCSSignedUrl = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const { fileName, contentType, expiresInMinutes } = req.body;
+
+    if (!fileName) {
+      return ApiResponse.badRequest(res, 'fileName is required') as any;
+    }
+
+    if (!contentType) {
+      return ApiResponse.badRequest(res, 'contentType is required') as any;
+    }
+
+    const result = await getUploadSignedUrl(fileName, contentType, expiresInMinutes || 60);
+
+    ApiResponse.success(res, result, 'Upload signed URL generated');
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Register media after frontend uploads
+ */
 export const registerMedia = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { projectId, deliverableId, name, url, publicId, type, category } = req.body;
@@ -145,7 +220,9 @@ export const registerMedia = async (req: Request, res: Response, next: NextFunct
   }
 };
 
-// Get media for a project (GraphQL preferred, but REST available)
+/**
+ * Get media for a project
+ */
 export const getProjectMedia = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const projectId = String(req.params.projectId);

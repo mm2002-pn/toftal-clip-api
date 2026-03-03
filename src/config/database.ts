@@ -11,6 +11,11 @@ export const prisma = global.prisma || new PrismaClient({
     { level: 'error', emit: 'stdout' },
     { level: 'warn', emit: 'stdout' },
   ],
+  datasources: {
+    db: {
+      url: process.env.DATABASE_URL,
+    },
+  },
 });
 
 if (process.env.NODE_ENV !== 'production') {

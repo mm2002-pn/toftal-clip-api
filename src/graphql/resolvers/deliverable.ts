@@ -74,7 +74,8 @@ export const deliverableResolvers = {
         },
       });
     },
-    deliverableWorkflow: async (_: any, { deliverableId }: { deliverableId: string }) => {
+    deliverableWorkflow: async (_: any, { deliverableId }: { deliverableId: string }, context: any) => {
+      // No phase filtering - all users see all phases
       return prisma.workflowPhase.findMany({
         where: { deliverableId },
         orderBy: { orderIndex: 'asc' },
@@ -117,12 +118,14 @@ export const deliverableResolvers = {
         orderBy: { versionNumber: 'desc' },
         include: { uploadedBy: true, feedbacks: { include: { revisionTasks: true, author: true }, orderBy: { createdAt: 'asc' } } },
       }),
-    workflow: (parent: any) =>
-      prisma.workflowPhase.findMany({
+    workflow: (parent: any, _args: any, context: any) => {
+      // No phase filtering - all users see all phases
+      return prisma.workflowPhase.findMany({
         where: { deliverableId: parent.id },
         orderBy: { orderIndex: 'asc' },
         include: { tasks: { orderBy: { orderIndex: 'asc' } } },
-      }),
+      });
+    },
   },
   Version: {
     deliverable: (parent: any) => prisma.deliverable.findUnique({ where: { id: parent.deliverableId } }),
@@ -136,11 +139,12 @@ export const deliverableResolvers = {
       }),
   },
   WorkflowPhase: {
-    tasks: (parent: any) =>
-      prisma.workflowTask.findMany({
+    tasks: (parent: any) => {
+      return prisma.workflowTask.findMany({
         where: { phaseId: parent.id },
         orderBy: { orderIndex: 'asc' },
-      }),
+      });
+    },
   },
   Feedback: {
     author: (parent: any) => prisma.user.findUnique({ where: { id: parent.authorId } }),

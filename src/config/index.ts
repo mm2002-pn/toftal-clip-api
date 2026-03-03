@@ -14,8 +14,8 @@ export const config = {
   jwt: {
     secret: process.env.JWT_SECRET || 'default-secret-change-me',
     refreshSecret: process.env.JWT_REFRESH_SECRET || 'default-refresh-secret-change-me',
-    expiresIn: (process.env.JWT_EXPIRES_IN || '15m') as `${number}${'s' | 'm' | 'h' | 'd'}`,
-    refreshExpiresIn: (process.env.JWT_REFRESH_EXPIRES_IN || '7d') as `${number}${'s' | 'm' | 'h' | 'd'}`,
+    expiresIn: (process.env.JWT_EXPIRES_IN || '1h') as `${number}${'s' | 'm' | 'h' | 'd'}`, // 1 hour access token
+    refreshExpiresIn: (process.env.JWT_REFRESH_EXPIRES_IN || '30d') as `${number}${'s' | 'm' | 'h' | 'd'}`, // 30 days refresh token
   },
 
   // Cloudinary
@@ -36,8 +36,8 @@ export const config = {
     },
   },
 
-  // CORS
-  corsOrigin: process.env.CORS_ORIGIN || 'http://localhost:3000',
+  // CORS - supports comma or semicolon-separated origins
+  corsOrigin: (process.env.CORS_ORIGIN || 'http://localhost:3000').split(/[,;]/).map(s => s.trim()).filter(s => s),
 
   // Rate Limiting
   rateLimit: {

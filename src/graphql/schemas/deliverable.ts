@@ -40,6 +40,7 @@ export const deliverableTypeDefs = gql`
     id: ID!
     title: String!
     status: String!
+    assignedTo: String!
     tasks: [WorkflowTask!]!
   }
 

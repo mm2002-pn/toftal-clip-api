@@ -11,19 +11,27 @@ const router = Router();
 router.use(authenticate);
 
 // ============================================
-// Direct Upload (Recommended - Frontend -> Cloudinary)
+// Direct Upload Signatures
 // ============================================
+// Cloudinary signature (for images)
 router.post('/signature', validate(signatureValidation), mediaController.getUploadSignature);
+// GCS signed URL (for private video/document access)
+router.post('/gcs/signed-url', mediaController.getGCSSignedUrl);
+
+// ============================================
+// Register media in database
+// ============================================
 router.post('/register', validate(registerMediaValidation), mediaController.registerMedia);
 
 // ============================================
-// Server Upload (Fallback - Frontend -> Backend -> Cloudinary)
+// Server Upload
+// Images → Cloudinary | Videos/PDFs → Google Cloud Storage
 // ============================================
 router.post('/upload', uploadLimiter, uploadAny.single('file'), mediaController.uploadFile);
 router.post('/upload/video', uploadLimiter, uploadAny.single('file'), mediaController.uploadVideo);
 
 // ============================================
-// Delete
+// Delete (auto-detects provider from URL)
 // ============================================
 router.delete('/:id', mediaController.deleteMedia);
 

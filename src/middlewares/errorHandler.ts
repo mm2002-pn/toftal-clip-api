@@ -26,6 +26,13 @@ export const errorHandler = (
   if (err.name === 'PrismaClientKnownRequestError') {
     const prismaError = err as any;
 
+    // Log full error details for debugging
+    logger.error('Prisma error details:', {
+      code: prismaError.code,
+      meta: prismaError.meta,
+      clientVersion: prismaError.clientVersion,
+    });
+
     switch (prismaError.code) {
       case 'P2002':
         return ApiResponse.conflict(res, 'A record with this value already exists');
@@ -34,8 +41,17 @@ export const errorHandler = (
       case 'P2003':
         return ApiResponse.badRequest(res, 'Foreign key constraint failed');
       default:
-        return ApiResponse.badRequest(res, 'Database operation failed');
+        const message = config.isProduction
+          ? 'Database operation failed'
+          : `Database error: ${prismaError.code}`;
+        return ApiResponse.badRequest(res, message);
     }
+  }
+
+  // Handle Prisma initialization errors (connection issues)
+  if (err.name === 'PrismaClientInitializationError' || err.name === 'PrismaClientRustPanicError') {
+    logger.error('Prisma connection error:', err);
+    return ApiResponse.serverError(res, 'Database connection error');
   }
 
   // Handle validation errors

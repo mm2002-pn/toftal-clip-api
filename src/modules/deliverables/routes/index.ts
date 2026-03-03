@@ -16,6 +16,7 @@ router.use(authenticate);
 
 // CRUD operations
 router.put('/:id', validate(updateDeliverableValidation), deliverablesController.updateDeliverable);
+router.patch('/:id', validate(updateDeliverableValidation), deliverablesController.updateDeliverable); // Same controller, supports partial updates
 router.delete('/:id', deliverablesController.deleteDeliverable);
 router.patch('/:id/assign', validate(assignTalentValidation), deliverablesController.assignTalent);
 router.patch('/:id/status', validate(updateStatusValidation), deliverablesController.updateStatus);

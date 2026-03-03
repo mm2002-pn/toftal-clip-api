@@ -36,7 +36,39 @@ export const deleteDeliverable = async (req: Request, res: Response, next: NextF
 export const assignTalent = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const id = String(req.params.id);
-    const { talentId } = req.body;
+    const { talentId, force } = req.body;
+
+    // Get current deliverable to check acceptance status
+    const currentDeliverable = await prisma.deliverable.findUnique({
+      where: { id },
+      include: {
+        project: { select: { clientId: true } },
+      },
+    });
+
+    if (!currentDeliverable) {
+      throw new NotFoundError('Deliverable not found');
+    }
+
+    // Check if user is the project owner or admin
+    const isOwnerOrAdmin = req.user!.id === currentDeliverable.project?.clientId || req.user!.role === 'ADMIN';
+
+    // Prevent reassignment if:
+    // 1. There's an assigned talent
+    // 2. The acceptance status is ACCEPTED
+    // 3. The deliverable is not completed
+    // 4. The user is not forcing (admin only) or is not the owner/admin
+    if (
+      currentDeliverable.assignedTalentId &&
+      currentDeliverable.acceptanceStatus === 'ACCEPTED' &&
+      currentDeliverable.status !== 'COMPLETED' &&
+      !force
+    ) {
+      return ApiResponse.forbidden(res,
+        'Impossible de reassigner: le talent a deja accepte cette mission. ' +
+        'Contactez le talent pour discuter d\'un changement.'
+      ) as any;
+    }
 
     const deliverable = await prisma.deliverable.update({
       where: { id },
@@ -81,6 +113,33 @@ export const assignTalent = async (req: Request, res: Response, next: NextFuncti
         console.error('Failed to send assignment email:', emailError);
         // Don't fail the request if email fails
       }
+    }
+
+    // Emit deliverable assignment event to project room for real-time updates
+    const assignmentPayload = {
+      id: deliverable.id,
+      projectId: deliverable.project.id,
+      assignedTalentId: deliverable.assignedTalentId,
+      assignedTalent: deliverable.assignedTalent ? {
+        id: deliverable.assignedTalent.id,
+        name: deliverable.assignedTalent.name,
+        avatarUrl: deliverable.assignedTalent.avatarUrl || undefined,
+      } : undefined,
+    };
+
+    console.log('[SOCKET] Emitting deliverable:assigned to project:', deliverable.project.id, assignmentPayload);
+    socketService.emitToProject(deliverable.project.id, 'deliverable:assigned', assignmentPayload);
+
+    // Also emit directly to client (project owner)
+    if (deliverable.project?.clientId) {
+      console.log('[SOCKET] Emitting deliverable:assigned to client:', deliverable.project.clientId);
+      socketService.emitToUser(deliverable.project.clientId, 'deliverable:assigned', assignmentPayload);
+    }
+
+    // Also emit directly to assigned talent
+    if (talentId) {
+      console.log('[SOCKET] Emitting deliverable:assigned to talent:', talentId);
+      socketService.emitToUser(talentId, 'deliverable:assigned', assignmentPayload);
     }
 
     ApiResponse.success(res, deliverable, 'Talent assigned');

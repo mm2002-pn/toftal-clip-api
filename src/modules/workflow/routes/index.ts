@@ -23,5 +23,6 @@ router.post('/phases/:phaseId/tasks', validate(createTaskValidation), workflowCo
 router.put('/tasks/:id', validate(updateTaskValidation), workflowController.updateTask);
 router.delete('/tasks/:id', workflowController.deleteTask);
 router.patch('/tasks/:id/toggle', workflowController.toggleTask);
+router.patch('/tasks/:id/reorder', workflowController.reorderTask);
 
 export default router;

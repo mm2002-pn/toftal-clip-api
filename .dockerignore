@@ -1,0 +1,45 @@
+# Dependencies
+node_modules/
+
+# Build output (we build in Docker)
+dist/
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Git
+.git/
+.gitignore
+
+# Logs
+logs/
+*.log
+
+# Uploads
+uploads/*
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Testing
+coverage/
+*.test.ts
+*.spec.ts
+
+# Documentation
+*.md
+!README.md
+
+# Misc
+*.tmp
+*.temp
+test-groq.ts

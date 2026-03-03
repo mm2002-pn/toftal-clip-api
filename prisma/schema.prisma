@@ -43,6 +43,12 @@ enum AcceptanceStatus {
   REJECTED
 }
 
+enum AccountStatus {
+  ACTIVE
+  ARCHIVED
+  DELETED
+}
+
 enum FeedbackType {
   TEXT
   AUDIO
@@ -63,14 +69,21 @@ enum OpportunityLevel {
 // ==================== MODELS ====================
 
 model User {
-  id           String    @id @default(uuid())
-  email        String    @unique
-  passwordHash String    @map("password_hash")
-  name         String
-  role         UserRole  @default(CLIENT)
-  avatarUrl    String?   @map("avatar_url")
-  createdAt    DateTime  @default(now()) @map("created_at")
-  updatedAt    DateTime  @updatedAt @map("updated_at")
+  id                     String    @id @default(uuid())
+  email                  String    @unique
+  passwordHash           String?   @map("password_hash")
+  name                   String
+  role                   UserRole  @default(CLIENT)
+  avatarUrl              String?   @map("avatar_url")
+  authProvider           String    @default("email") @map("auth_provider") // "email" | "google"
+  firebaseUid            String?   @unique @map("firebase_uid")
+  emailVerified          Boolean   @default(false) @map("email_verified")
+  emailVerificationToken String?   @map("email_verification_token")
+  emailVerificationExpires DateTime? @map("email_verification_expires")
+  accountStatus          AccountStatus @default(ACTIVE) @map("account_status")
+  archivedAt             DateTime? @map("archived_at")
+  createdAt              DateTime  @default(now()) @map("created_at")
+  updatedAt              DateTime  @updatedAt @map("updated_at")
 
   // Relations
   clientProjects   Project[]       @relation("ClientProjects")
@@ -89,21 +102,24 @@ model User {
 }
 
 model Project {
-  id        String        @id @default(uuid())
-  title     String
-  clientId  String        @map("client_id")
-  talentId  String?       @map("talent_id")
-  status    ProjectStatus @default(DRAFT)
-  deadline  DateTime?
-  brief     Json?
-  aiScore   Int?          @map("ai_score")
-  createdAt DateTime      @default(now()) @map("created_at")
-  updatedAt DateTime      @updatedAt @map("updated_at")
+  id         String        @id @default(uuid())
+  title      String
+  clientId   String        @map("client_id")
+  talentId   String?       @map("talent_id")
+  status     ProjectStatus @default(DRAFT)
+  deadline   DateTime?
+  brief      Json?
+  aiScore    Int?          @map("ai_score")
+  isArchived Boolean       @default(false) @map("is_archived")
+  archivedAt DateTime?     @map("archived_at")
+  deletedAt  DateTime?     @map("deleted_at")
+  createdAt  DateTime      @default(now()) @map("created_at")
+  updatedAt  DateTime      @updatedAt @map("updated_at")
 
   // Relations
-  client       User          @relation("ClientProjects", fields: [clientId], references: [id], onDelete: Cascade)
-  talent       User?         @relation("TalentProjects", fields: [talentId], references: [id], onDelete: SetNull)
-  deliverables Deliverable[]
+  client         User            @relation("ClientProjects", fields: [clientId], references: [id], onDelete: Cascade)
+  talent         User?           @relation("TalentProjects", fields: [talentId], references: [id], onDelete: SetNull)
+  deliverables   Deliverable[]
   mediaResources MediaResource[]
 
   @@map("projects")
@@ -157,6 +173,7 @@ model WorkflowPhase {
   deliverableId String   @map("deliverable_id")
   title         String
   status        String   @default("pending")
+  assignedTo    String   @default("CLIENT") @map("assigned_to")
   orderIndex    Int      @default(0) @map("order_index")
   createdAt     DateTime @default(now()) @map("created_at")
 
@@ -237,9 +254,11 @@ model TalentProfile {
   id                String   @id @default(uuid())
   userId            String   @unique @map("user_id")
   bio               String?
+  tagline           String?  // Phrase d'accroche professionnelle
   location          String?
   languages         String[] @default([])
-  skills            String[] @default([])
+  skills            String[] @default([]) // Logiciels maîtrisés (Premiere, DaVinci, etc.)
+  expertise         String[] @default([]) // Domaines d'expertise (Color Grading, Motion Design, etc.)
   videoType         String?  @map("video_type")
   responseTime      String?  @map("response_time")
   rating            Float    @default(0)
@@ -248,7 +267,13 @@ model TalentProfile {
   startingPrice     String?  @map("starting_price")
   verified          Boolean  @default(false)
   coverImage        String?  @map("cover_image")
+
+  // Nouveaux champs pour portfolio professionnel
+  socialLinks       Json?    @map("social_links") // { youtube, vimeo, instagram, tiktok, website, linkedin }
+  stats             Json?    // { totalViews, yearsExperience, clientsServed }
+
   createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @default(now()) @updatedAt @map("updated_at")
 
   // Relations
   user      User            @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -262,10 +287,15 @@ model TalentProfile {
 model PortfolioItem {
   id        String   @id @default(uuid())
   talentId  String   @map("talent_id")
-  thumbnail String
   title     String
+  thumbnail String
+  videoUrl  String?  @map("video_url") // URL de la vidéo (YouTube, Vimeo, etc.)
+  type      String?  // "YouTube Long", "Shorts", "Podcast", etc.
   views     String?
+  duration  String?  // "12:34"
+  orderIndex Int     @default(0) @map("order_index") // Pour trier
   createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   // Relations
   talent TalentProfile @relation(fields: [talentId], references: [id], onDelete: Cascade)

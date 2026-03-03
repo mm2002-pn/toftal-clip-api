@@ -39,6 +39,17 @@ export const createApp = async (): Promise<Application> => {
   const app = express();
 
   // ===================
+  // Trust Proxy (Required for Cloud Run)
+  // ===================
+
+  // CRITICAL: Enable trust proxy for Cloud Run reverse proxy
+  // This allows Express to correctly read X-Forwarded-* headers
+  // Only enable in production to avoid rate limiter warnings in development
+  if (config.isProduction) {
+    app.set('trust proxy', true);
+  }
+
+  // ===================
   // Security Middlewares
   // ===================
 
@@ -60,8 +71,8 @@ export const createApp = async (): Promise<Application> => {
   // Parsing Middlewares
   // ===================
 
-  app.use(express.json({ limit: '10mb' }));
-  app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+  app.use(express.json({ limit: '50mb' }));
+  app.use(express.urlencoded({ extended: true, limit: '50mb' }));
   app.use(cookieParser());
 
   // ===================
@@ -119,7 +130,7 @@ export const createApp = async (): Promise<Application> => {
   app.use(
     '/graphql',
     cors<cors.CorsRequest>(corsOptions) as express.RequestHandler,
-    express.json({ limit: '10mb' }),
+    express.json({ limit: '50mb' }),
     // Ensure req.body exists (express.json doesn't set it for GET requests)
     ((req, _res, next) => {
       req.body = req.body || {};

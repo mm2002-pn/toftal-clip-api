@@ -40,3 +40,26 @@ export const changePasswordValidation = [
     .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/)
     .withMessage('Password must contain at least one uppercase, one lowercase and one number'),
 ];
+
+export const googleAuthValidation = [
+  body('idToken')
+    .notEmpty()
+    .withMessage('Firebase ID token is required'),
+  body('role')
+    .optional()
+    .isIn(['CLIENT', 'TALENT'])
+    .withMessage('Role must be CLIENT or TALENT'),
+];
+
+export const verifyEmailValidation = [
+  body('token')
+    .notEmpty()
+    .withMessage('Verification token is required'),
+];
+
+export const resendVerificationValidation = [
+  body('email')
+    .isEmail()
+    .withMessage('Please provide a valid email')
+    .normalizeEmail(),
+];

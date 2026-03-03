@@ -3,12 +3,13 @@ import * as authService from '../services';
 import { ApiResponse } from '../../../utils/apiResponse';
 import { config } from '../../../config';
 
-// Cookie options
+// Cookie options - handle cross-origin in production
 const cookieOptions = {
   httpOnly: true,
-  secure: config.isProduction,
-  sameSite: 'lax' as const,
-  maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+  secure: config.isProduction, // true in production (HTTPS)
+  sameSite: config.isProduction ? 'none' as const : 'lax' as const, // 'none' for cross-origin in production
+  maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days for refresh token
+  path: '/',
 };
 
 // Register
@@ -24,10 +25,15 @@ export const register = async (
     // Set refresh token in cookie
     res.cookie('refreshToken', result.tokens.refreshToken, cookieOptions);
 
+    const message = result.emailSent
+      ? 'Inscription réussie ! Vérifiez votre email pour activer votre compte.'
+      : 'Inscription réussie mais l\'email de vérification n\'a pas pu être envoyé. Utilisez "Renvoyer l\'email" sur la page de connexion.';
+
     ApiResponse.created(res, {
       user: result.user,
       accessToken: result.tokens.accessToken,
-    }, 'Registration successful');
+      emailSent: result.emailSent,
+    }, message);
   } catch (error) {
     next(error);
   }
@@ -78,13 +84,17 @@ export const refreshToken = async (
   next: NextFunction
 ): Promise<void> => {
   try {
-    const refreshToken = req.cookies.refreshToken || req.body.refreshToken;
+    const refreshToken = req.cookies?.refreshToken || req.body?.refreshToken;
 
     if (!refreshToken) {
       return ApiResponse.unauthorized(res, 'Refresh token required') as any;
     }
 
     const tokens = await authService.refreshAccessToken(refreshToken);
+
+    if (!tokens || !tokens.refreshToken) {
+      return ApiResponse.serverError(res, 'Failed to generate tokens') as any;
+    }
 
     // Set new refresh token in cookie
     res.cookie('refreshToken', tokens.refreshToken, cookieOptions);
@@ -124,6 +134,60 @@ export const changePassword = async (
     await authService.changePassword(req.user!.id, currentPassword, newPassword);
 
     ApiResponse.success(res, null, 'Password changed successfully');
+  } catch (error) {
+    next(error);
+  }
+};
+
+// Login/Register with Google
+export const googleAuth = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const { idToken, role } = req.body;
+    const result = await authService.loginWithGoogle({ idToken, role });
+
+    // Set refresh token in cookie
+    res.cookie('refreshToken', result.tokens.refreshToken, cookieOptions);
+
+    ApiResponse.success(res, {
+      user: result.user,
+      accessToken: result.tokens.accessToken,
+    }, 'Google authentication successful');
+  } catch (error) {
+    next(error);
+  }
+};
+
+// Verify email
+export const verifyEmail = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const { token } = req.body;
+    const result = await authService.verifyEmail(token);
+
+    ApiResponse.success(res, result);
+  } catch (error) {
+    next(error);
+  }
+};
+
+// Resend verification email
+export const resendVerification = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const { email } = req.body;
+    const result = await authService.resendVerificationEmail(email);
+
+    ApiResponse.success(res, result);
   } catch (error) {
     next(error);
   }
