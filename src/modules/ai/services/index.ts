@@ -65,15 +65,22 @@ Réponds UNIQUEMENT en JSON valide.`
       },
       {
         role: 'user',
-        content: `Analyse ce brief et génère des recommandations:
+        content: `Tu es un directeur de création expert.
+Analyse les détails du projet suivant et génère un brief créatif structuré en français.
 
-Type de contenu: ${brief.contentType || 'Non spécifié'}
+Contexte:
+Type: ${brief.contentType || 'Non spécifié'}
 Objectif: ${brief.objective || 'Non spécifié'}
-Audience cible: ${brief.targetAudience || 'Non spécifié'}
-Ton souhaité: ${brief.tone || 'Non spécifié'}
-Budget: ${brief.budget || 'Non spécifié'}
+Audience: ${brief.targetAudience || 'Non spécifié'}
+Ton: ${brief.tone || 'Non spécifié'}
 
-Retourne un JSON avec:
+Retourne un objet JSON avec (tout en français) :
+- aiSummary (string): Un résumé stratégique.
+- aiStructure (array of strings): Structure narrative recommandée.
+- aiHook (string): Une accroche (hook) suggérée pour arrêter le scroll.
+- aiKeyPoints (array of strings): 3-5 points créatifs clés à respecter.
+
+Retourne:
 {
   "aiSummary": "Résumé stratégique en 1-2 phrases",
   "aiStructure": ["Phase 1", "Phase 2", "Phase 3"],
@@ -130,13 +137,15 @@ Réponds UNIQUEMENT en JSON valide.`
       },
       {
         role: 'user',
-        content: `Brief du projet:
-${JSON.stringify(brief, null, 2)}
+        content: `Tu es un agent de talents (chasseur de tête).
+Voici le brief du projet : ${JSON.stringify(brief, null, 2)}
 
-Talents disponibles:
-${JSON.stringify(talentList, null, 2)}
+Voici une liste de talents disponibles : ${JSON.stringify(talentList, null, 2)}
 
-Sélectionne les 3 meilleurs talents et retourne:
+Sélectionne les 3 meilleurs talents pour ce projet.
+Pour chacun, attribue un score de correspondance (0-100) et écris une raison courte (1 phrase en français) expliquant pourquoi ils correspondent.
+
+Retourne:
 {
   "matches": [
     { "id": "talent_id", "matchScore": 85, "reason": "Raison courte en français" }
@@ -177,8 +186,9 @@ Réponds UNIQUEMENT en JSON valide.`
       },
       {
         role: 'user',
-        content: `Analyse cette vidéo/concept:
-"${description}"
+        content: `Analyse ce concept/script/description de vidéo pour son efficacité sur les réseaux sociaux.
+Réponds en français.
+Description: "${description}"
 
 Retourne:
 {
@@ -243,10 +253,15 @@ Réponds UNIQUEMENT en JSON valide.`
       },
       {
         role: 'user',
-        content: `Feedback client (peut être brut ou conversationnel):
-"${feedbackText}"
+        content: `Tu es un responsable de production vidéo professionnel.
+Analyse le retour client suivant (qui peut être brut, conversationnel ou une transcription).
 
-Transforme en:
+1. Résume-le en un paragraphe poli et structuré en français.
+2. Extrais des tâches spécifiques et actionnables pour le monteur vidéo (en français).
+
+Feedback: "${feedbackText}"
+
+Retourne:
 {
   "structuredText": "Version structurée et professionnelle du feedback",
   "tasks": [
