@@ -103,7 +103,7 @@ function Invoke-BackendDeploy {
     $rateLimitMax = ($envContent | Select-String 'RATE_LIMIT_MAX=(.+)').Matches.Groups[1].Value
 
     # Note: GROQ_API_KEY is set directly in Cloud Run console for security
-    # Deploy
+    # Deploy with traffic routed to new revision
     Write-Host "[BACKEND] Deploying to Cloud Run..." -ForegroundColor Gray
     gcloud run deploy $SERVICE_NAME `
         --image "gcr.io/$PROJECT_ID/$SERVICE_NAME" `
@@ -112,6 +112,7 @@ function Invoke-BackendDeploy {
         --memory 2Gi `
         --cpu 2 `
         --max-instances 10 `
+        --traffic "latest=100" `
         --set-env-vars "TRUST_PROXY=true,CORS_ORIGIN=https://toftal-clip.netlify.app;https://toftal-clip-test.netlify.app,NODE_ENV=production,FRONTEND_URL=https://toftal-clip.netlify.app,EMAIL_SERVICE=gmail,EMAIL_USER=toftalpodium@gmail.com,EMAIL_FROM=Toftal Clip <toftalpodium@gmail.com>,EMAIL_PASSWORD=$emailPass,RATE_LIMIT_MAX=$rateLimitMax" `
         --quiet
 
@@ -120,16 +121,33 @@ function Invoke-BackendDeploy {
         return $false
     }
 
-    # Get URL
+    Write-Host "[BACKEND] Waiting for new revision to be ready..." -ForegroundColor Gray
+    Start-Sleep 5
+
+    # Get URL and revision
     $serviceUrl = gcloud run services describe $SERVICE_NAME --region $REGION --format='value(status.url)'
+    $latestRevision = gcloud run services describe $SERVICE_NAME --region $REGION --format='value(status.latestReadyRevisionName)'
     Write-Host "[BACKEND] Deployed to: $serviceUrl" -ForegroundColor Green
+    Write-Host "[BACKEND] Latest Revision: $latestRevision" -ForegroundColor Green
 
     # Health check
-    try {
-        $health = Invoke-RestMethod -Uri "$serviceUrl/health" -Method Get
-        Write-Host "[BACKEND] Health: $($health.status)" -ForegroundColor Green
-    } catch {
-        Write-Host "[BACKEND] Health check failed" -ForegroundColor Red
+    Write-Host "[BACKEND] Running health check..." -ForegroundColor Gray
+    $healthRetries = 0
+    $maxHealthRetries = 5
+    while ($healthRetries -lt $maxHealthRetries) {
+        try {
+            $health = Invoke-RestMethod -Uri "$serviceUrl/health" -Method Get -TimeoutSec 10
+            Write-Host "[BACKEND] Health: $($health.status) ✓" -ForegroundColor Green
+            break
+        } catch {
+            $healthRetries++
+            if ($healthRetries -lt $maxHealthRetries) {
+                Write-Host "[BACKEND] Health check failed, retrying... ($healthRetries/$maxHealthRetries)" -ForegroundColor Yellow
+                Start-Sleep 3
+            } else {
+                Write-Host "[BACKEND] Health check failed after $maxHealthRetries attempts" -ForegroundColor Red
+            }
+        }
     }
 
     return $true
