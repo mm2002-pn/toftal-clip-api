@@ -1,3 +1,4 @@
+// Routes for project invitations - Updated 2026-03-05
 import { Router, Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { InvitationService } from '../../services/InvitationService';
