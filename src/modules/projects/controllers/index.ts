@@ -4,24 +4,76 @@ import { ApiResponse } from '../../../utils/apiResponse';
 import { NotFoundError, ForbiddenError } from '../../../utils/errors';
 import { socketService } from '../../../services/socketService';
 
-// Create project
+// Create project (now supports V2 with type and ownerId)
 export const createProject = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const { title, deadline, brief, talentId } = req.body;
+    const { title, deadline, brief, talentId, type = 'PERSONAL', deliverables, collaboratorIds = [] } = req.body;
+    const userId = req.user!.id;
 
     const project = await prisma.project.create({
       data: {
         title,
-        clientId: req.user!.id,
+        clientId: userId, // Default to current user
         talentId,
+        ownerId: userId, // Set owner as current user
+        type: type || 'PERSONAL',
         deadline: deadline ? new Date(deadline) : null,
         brief,
       },
       include: {
         client: { select: { id: true, name: true, email: true, avatarUrl: true } },
         talent: { select: { id: true, name: true, email: true, avatarUrl: true } },
+        owner: { select: { id: true, name: true, email: true, avatarUrl: true } },
       },
     });
+
+    // Create deliverables if provided (for PERSONAL type)
+    if (deliverables && Array.isArray(deliverables)) {
+      for (const deliverable of deliverables) {
+        await prisma.deliverable.create({
+          data: {
+            projectId: project.id,
+            title: deliverable.title || 'Untitled',
+            type: deliverable.type || 'Video',
+          },
+        });
+      }
+    }
+
+    // Add project owner as OWNER member (for future permissions)
+    await prisma.projectMember.create({
+      data: {
+        projectId: project.id,
+        userId,
+        role: 'OWNER',
+        permissions: {
+          view: true,
+          edit: true,
+          comment: true,
+          approve: true,
+        },
+      },
+    });
+
+    // Add collaborators if provided
+    if (collaboratorIds && collaboratorIds.length > 0) {
+      const collaboratorMembers = collaboratorIds.map((collabId: string) => ({
+        projectId: project.id,
+        userId: collabId,
+        role: 'COLLABORATOR',
+        permissions: {
+          view: true,
+          edit: true,
+          comment: true,
+          approve: false,
+        },
+      }));
+
+      await prisma.projectMember.createMany({
+        data: collaboratorMembers,
+        skipDuplicates: true,
+      });
+    }
 
     // Notify the talent if assigned
     if (talentId) {
@@ -487,6 +539,32 @@ export const addProjectMedia = async (req: Request, res: Response, next: NextFun
     });
 
     ApiResponse.created(res, media, 'Media added successfully');
+  } catch (error) {
+    next(error);
+  }
+};
+
+// Get project members
+export const getProjectMembers = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const projectId = String(req.params.id);
+
+    const members = await prisma.projectMember.findMany({
+      where: { projectId },
+      include: {
+        user: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            avatarUrl: true,
+            role: true,
+          },
+        },
+      },
+    });
+
+    ApiResponse.success(res, members, 'Project members fetched successfully');
   } catch (error) {
     next(error);
   }

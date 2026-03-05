@@ -17,7 +17,8 @@ export type SocketEvent =
   | 'project:restored'
   | 'deliverable:status'
   | 'deliverable:assigned'
-  | 'deliverable:created';
+  | 'deliverable:created'
+  | 'access-request:new';
 
 // Payload types for each event
 export interface NotificationPayload {

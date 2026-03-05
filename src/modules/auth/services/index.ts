@@ -12,6 +12,7 @@ interface RegisterInput {
   password: string;
   name: string;
   role?: 'CLIENT' | 'TALENT';
+  emailVerified?: boolean; // True when registering via invitation
 }
 
 interface LoginInput {
@@ -34,7 +35,7 @@ interface AuthResponse {
     authProvider?: string;
     emailVerified?: boolean;
   };
-  tokens: AuthTokens;
+  tokens: AuthTokens | null;
   emailSent?: boolean;
 }
 
@@ -62,7 +63,13 @@ const generateVerificationToken = (): string => {
 
 // Register new user
 export const register = async (input: RegisterInput): Promise<AuthResponse> => {
-  const { email, password, name, role = 'CLIENT' } = input;
+  const { email, password, name, role = 'CLIENT', emailVerified = false } = input;
+
+  console.log('📝 Register attempt');
+  console.log('📧 Email:', email);
+  console.log('👤 Name:', name);
+  console.log('🎭 Role:', role);
+  console.log('✉️ Email Verified (from invitation):', emailVerified);
 
   // Check if user already exists
   const existingUser = await prisma.user.findUnique({
@@ -70,14 +77,17 @@ export const register = async (input: RegisterInput): Promise<AuthResponse> => {
   });
 
   if (existingUser) {
+    console.error('❌ User already exists:', email);
     throw new ConflictError('User with this email already exists');
   }
+
+  console.log('✅ User does not exist, proceeding with registration')
 
   // Hash password
   const salt = await bcrypt.genSalt(12);
   const passwordHash = await bcrypt.hash(password, salt);
 
-  // Generate verification token
+  // Generate verification token (even if email is pre-verified, in case they need resend)
   const emailVerificationToken = generateVerificationToken();
   const emailVerificationExpires = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
 
@@ -88,7 +98,7 @@ export const register = async (input: RegisterInput): Promise<AuthResponse> => {
       passwordHash,
       name,
       role,
-      emailVerified: false,
+      emailVerified: emailVerified, // Use the passed value (true for invitations, false for normal signup)
       emailVerificationToken,
       emailVerificationExpires,
     },
@@ -126,8 +136,12 @@ export const register = async (input: RegisterInput): Promise<AuthResponse> => {
     // Don't throw - user is created, they can request a new email
   }
 
-  // Generate tokens
-  const tokens = generateTokens(user.id, user.email, user.role);
+  // Only generate tokens if email is pre-verified (e.g., from invitation)
+  // For normal signups, user must verify email first
+  let tokens = null;
+  if (user.emailVerified) {
+    tokens = generateTokens(user.id, user.email, user.role);
+  }
 
   return {
     user: { ...user, authProvider: user.authProvider, emailVerified: user.emailVerified },
@@ -137,7 +151,7 @@ export const register = async (input: RegisterInput): Promise<AuthResponse> => {
 };
 
 // Verify email with token
-export const verifyEmail = async (token: string): Promise<{ message: string }> => {
+export const verifyEmail = async (token: string): Promise<{ message: string; emailToken: string }> => {
   const user = await prisma.user.findFirst({
     where: {
       emailVerificationToken: token,
@@ -151,6 +165,9 @@ export const verifyEmail = async (token: string): Promise<{ message: string }> =
     throw new BadRequestError('Token de vérification invalide ou expiré');
   }
 
+  // Store the token before clearing it (needed for invitation acceptance)
+  const emailToken = user.emailVerificationToken!;
+
   await prisma.user.update({
     where: { id: user.id },
     data: {
@@ -160,7 +177,7 @@ export const verifyEmail = async (token: string): Promise<{ message: string }> =
     },
   });
 
-  return { message: 'Email vérifié avec succès' };
+  return { message: 'Email vérifié avec succès', emailToken };
 };
 
 // Resend verification email
@@ -203,17 +220,24 @@ export const resendVerificationEmail = async (email: string): Promise<{ message:
 export const login = async (input: LoginInput): Promise<AuthResponse> => {
   const { email, password } = input;
 
+  console.log('🔐 Login attempt');
+  console.log('📧 Email:', email);
+
   // Find user
   const user = await prisma.user.findUnique({
     where: { email },
   });
 
   if (!user) {
+    console.error('❌ User not found:', email);
     throw new UnauthorizedError('Invalid email or password');
   }
 
+  console.log('✅ User found:', user.id);
+
   // Check if user uses Google auth
   if (!user.passwordHash) {
+    console.error('❌ User uses Google auth');
     throw new UnauthorizedError('This account uses Google Sign-In. Please use the Google button to login.');
   }
 
@@ -221,13 +245,19 @@ export const login = async (input: LoginInput): Promise<AuthResponse> => {
   const isPasswordValid = await bcrypt.compare(password, user.passwordHash);
 
   if (!isPasswordValid) {
+    console.error('❌ Password invalid');
     throw new UnauthorizedError('Invalid email or password');
   }
 
+  console.log('✅ Password valid');
+
   // Check if email is verified
   if (!user.emailVerified) {
+    console.error('❌ Email not verified:', user.emailVerified);
     throw new UnauthorizedError('Veuillez vérifier votre email avant de vous connecter. Vérifiez votre boîte de réception.');
   }
+
+  console.log('✅ Email verified');
 
   // Generate tokens
   const tokens = generateTokens(user.id, user.email, user.role);

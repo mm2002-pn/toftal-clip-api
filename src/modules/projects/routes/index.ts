@@ -23,5 +23,6 @@ router.get('/:id/deliverables', projectsController.getProjectDeliverables);
 router.post('/:id/deliverables', projectsController.addDeliverable);
 router.get('/:id/media', projectsController.getProjectMedia);
 router.post('/:id/media', projectsController.addProjectMedia);
+router.get('/:id/members', projectsController.getProjectMembers);
 
 export default router;

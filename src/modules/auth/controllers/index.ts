@@ -22,8 +22,10 @@ export const register = async (
     const { email, password, name, role } = req.body;
     const result = await authService.register({ email, password, name, role });
 
-    // Set refresh token in cookie
-    res.cookie('refreshToken', result.tokens.refreshToken, cookieOptions);
+    // Set refresh token in cookie if tokens exist
+    if (result.tokens) {
+      res.cookie('refreshToken', result.tokens.refreshToken, cookieOptions);
+    }
 
     const message = result.emailSent
       ? 'Inscription réussie ! Vérifiez votre email pour activer votre compte.'
@@ -31,7 +33,7 @@ export const register = async (
 
     ApiResponse.created(res, {
       user: result.user,
-      accessToken: result.tokens.accessToken,
+      accessToken: result.tokens?.accessToken || null,
       emailSent: result.emailSent,
     }, message);
   } catch (error) {
@@ -49,12 +51,14 @@ export const login = async (
     const { email, password } = req.body;
     const result = await authService.login({ email, password });
 
-    // Set refresh token in cookie
-    res.cookie('refreshToken', result.tokens.refreshToken, cookieOptions);
+    // Set refresh token in cookie if tokens exist
+    if (result.tokens) {
+      res.cookie('refreshToken', result.tokens.refreshToken, cookieOptions);
+    }
 
     ApiResponse.success(res, {
       user: result.user,
-      accessToken: result.tokens.accessToken,
+      accessToken: result.tokens?.accessToken || null,
     }, 'Login successful');
   } catch (error) {
     next(error);
@@ -149,12 +153,14 @@ export const googleAuth = async (
     const { idToken, role } = req.body;
     const result = await authService.loginWithGoogle({ idToken, role });
 
-    // Set refresh token in cookie
-    res.cookie('refreshToken', result.tokens.refreshToken, cookieOptions);
+    // Set refresh token in cookie if tokens exist
+    if (result.tokens) {
+      res.cookie('refreshToken', result.tokens.refreshToken, cookieOptions);
+    }
 
     ApiResponse.success(res, {
       user: result.user,
-      accessToken: result.tokens.accessToken,
+      accessToken: result.tokens?.accessToken || null,
     }, 'Google authentication successful');
   } catch (error) {
     next(error);

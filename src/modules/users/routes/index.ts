@@ -7,6 +7,9 @@ const router = Router();
 // All routes require authentication
 router.use(authenticate);
 
+// Search users
+router.get('/search', usersController.searchUsers);
+
 // Account management (own account)
 router.post('/me/archive', usersController.archiveAccount);
 router.post('/me/restore', usersController.restoreAccount);

@@ -97,6 +97,12 @@ function Invoke-BackendDeploy {
         return $false
     }
 
+    # Load environment variables from .env for secrets (excluding API keys that should be set via Cloud Console)
+    $envContent = Get-Content "$BACKEND_PATH\.env" -Raw
+    $emailPass = ($envContent | Select-String 'EMAIL_PASSWORD=(.+)').Matches.Groups[1].Value
+    $rateLimitMax = ($envContent | Select-String 'RATE_LIMIT_MAX=(.+)').Matches.Groups[1].Value
+
+    # Note: GROQ_API_KEY is set directly in Cloud Run console for security
     # Deploy
     Write-Host "[BACKEND] Deploying to Cloud Run..." -ForegroundColor Gray
     gcloud run deploy $SERVICE_NAME `
@@ -106,7 +112,7 @@ function Invoke-BackendDeploy {
         --memory 2Gi `
         --cpu 2 `
         --max-instances 10 `
-        --set-env-vars "TRUST_PROXY=true,CORS_ORIGIN=https://toftal-clip.netlify.app;https://toftal-clip-test.netlify.app,NODE_ENV=production" `
+        --set-env-vars "TRUST_PROXY=true,CORS_ORIGIN=https://toftal-clip.netlify.app;https://toftal-clip-test.netlify.app,NODE_ENV=production,FRONTEND_URL=https://toftal-clip.netlify.app,EMAIL_SERVICE=gmail,EMAIL_USER=toftalpodium@gmail.com,EMAIL_FROM=Toftal Clip <toftalpodium@gmail.com>,EMAIL_PASSWORD=$emailPass,RATE_LIMIT_MAX=$rateLimitMax" `
         --quiet
 
     if ($LASTEXITCODE -ne 0) {

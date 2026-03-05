@@ -5,12 +5,12 @@ import { ApiResponse } from '../utils/apiResponse';
 // General API rate limiter
 export const apiLimiter = rateLimit({
   windowMs: config.rateLimit.windowMs, // 15 minutes
-  max: config.rateLimit.max, // 100 requests per window
+  max: config.isProduction ? config.rateLimit.max : 10000, // 100 in production, unlimited in development
   message: 'Too many requests from this IP, please try again later.',
   standardHeaders: true,
   legacyHeaders: false,
-  // Skip rate limiting for health checks
-  skip: (req) => req.path === '/health',
+  // Skip rate limiting for health checks and in development
+  skip: (req) => req.path === '/health' || !config.isProduction,
   handler: (req, res) => {
     ApiResponse.tooManyRequests(res, 'Too many requests from this IP, please try again later.');
   },
@@ -18,11 +18,12 @@ export const apiLimiter = rateLimit({
 
 // Strict rate limiter for auth routes
 export const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // 100 requests per window (increased for development)
+  windowMs: config.rateLimit.windowMs, // 15 minutes
+  max: config.isProduction ? config.rateLimit.max : 10000, // Use config in production, unlimited in development
   message: 'Too many authentication attempts, please try again later.',
   standardHeaders: true,
   legacyHeaders: false,
+  skip: (req) => !config.isProduction, // Skip in development
   handler: (req, res) => {
     ApiResponse.tooManyRequests(
       res,

@@ -3,6 +3,41 @@ import { prisma } from '../../../config/database';
 import { ApiResponse } from '../../../utils/apiResponse';
 import { NotFoundError, ForbiddenError } from '../../../utils/errors';
 
+// Search users by name or email
+export const searchUsers = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const query = String(req.query.q || '');
+
+    if (!query || query.length < 2) {
+      ApiResponse.success(res, []);
+      return;
+    }
+
+    const users = await prisma.user.findMany({
+      where: {
+        OR: [
+          { name: { contains: query, mode: 'insensitive' } },
+          { email: { contains: query, mode: 'insensitive' } },
+        ],
+        // Exclude archived/deleted users
+        accountStatus: 'ACTIVE',
+      },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        role: true,
+        avatarUrl: true,
+      },
+      take: 10, // Limit to 10 results
+    });
+
+    ApiResponse.success(res, users);
+  } catch (error) {
+    next(error);
+  }
+};
+
 // Get user by ID
 export const getUser = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {

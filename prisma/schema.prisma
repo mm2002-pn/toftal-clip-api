@@ -66,6 +66,24 @@ enum OpportunityLevel {
   Expert
 }
 
+enum ProjectType {
+  PERSONAL
+  CLIENT
+}
+
+enum ProjectRole {
+  OWNER
+  COLLABORATOR
+  VIEWER
+}
+
+enum InvitationStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  EXPIRED
+}
+
 // ==================== MODELS ====================
 
 model User {
@@ -88,6 +106,7 @@ model User {
   // Relations
   clientProjects   Project[]       @relation("ClientProjects")
   talentProjects   Project[]       @relation("TalentProjects")
+  ownedProjects    Project[]       @relation("OwnedProjects")
   assignedDeliverables Deliverable[]
   uploadedVersions Version[]
   feedbacks        Feedback[]
@@ -97,6 +116,10 @@ model User {
   notifications    Notification[]
   workspaceMembers WorkspaceMember[]
   ownedWorkspaces  Workspace[]
+  projectMemberships ProjectMember[]
+  sentInvitations  ProjectInvitation[]
+  accessRequests   AccessRequest[]     @relation("AccessRequests")
+  createdPublicLinks PublicShareLink[] @relation("PublicShareLinks")
 
   @@map("users")
 }
@@ -106,6 +129,8 @@ model Project {
   title      String
   clientId   String        @map("client_id")
   talentId   String?       @map("talent_id")
+  type       ProjectType   @default(PERSONAL)
+  ownerId    String?       @map("owner_id")
   status     ProjectStatus @default(DRAFT)
   deadline   DateTime?
   brief      Json?
@@ -117,10 +142,15 @@ model Project {
   updatedAt  DateTime      @updatedAt @map("updated_at")
 
   // Relations
-  client         User            @relation("ClientProjects", fields: [clientId], references: [id], onDelete: Cascade)
-  talent         User?           @relation("TalentProjects", fields: [talentId], references: [id], onDelete: SetNull)
+  client         User                 @relation("ClientProjects", fields: [clientId], references: [id], onDelete: Cascade)
+  talent         User?                @relation("TalentProjects", fields: [talentId], references: [id], onDelete: SetNull)
+  owner          User?                @relation("OwnedProjects", fields: [ownerId], references: [id], onDelete: SetNull)
   deliverables   Deliverable[]
   mediaResources MediaResource[]
+  members        ProjectMember[]
+  invitations    ProjectInvitation[]
+  accessRequests AccessRequest[]      @relation("AccessRequests")
+  publicLinks    PublicShareLink[]
 
   @@map("projects")
 }
@@ -440,4 +470,92 @@ model WorkspaceMember {
 
   @@unique([workspaceId, userId])
   @@map("workspace_members")
+}
+
+// ==================== PROJECT COLLABORATION MODELS ====================
+
+model ProjectMember {
+  id          String      @id @default(uuid())
+  projectId   String      @map("project_id")
+  userId      String      @map("user_id")
+  role        ProjectRole @default(COLLABORATOR)
+  permissions Json        // { view, edit, comment, approve }
+  joinedAt    DateTime    @default(now()) @map("joined_at")
+
+  // Relations
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, userId])
+  @@index([projectId])
+  @@index([userId])
+  @@map("project_members")
+}
+
+model ProjectInvitation {
+  id            String           @id @default(uuid())
+  projectId     String           @map("project_id")
+  inviterUserId String           @map("inviter_user_id")
+  email         String
+  token         String           @unique
+  status        InvitationStatus @default(PENDING)
+  message       String?
+  expiresAt     DateTime         @map("expires_at")
+  acceptedAt    DateTime?        @map("accepted_at")
+  createdAt     DateTime         @default(now()) @map("created_at")
+
+  // Relations
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  inviter User    @relation(fields: [inviterUserId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@index([email])
+  @@index([token])
+  @@index([status])
+  @@map("project_invitations")
+}
+
+// Access request model - for users to request more permissions on a project
+model AccessRequest {
+  id        String   @id @default(uuid())
+  projectId String   @map("project_id")
+  userId    String   @map("user_id")
+  status    String   @default("PENDING") // PENDING, APPROVED, REJECTED
+  message   String?  @db.Text
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  project Project @relation("AccessRequests", fields: [projectId], references: [id], onDelete: Cascade)
+  user    User    @relation("AccessRequests", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, userId])
+  @@index([projectId])
+  @@index([status])
+  @@map("access_requests")
+}
+
+// ==================== PUBLIC SHARING MODELS ====================
+
+model PublicShareLink {
+  id              String    @id @default(uuid())
+  projectId       String    @map("project_id")
+  creatorUserId   String    @map("creator_user_id")
+  token           String    @unique  // URL-safe token for public access
+  permission      String    @default("view")  // "view", "comment", "download"
+  expiresAt       DateTime? @map("expires_at")
+  isActive        Boolean   @default(true)
+  maxUses         Int?      @map("max_uses")  // Optional: limit number of accesses
+  usedCount       Int       @default(0) @map("used_count")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  // Relations
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  creator User    @relation("PublicShareLinks", fields: [creatorUserId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@index([token])
+  @@index([isActive])
+  @@map("public_share_links")
 }

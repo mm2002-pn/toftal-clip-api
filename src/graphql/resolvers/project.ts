@@ -91,14 +91,13 @@ export const projectResolvers = {
       };
 
       // Filter projects based on user role
-      if (context.user.role === 'CLIENT') {
-        // Clients see only their own projects
-        where.clientId = context.user.id;
-      } else if (context.user.role === 'TALENT') {
-        // Talents see projects where they are assigned (as main talent or to any deliverable)
+      if (context.user.role === 'CLIENT' || context.user.role === 'TALENT') {
+        // Clients and Talents see their own projects AND projects they're invited to (members of) AND projects where they're assigned
         where.OR = [
+          { clientId: context.user.id },
           { talentId: context.user.id },
           { deliverables: { some: { assignedTalentId: context.user.id } } },
+          { members: { some: { userId: context.user.id } } },
         ];
       } else {
         // ADMIN sees all - or use original OR logic
@@ -120,6 +119,10 @@ export const projectResolvers = {
             client: true,
             talent: true,
             deliverables: true,
+            members: {
+              where: { userId: context.user.id },
+              select: { role: true, permissions: true },
+            },
           },
         }),
         prisma.project.count({ where }),

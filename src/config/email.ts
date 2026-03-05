@@ -321,6 +321,80 @@ export const emailTemplates = {
     `,
   }),
 
+  projectInvitation: (email: string, projectTitle: string, inviterName: string, invitationUrl: string, message?: string) => ({
+    subject: `Vous êtes invité à rejoindre "${projectTitle}" sur Toftal Clip`,
+    html: emailWrapper(`
+      <h2 style="color: #FAFAFA; margin: 0 0 16px 0; font-size: 24px;">Bonjour !</h2>
+      <p style="color: #A1A1AA; font-size: 16px; line-height: 1.6; margin: 0 0 24px 0;">
+        <strong style="color: #FAFAFA;">${inviterName}</strong> vous invite à rejoindre un projet collaboratif sur Toftal Clip.
+      </p>
+
+      <!-- Project Details -->
+      <div style="background-color: #18181B; border-radius: 12px; padding: 24px; margin-bottom: 24px; border: 1px solid #27272A;">
+        <table width="100%" cellpadding="0" cellspacing="0">
+          <tr>
+            <td style="padding: 8px 0;">
+              <span style="color: #71717A; font-size: 12px; text-transform: uppercase;">Projet</span>
+              <p style="color: #FAFAFA; font-size: 20px; font-weight: 600; margin: 4px 0 0 0;">${projectTitle}</p>
+            </td>
+          </tr>
+          ${message ? `
+          <tr>
+            <td style="padding: 16px 0; border-top: 1px solid #27272A;">
+              <span style="color: #71717A; font-size: 12px; text-transform: uppercase;">Message</span>
+              <p style="color: #A1A1AA; font-size: 14px; margin: 4px 0 0 0; font-style: italic;">"${message}"</p>
+            </td>
+          </tr>
+          ` : ''}
+        </table>
+      </div>
+
+      <p style="color: #A1A1AA; font-size: 14px; line-height: 1.6; margin: 0 0 24px 0;">
+        Cliquez sur le bouton ci-dessous pour accepter l'invitation et rejoindre le projet. Vous pourrez collaborer avec l'équipe sur le contenu vidéo.
+      </p>
+
+      <!-- Button -->
+      <table width="100%" cellpadding="0" cellspacing="0">
+        <tr>
+          <td align="center" style="padding: 24px 0;">
+            <a href="${invitationUrl}" style="display: inline-block; background: linear-gradient(135deg, #E91E63 0%, #C2185B 100%); color: white; text-decoration: none; padding: 16px 48px; border-radius: 8px; font-weight: 600; font-size: 16px;">
+              Rejoindre le Projet
+            </a>
+          </td>
+        </tr>
+      </table>
+
+      <p style="color: #71717A; font-size: 12px; line-height: 1.6; margin: 24px 0 0 0;">
+        Ce lien expire dans <strong style="color: #A1A1AA;">7 jours</strong>.
+      </p>
+
+      <!-- Link fallback -->
+      <div style="margin-top: 32px; padding: 16px; background-color: #18181B; border-radius: 8px; border: 1px solid #27272A;">
+        <p style="color: #71717A; font-size: 12px; margin: 0 0 8px 0;">
+          Si le bouton ne fonctionne pas, copiez ce lien :
+        </p>
+        <p style="color: #E91E63; font-size: 12px; word-break: break-all; margin: 0;">
+          ${invitationUrl}
+        </p>
+      </div>
+    `, 'Vous êtes Invité !', '✋'),
+    text: `
+      Bonjour !
+
+      ${inviterName} vous invite à rejoindre un projet collaboratif sur Toftal Clip.
+
+      Projet: ${projectTitle}
+      ${message ? `Message: "${message}"` : ''}
+
+      Cliquez sur le lien ci-dessous pour accepter l'invitation :
+      ${invitationUrl}
+
+      Ce lien expire dans 7 jours.
+
+      - L'équipe Toftal Clip
+    `,
+  }),
+
   verification: (name: string, verificationUrl: string) => ({
     subject: 'Vérifiez votre email - Toftal Clip',
     html: emailWrapper(`
@@ -371,6 +445,64 @@ export const emailTemplates = {
 
       - L'équipe Toftal Clip
     `,
+  }),
+
+  // Access request - sent to project owner when someone requests access
+  accessRequest: (requesterName: string, requesterEmail: string, projectTitle: string, message?: string, projectUrl?: string) => ({
+    subject: `Demande d'accès - ${projectTitle}`,
+    html: emailWrapper(`
+      <h2 style="color: #FAFAFA; margin: 0 0 16px 0; font-size: 24px;">Nouvelle demande d'accès</h2>
+      <p style="color: #A1A1AA; font-size: 16px; line-height: 1.6; margin: 0 0 24px 0;">
+        <strong style="color: #FAFAFA;">${requesterName}</strong> a demandé l'accès à votre projet.
+      </p>
+
+      <div style="background-color: #18181B; border-radius: 12px; padding: 24px; margin-bottom: 24px; border: 1px solid #27272A;">
+        <p style="color: #FAFAFA; font-weight: 600; margin: 0 0 8px 0;">Projet: ${projectTitle}</p>
+        <p style="color: #A1A1AA; font-size: 14px; margin: 0 0 8px 0;">Email: ${requesterEmail}</p>
+        ${message ? `<p style="color: #A1A1AA; font-size: 14px; margin: 0; font-style: italic;">Message: "${message}"</p>` : ''}
+      </div>
+
+      <table width="100%" cellpadding="0" cellspacing="0">
+        <tr>
+          <td align="center" style="padding: 24px 0;">
+            <a href="${projectUrl}" style="display: inline-block; background: linear-gradient(135deg, #E91E63 0%, #C2185B 100%); color: white; text-decoration: none; padding: 16px 48px; border-radius: 8px; font-weight: 600; font-size: 16px;">
+              Voir les demandes
+            </a>
+          </td>
+        </tr>
+      </table>
+    `, 'Demande d\'accès', '🔐'),
+    text: `Nouvelle demande d'accès\n\n${requesterName} a demandé l'accès à votre projet "${projectTitle}".\n\nEmail: ${requesterEmail}\n${message ? `Message: "${message}"\n` : ''}Consultez votre espace pour approuver ou refuser la demande.`,
+  }),
+
+  // Access approved - sent to requester when access is approved
+  accessApproved: (projectTitle: string) => ({
+    subject: `Accès approuvé - ${projectTitle}`,
+    html: emailWrapper(`
+      <h2 style="color: #FAFAFA; margin: 0 0 16px 0; font-size: 24px;">Bienvenue ! 🎉</h2>
+      <p style="color: #A1A1AA; font-size: 16px; line-height: 1.6; margin: 0 0 24px 0;">
+        Votre demande d'accès au projet <strong style="color: #FAFAFA;">${projectTitle}</strong> a été approuvée.
+      </p>
+      <p style="color: #A1A1AA; font-size: 14px; line-height: 1.6;">
+        Vous avez maintenant accès complet au projet. Vous pouvez éditer les vidéos, commenter et contribuer au succès du projet.
+      </p>
+    `, 'Accès approuvé', '✅'),
+    text: `Votre demande d'accès au projet "${projectTitle}" a été approuvée. Vous avez maintenant accès complet au projet.`,
+  }),
+
+  // Access rejected - sent to requester when access is rejected
+  accessRejected: (projectTitle: string) => ({
+    subject: `Demande d'accès refusée - ${projectTitle}`,
+    html: emailWrapper(`
+      <h2 style="color: #FAFAFA; margin: 0 0 16px 0; font-size: 24px;">Demande refusée</h2>
+      <p style="color: #A1A1AA; font-size: 16px; line-height: 1.6; margin: 0 0 24px 0;">
+        Votre demande d'accès au projet <strong style="color: #FAFAFA;">${projectTitle}</strong> a été refusée.
+      </p>
+      <p style="color: #A1A1AA; font-size: 14px; line-height: 1.6;">
+        Vous pouvez contacter le créateur du projet pour plus d'informations.
+      </p>
+    `, 'Demande refusée', '❌'),
+    text: `Votre demande d'accès au projet "${projectTitle}" a été refusée.`,
   }),
 };
 

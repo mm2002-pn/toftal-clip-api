@@ -15,6 +15,9 @@ import opportunitiesRoutes from '../modules/opportunities/routes';
 import studiosRoutes from '../modules/studios/routes';
 import notificationsRoutes from '../modules/notifications/routes';
 import analyticsRoutes from '../modules/analytics/routes';
+import invitationsRoutes from '../modules/invitations/routes';
+import accessRequestsRoutes from '../modules/access-requests/routes';
+import publicShareRoutes from '../modules/public-share/routes';
 
 const router = Router();
 
@@ -40,6 +43,9 @@ router.get('/', (req, res) => {
         studios: '/api/v1/studios',
         notifications: '/api/v1/notifications',
         analytics: '/api/v1/analytics',
+        invitations: '/api/v1/invitations',
+        accessRequests: '/api/v1/access-requests',
+        publicShare: '/api/v1/public-share',
       },
       graphql: '/graphql',
     },
@@ -61,5 +67,8 @@ router.use('/opportunities', opportunitiesRoutes);
 router.use('/studios', studiosRoutes);
 router.use('/notifications', notificationsRoutes);
 router.use('/analytics', analyticsRoutes);
+router.use('/invitations', invitationsRoutes);
+router.use('/access-requests', accessRequestsRoutes);
+router.use('/public-share', publicShareRoutes);
 
 export default router;
