@@ -25,4 +25,7 @@ router.get('/:id/media', projectsController.getProjectMedia);
 router.post('/:id/media', projectsController.addProjectMedia);
 router.get('/:id/members', projectsController.getProjectMembers);
 
+// Brief completion (for CLIENT project onboarding)
+router.post('/:id/complete-brief', projectsController.completeBrief);
+
 export default router;

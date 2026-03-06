@@ -76,6 +76,7 @@ export const projectTypeDefs = gql`
     status: ProjectStatus!
     deadline: DateTime
     brief: Brief
+    briefCompletedAt: DateTime
     aiScore: Int
     isArchived: Boolean!
     archivedAt: DateTime

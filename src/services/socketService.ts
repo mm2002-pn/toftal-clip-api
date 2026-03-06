@@ -15,6 +15,7 @@ export type SocketEvent =
   | 'project:status'
   | 'project:archived'
   | 'project:restored'
+  | 'project:brief-completed'
   | 'deliverable:status'
   | 'deliverable:assigned'
   | 'deliverable:created'

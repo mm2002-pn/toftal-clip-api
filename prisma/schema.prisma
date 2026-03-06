@@ -17,6 +17,7 @@ enum UserRole {
 
 enum ProjectStatus {
   DRAFT
+  PENDING
   MATCHING
   IN_PROGRESS
   REVIEW
@@ -98,6 +99,10 @@ model User {
   emailVerified          Boolean   @default(false) @map("email_verified")
   emailVerificationToken String?   @map("email_verification_token")
   emailVerificationExpires DateTime? @map("email_verification_expires")
+  passwordResetOtp       String?   @map("password_reset_otp")
+  passwordResetOtpExpires DateTime? @map("password_reset_otp_expires")
+  passwordResetToken     String?   @map("password_reset_token")
+  passwordResetTokenExpires DateTime? @map("password_reset_token_expires")
   accountStatus          AccountStatus @default(ACTIVE) @map("account_status")
   archivedAt             DateTime? @map("archived_at")
   createdAt              DateTime  @default(now()) @map("created_at")
@@ -120,26 +125,29 @@ model User {
   sentInvitations  ProjectInvitation[]
   accessRequests   AccessRequest[]     @relation("AccessRequests")
   createdPublicLinks PublicShareLink[] @relation("PublicShareLinks")
+  createdDeliverableLinks DeliverableShareLink[] @relation("DeliverableShareLinks")
 
   @@map("users")
 }
 
 model Project {
-  id         String        @id @default(uuid())
-  title      String
-  clientId   String        @map("client_id")
-  talentId   String?       @map("talent_id")
-  type       ProjectType   @default(PERSONAL)
-  ownerId    String?       @map("owner_id")
-  status     ProjectStatus @default(DRAFT)
-  deadline   DateTime?
-  brief      Json?
-  aiScore    Int?          @map("ai_score")
-  isArchived Boolean       @default(false) @map("is_archived")
-  archivedAt DateTime?     @map("archived_at")
-  deletedAt  DateTime?     @map("deleted_at")
-  createdAt  DateTime      @default(now()) @map("created_at")
-  updatedAt  DateTime      @updatedAt @map("updated_at")
+  id               String        @id @default(uuid())
+  title            String
+  clientId         String        @map("client_id")
+  talentId         String?       @map("talent_id")
+  type             ProjectType   @default(PERSONAL)
+  ownerId          String?       @map("owner_id")
+  status           ProjectStatus @default(DRAFT)
+  deadline         DateTime?
+  brief            Json?
+  briefCompletedAt DateTime?     @map("brief_completed_at") // When client completed onboarding
+  invitationRefusedAt DateTime?  @map("invitation_refused_at") // When client refused invitation
+  aiScore          Int?          @map("ai_score")
+  isArchived       Boolean       @default(false) @map("is_archived")
+  archivedAt       DateTime?     @map("archived_at")
+  deletedAt        DateTime?     @map("deleted_at")
+  createdAt        DateTime      @default(now()) @map("created_at")
+  updatedAt        DateTime      @updatedAt @map("updated_at")
 
   // Relations
   client         User                 @relation("ClientProjects", fields: [clientId], references: [id], onDelete: Cascade)
@@ -174,6 +182,7 @@ model Deliverable {
   versions       Version[]
   workflowPhases WorkflowPhase[]
   mediaResources MediaResource[]
+  shareLinks     DeliverableShareLink[]
 
   @@map("deliverables")
 }
@@ -502,6 +511,8 @@ model ProjectInvitation {
   message       String?
   expiresAt     DateTime         @map("expires_at")
   acceptedAt    DateTime?        @map("accepted_at")
+  refusedAt     DateTime?        @map("refused_at")
+  refusalReason String?          @map("refusal_reason") @db.Text
   createdAt     DateTime         @default(now()) @map("created_at")
 
   // Relations
@@ -558,4 +569,28 @@ model PublicShareLink {
   @@index([token])
   @@index([isActive])
   @@map("public_share_links")
+}
+
+// Deliverable-level sharing (video sharing)
+model DeliverableShareLink {
+  id              String    @id @default(uuid())
+  deliverableId   String    @map("deliverable_id")
+  creatorUserId   String    @map("creator_user_id")
+  token           String    @unique  // URL-safe token for public access
+  permission      String    @default("view")  // "view", "comment", "download"
+  expiresAt       DateTime? @map("expires_at")
+  isActive        Boolean   @default(true)
+  maxUses         Int?      @map("max_uses")
+  usedCount       Int       @default(0) @map("used_count")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  // Relations
+  deliverable Deliverable @relation(fields: [deliverableId], references: [id], onDelete: Cascade)
+  creator     User        @relation("DeliverableShareLinks", fields: [creatorUserId], references: [id], onDelete: Cascade)
+
+  @@index([deliverableId])
+  @@index([token])
+  @@index([isActive])
+  @@map("deliverable_share_links")
 }

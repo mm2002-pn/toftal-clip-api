@@ -150,8 +150,8 @@ export const googleAuth = async (
   next: NextFunction
 ): Promise<void> => {
   try {
-    const { idToken, role } = req.body;
-    const result = await authService.loginWithGoogle({ idToken, role });
+    const { idToken, role, createIfNotExists } = req.body;
+    const result = await authService.loginWithGoogle({ idToken, role, createIfNotExists });
 
     // Set refresh token in cookie if tokens exist
     if (result.tokens) {
@@ -192,6 +192,54 @@ export const resendVerification = async (
   try {
     const { email } = req.body;
     const result = await authService.resendVerificationEmail(email);
+
+    ApiResponse.success(res, result);
+  } catch (error) {
+    next(error);
+  }
+};
+
+// Forgot password - send OTP
+export const forgotPassword = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const { email } = req.body;
+    const result = await authService.forgotPassword(email);
+
+    ApiResponse.success(res, result, 'OTP sent if email exists');
+  } catch (error) {
+    next(error);
+  }
+};
+
+// Verify OTP
+export const verifyOtp = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const { email, otp } = req.body;
+    const result = await authService.verifyOtp(email, otp);
+
+    ApiResponse.success(res, result, 'OTP verified');
+  } catch (error) {
+    next(error);
+  }
+};
+
+// Reset password
+export const resetPassword = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const { email, resetToken, newPassword } = req.body;
+    const result = await authService.resetPassword(email, resetToken, newPassword);
 
     ApiResponse.success(res, result);
   } catch (error) {

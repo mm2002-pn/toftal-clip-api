@@ -358,7 +358,7 @@ export const emailTemplates = {
         <tr>
           <td align="center" style="padding: 24px 0;">
             <a href="${invitationUrl}" style="display: inline-block; background: linear-gradient(135deg, #E91E63 0%, #C2185B 100%); color: white; text-decoration: none; padding: 16px 48px; border-radius: 8px; font-weight: 600; font-size: 16px;">
-              Rejoindre le Projet
+              Voir l'Invitation
             </a>
           </td>
         </tr>
@@ -442,6 +442,44 @@ export const emailTemplates = {
       Ce lien expire dans 24 heures.
 
       Si vous n'avez pas créé de compte, vous pouvez ignorer cet email.
+
+      - L'équipe Toftal Clip
+    `,
+  }),
+
+  // Forgot password - send OTP for password reset
+  forgotPassword: (name: string, otp: string) => ({
+    subject: 'Code de réinitialisation de mot de passe - Toftal Clip',
+    html: emailWrapper(`
+      <h2 style="color: #FAFAFA; margin: 0 0 16px 0; font-size: 24px;">Réinitialiser votre mot de passe</h2>
+      <p style="color: #A1A1AA; font-size: 16px; line-height: 1.6; margin: 0 0 24px 0;">
+        Nous avons reçu une demande de réinitialisation de votre mot de passe. Utilisez le code ci-dessous pour continuer.
+      </p>
+
+      <!-- OTP Code -->
+      <div style="background-color: #18181B; border-radius: 12px; padding: 32px; margin: 32px 0; border: 1px solid #27272A; text-align: center;">
+        <p style="color: #71717A; font-size: 12px; margin: 0 0 16px 0; text-transform: uppercase;">Votre code OTP</p>
+        <p style="color: #FAFAFA; font-size: 48px; font-weight: bold; letter-spacing: 12px; margin: 0; font-family: monospace;">${otp}</p>
+      </div>
+
+      <p style="color: #A1A1AA; font-size: 14px; line-height: 1.6; margin: 24px 0;">
+        Ce code expire dans <strong style="color: #FAFAFA;">15 minutes</strong>. Ne partagez jamais ce code avec quelqu'un d'autre.
+      </p>
+
+      <p style="color: #71717A; font-size: 14px; line-height: 1.6; margin: 16px 0 0 0;">
+        Si vous n'avez pas demandé une réinitialisation de mot de passe, vous pouvez ignorer cet email. Votre compte reste sécurisé.
+      </p>
+    `, 'Réinitialiser le mot de passe', '🔐'),
+    text: `
+      Réinitialiser votre mot de passe
+
+      Nous avons reçu une demande de réinitialisation de votre mot de passe. Utilisez le code ci-dessous pour continuer.
+
+      Code OTP: ${otp}
+
+      Ce code expire dans 15 minutes.
+
+      Si vous n'avez pas demandé une réinitialisation de mot de passe, vous pouvez ignorer cet email.
 
       - L'équipe Toftal Clip
     `,

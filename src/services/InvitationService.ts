@@ -134,7 +134,7 @@ export class InvitationService {
       where: { token },
       include: {
         project: {
-          select: { id: true, title: true },
+          select: { id: true, title: true, type: true },
         },
         inviter: {
           select: { name: true },
@@ -163,6 +163,7 @@ export class InvitationService {
       email: invitation.email,
       projectId: invitation.projectId,
       projectTitle: invitation.project.title,
+      projectType: invitation.project.type,
       inviterName: invitation.inviter.name,
       expiresAt: invitation.expiresAt,
     };
@@ -395,5 +396,56 @@ export class InvitationService {
       where: { id: invitationId },
       data: { status: InvitationStatus.REJECTED },
     });
+  }
+
+  /**
+   * Refuse an invitation with optional reason
+   */
+  async refuseInvitation(token: string, reason?: string) {
+    console.log('🚫 [REFUSE_INVITATION] Refusing invitation');
+    console.log('   Token:', token.substring(0, 20) + '...');
+
+    const invitation = await this.prisma.projectInvitation.findUnique({
+      where: { token },
+    });
+
+    if (!invitation) {
+      throw new Error('Invitation non trouvée');
+    }
+
+    if (invitation.status === InvitationStatus.REJECTED) {
+      throw new Error('Cette invitation a déjà été refusée');
+    }
+
+    if (invitation.status === InvitationStatus.ACCEPTED) {
+      throw new Error('Cette invitation a déjà été acceptée');
+    }
+
+    if (new Date() > invitation.expiresAt) {
+      await this.prisma.projectInvitation.update({
+        where: { id: invitation.id },
+        data: { status: InvitationStatus.EXPIRED },
+      });
+      throw new Error('Cette invitation a expiré');
+    }
+
+    const updatedInvitation = await this.prisma.projectInvitation.update({
+      where: { id: invitation.id },
+      data: {
+        status: InvitationStatus.REJECTED,
+        refusedAt: new Date(),
+        refusalReason: reason || null,
+      },
+    });
+
+    // Also update the project to mark that invitation was refused
+    await this.prisma.project.update({
+      where: { id: invitation.projectId },
+      data: { invitationRefusedAt: new Date() },
+    });
+
+    console.log('✅ [REFUSE_INVITATION] Invitation refused successfully');
+
+    return updatedInvitation;
   }
 }

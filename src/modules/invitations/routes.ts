@@ -64,11 +64,13 @@ router.post('/', authenticate, requireProjectOwner(), async (req: Request, res: 
         email: invitation.email,
         status: invitation.status,
         expiresAt: invitation.expiresAt,
+        token: invitation.token,
       },
     });
   } catch (error: any) {
     console.error('Invitation creation error:', error);
     res.status(400).json({
+      success: false,
       error: error.message || 'Failed to create invitation',
     });
   }
@@ -84,6 +86,7 @@ router.get('/verify/:token', async (req: Request, res: Response) => {
 
     if (!token) {
       return res.status(400).json({
+        success: false,
         error: 'Token is required',
       });
     }
@@ -97,6 +100,7 @@ router.get('/verify/:token', async (req: Request, res: Response) => {
   } catch (error: any) {
     console.error('Token verification error:', error);
     res.status(400).json({
+      success: false,
       error: error.message || 'Invalid or expired invitation',
     });
   }
@@ -130,7 +134,46 @@ router.post('/accept', authenticate, async (req: Request, res: Response) => {
   } catch (error: any) {
     console.error('Invitation acceptance error:', error);
     res.status(400).json({
+      success: false,
       error: error.message || 'Failed to accept invitation',
+    });
+  }
+});
+
+/**
+ * POST /api/v1/invitations/refuse
+ * Refuse an invitation (PUBLIC - no auth required)
+ */
+router.post('/refuse', async (req: Request, res: Response) => {
+  try {
+    const { token, reason } = req.body;
+
+    if (!token) {
+      return res.status(400).json({
+        success: false,
+        error: 'Token is required',
+      });
+    }
+
+    console.log('🚫 POST /invitations/refuse called');
+    console.log('📧 Token:', token.substring(0, 20) + '...');
+
+    const invitation = await invitationService.refuseInvitation(token, reason);
+
+    res.json({
+      success: true,
+      data: {
+        id: invitation.id,
+        status: invitation.status,
+        refusedAt: invitation.refusedAt,
+        refusalReason: invitation.refusalReason,
+      },
+    });
+  } catch (error: any) {
+    console.error('Invitation refusal error:', error);
+    res.status(400).json({
+      success: false,
+      error: error.message || 'Failed to refuse invitation',
     });
   }
 });
@@ -146,6 +189,7 @@ router.post('/accept-after-email-verification', async (req: Request, res: Respon
 
     if (!invitationToken || !emailToken) {
       return res.status(400).json({
+        success: false,
         error: 'invitationToken and emailToken are required',
       });
     }
@@ -167,6 +211,7 @@ router.post('/accept-after-email-verification', async (req: Request, res: Respon
     if (!user) {
       console.error('❌ [ACCEPT_AFTER_EMAIL] Email token invalid or expired');
       return res.status(400).json({
+        success: false,
         error: 'Email token is invalid or expired',
       });
     }
@@ -191,6 +236,7 @@ router.post('/accept-after-email-verification', async (req: Request, res: Respon
   } catch (error: any) {
     console.error('Invitation acceptance after email error:', error);
     res.status(400).json({
+      success: false,
       error: error.message || 'Failed to accept invitation',
     });
   }
@@ -217,6 +263,7 @@ router.get(
     } catch (error: any) {
       console.error('Get invitations error:', error);
       res.status(500).json({
+        success: false,
         error: 'Failed to fetch invitations',
       });
     }
@@ -244,6 +291,7 @@ router.delete(
     } catch (error: any) {
       console.error('Cancel invitation error:', error);
       res.status(400).json({
+        success: false,
         error: error.message || 'Failed to cancel invitation',
       });
     }
@@ -271,6 +319,7 @@ router.get(
     } catch (error: any) {
       console.error('Get members error:', error);
       res.status(500).json({
+        success: false,
         error: 'Failed to fetch project members',
       });
     }
@@ -299,6 +348,7 @@ router.delete(
     } catch (error: any) {
       console.error('Remove member error:', error);
       res.status(400).json({
+        success: false,
         error: error.message || 'Failed to remove member',
       });
     }

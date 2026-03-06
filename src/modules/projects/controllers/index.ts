@@ -35,6 +35,7 @@ export const createProject = async (req: Request, res: Response, next: NextFunct
             projectId: project.id,
             title: deliverable.title || 'Untitled',
             type: deliverable.type || 'Video',
+            assignedTalentId: deliverable.assignedTalentId || talentId || undefined, // Auto-assign talent if provided
           },
         });
       }
@@ -565,6 +566,82 @@ export const getProjectMembers = async (req: Request, res: Response, next: NextF
     });
 
     ApiResponse.success(res, members, 'Project members fetched successfully');
+  } catch (error) {
+    next(error);
+  }
+};
+
+// Complete brief (mark onboarding as done for CLIENT projects)
+export const completeBrief = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const projectId = String(req.params.id);
+    const userId = req.user!.id;
+
+    // Get user's name for notification
+    const currentUser = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { name: true },
+    });
+
+    // Check if project exists
+    const project = await prisma.project.findUnique({
+      where: { id: projectId },
+      include: {
+        owner: { select: { id: true, name: true, email: true } },
+      },
+    });
+
+    if (!project) {
+      throw new NotFoundError('Project not found');
+    }
+
+    // Check if user is a member of the project
+    const membership = await prisma.projectMember.findUnique({
+      where: {
+        projectId_userId: {
+          projectId,
+          userId,
+        },
+      },
+    });
+
+    if (!membership && project.ownerId !== userId && req.user!.role !== 'ADMIN') {
+      throw new ForbiddenError('You do not have permission to complete the brief');
+    }
+
+    // Update project with briefCompletedAt
+    const updatedProject = await prisma.project.update({
+      where: { id: projectId },
+      data: {
+        briefCompletedAt: new Date(),
+        status: 'IN_PROGRESS', // Update status to IN_PROGRESS when brief is completed
+      },
+    });
+
+    // Notify the project owner that the brief is complete
+    if (project.ownerId && project.ownerId !== userId) {
+      const notification = await prisma.notification.create({
+        data: {
+          userId: project.ownerId,
+          type: 'BRIEF_COMPLETED',
+          title: 'Brief complété',
+          message: `${currentUser?.name || 'Un utilisateur'} a complété le brief du projet "${project.title}"`,
+          link: `/workspace/${projectId}`,
+        },
+      });
+
+      // Emit real-time notification
+      socketService.emitToUser(project.ownerId, 'notification:new', notification);
+    }
+
+    // Emit project update to room
+    socketService.emitToProject(projectId, 'project:brief-completed', {
+      id: projectId,
+      briefCompletedAt: updatedProject.briefCompletedAt,
+      status: updatedProject.status,
+    });
+
+    ApiResponse.success(res, updatedProject, 'Brief completed successfully');
   } catch (error) {
     next(error);
   }

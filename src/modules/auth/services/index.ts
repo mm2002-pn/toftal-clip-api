@@ -230,7 +230,7 @@ export const login = async (input: LoginInput): Promise<AuthResponse> => {
 
   if (!user) {
     console.error('❌ User not found:', email);
-    throw new UnauthorizedError('Invalid email or password');
+    throw new UnauthorizedError('account_not_found');
   }
 
   console.log('✅ User found:', user.id);
@@ -360,10 +360,124 @@ export const changePassword = async (
   });
 };
 
+// Forgot password - send OTP email
+export const forgotPassword = async (email: string): Promise<{ message: string }> => {
+  const user = await prisma.user.findUnique({
+    where: { email },
+  });
+
+  if (!user) {
+    // Don't reveal if email exists
+    console.log('ℹ️ Forgot password requested for non-existent email:', email);
+    return { message: 'Si cet email existe, un code OTP a été envoyé' };
+  }
+
+  // Generate OTP (6 digits)
+  const otp = Math.random().toString().slice(2, 8);
+  const otpExpires = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
+
+  // Save OTP to database
+  await prisma.user.update({
+    where: { id: user.id },
+    data: {
+      passwordResetOtp: otp,
+      passwordResetOtpExpires: otpExpires,
+    },
+  });
+
+  // Send OTP via email
+  try {
+    await sendEmail(email, emailTemplates.forgotPassword(user.name, otp));
+    console.log(`✅ Password reset OTP sent to ${email}`);
+  } catch (error) {
+    console.error('❌ Failed to send OTP email:', error);
+    throw new BadRequestError('Failed to send OTP email. Please try again.');
+  }
+
+  return { message: 'Si cet email existe, un code OTP a été envoyé' };
+};
+
+// Verify OTP and allow password reset
+export const verifyOtp = async (email: string, otp: string): Promise<{ resetToken: string }> => {
+  const user = await prisma.user.findUnique({
+    where: { email },
+  });
+
+  if (!user) {
+    throw new NotFoundError('User not found');
+  }
+
+  if (!user.passwordResetOtp || user.passwordResetOtp !== otp) {
+    throw new UnauthorizedError('Code OTP invalide');
+  }
+
+  if (user.passwordResetOtpExpires && user.passwordResetOtpExpires < new Date()) {
+    throw new UnauthorizedError('Code OTP expiré. Veuillez demander un nouveau code.');
+  }
+
+  // Generate password reset token (valid for 30 minutes)
+  const resetToken = crypto.randomBytes(32).toString('hex');
+  const resetTokenExpires = new Date(Date.now() + 30 * 60 * 1000);
+
+  await prisma.user.update({
+    where: { id: user.id },
+    data: {
+      passwordResetToken: resetToken,
+      passwordResetTokenExpires: resetTokenExpires,
+      passwordResetOtp: null, // Clear OTP
+      passwordResetOtpExpires: null,
+    },
+  });
+
+  return { resetToken };
+};
+
+// Reset password with token
+export const resetPassword = async (email: string, resetToken: string, newPassword: string): Promise<{ message: string }> => {
+  const user = await prisma.user.findUnique({
+    where: { email },
+  });
+
+  if (!user) {
+    throw new NotFoundError('User not found');
+  }
+
+  if (!user.passwordResetToken || user.passwordResetToken !== resetToken) {
+    throw new UnauthorizedError('Lien de réinitialisation invalide');
+  }
+
+  if (user.passwordResetTokenExpires && user.passwordResetTokenExpires < new Date()) {
+    throw new UnauthorizedError('Lien de réinitialisation expiré. Veuillez demander un nouveau code.');
+  }
+
+  // Hash new password
+  const salt = await bcrypt.genSalt(12);
+  const passwordHash = await bcrypt.hash(newPassword, salt);
+
+  // Update password, verify email (user proved access via OTP), and clear reset tokens
+  await prisma.user.update({
+    where: { id: user.id },
+    data: {
+      passwordHash,
+      emailVerified: true, // User proved email access by receiving OTP
+      emailVerificationToken: null,
+      emailVerificationExpires: null,
+      passwordResetToken: null,
+      passwordResetTokenExpires: null,
+      passwordResetOtp: null,
+      passwordResetOtpExpires: null,
+    },
+  });
+
+  console.log(`✅ Password reset successfully for ${email} (email also verified)`);
+  return { message: 'Mot de passe réinitialisé avec succès' };
+};
+
 // Login/Register with Google (Firebase)
 interface GoogleAuthInput {
   idToken: string;
   role?: 'CLIENT' | 'TALENT';
+  createIfNotExists?: boolean; // true for /register, false for /login
 }
 
 export const loginWithGoogle = async (input: GoogleAuthInput): Promise<AuthResponse> => {
@@ -405,25 +519,27 @@ export const loginWithGoogle = async (input: GoogleAuthInput): Promise<AuthRespo
         },
       });
     } else {
-      // Create new user
-      user = await prisma.user.create({
-        data: {
-          email,
-          name: name || email.split('@')[0],
-          role,
-          authProvider: 'google',
-          firebaseUid: uid,
-          avatarUrl: picture || null,
-        },
-      });
-
-      // If talent, create talent profile
-      if (role === 'TALENT') {
-        await prisma.talentProfile.create({
+      // Check if we should create account (registration) or reject (login)
+      if (input.createIfNotExists) {
+        // ✅ Auto-create account for Google Sign-up (new users from /register)
+        console.log('📝 Creating new user from Google registration:', email);
+        user = await prisma.user.create({
           data: {
-            userId: user.id,
+            email,
+            name: name || email.split('@')[0],
+            firebaseUid: uid,
+            authProvider: 'google',
+            role,
+            avatarUrl: picture || null,
+            emailVerified: true, // Google accounts are pre-verified
           },
         });
+        console.log('✅ User created successfully from Google auth:', user.id);
+      } else {
+        // ❌ Do NOT auto-create account for Google login (from /login page)
+        // User must register first
+        console.error('❌ Google account email not registered:', email);
+        throw new UnauthorizedError('account_not_found');
       }
     }
   }
