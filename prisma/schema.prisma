@@ -594,3 +594,32 @@ model DeliverableShareLink {
   @@index([isActive])
   @@map("deliverable_share_links")
 }
+
+// ==================== BETA SIGNUP MODEL ====================
+
+model BetaSignup {
+  id                    String   @id @default(uuid())
+  name                  String
+  email                 String
+  contact               String
+  role                  String?
+  videoCount            String?  @map("video_count")
+  collaboration         String?
+  biggestProblem        String?  @map("biggest_problem") @db.Text
+  interests             String[] @default([])
+  feedbackReady         String?  @map("feedback_ready")
+  link                  String?
+  marketplaceInterest   String?  @map("marketplace_interest")
+  source                String?
+  ipAddress             String?  @map("ip_address")
+  userAgent             String?  @map("user_agent") @db.Text
+  status                String   @default("PENDING") // PENDING, VERIFIED, CONTACTED, REJECTED
+  notes                 String?  @db.Text
+  createdAt             DateTime @default(now()) @map("created_at")
+  updatedAt             DateTime @updatedAt @map("updated_at")
+
+  @@unique([email])
+  @@index([status])
+  @@index([createdAt])
+  @@map("beta_signups")
+}

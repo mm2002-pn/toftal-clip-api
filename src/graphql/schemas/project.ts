@@ -71,8 +71,8 @@ export const projectTypeDefs = gql`
     client: User!
     talentId: ID
     talent: User
-    ownerId: ID!
-    owner: User!
+    ownerId: ID
+    owner: User
     status: ProjectStatus!
     deadline: DateTime
     brief: Brief

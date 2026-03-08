@@ -16,6 +16,15 @@ async function main() {
 
   if (existingAdmin) {
     console.log('✅ Admin user already exists:', adminEmail);
+
+    // Ensure email is verified
+    if (!existingAdmin.emailVerified) {
+      await prisma.user.update({
+        where: { email: adminEmail },
+        data: { emailVerified: true }
+      });
+      console.log('✅ Admin email verified');
+    }
   } else {
     const hashedPassword = await bcrypt.hash(adminPassword, 12);
 
@@ -25,6 +34,7 @@ async function main() {
         passwordHash: hashedPassword,
         name: 'Admin ToftalClip',
         role: 'ADMIN',
+        emailVerified: true,
       },
     });
 
@@ -32,6 +42,7 @@ async function main() {
     console.log('   Email:', admin.email);
     console.log('   Password:', adminPassword);
     console.log('   Role:', admin.role);
+    console.log('   Email Verified: ✅');
   }
 
   console.log('🌱 Seeding completed!');

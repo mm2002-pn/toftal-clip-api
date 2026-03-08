@@ -112,8 +112,7 @@ function Invoke-BackendDeploy {
         --memory 2Gi `
         --cpu 2 `
         --max-instances 10 `
-        --traffic "latest=100" `
-        --set-env-vars "TRUST_PROXY=true,CORS_ORIGIN=https://toftal-clip.netlify.app;https://toftal-clip-test.netlify.app,NODE_ENV=production,FRONTEND_URL=https://toftal-clip.netlify.app,EMAIL_SERVICE=gmail,EMAIL_USER=toftalpodium@gmail.com,EMAIL_FROM=Toftal Clip <toftalpodium@gmail.com>,EMAIL_PASSWORD=$emailPass,RATE_LIMIT_MAX=$rateLimitMax" `
+        --set-env-vars "TRUST_PROXY=true,CORS_ORIGIN=https://toftalclip.io;https://toftal-clip.netlify.app;https://toftal-clip-test.netlify.app,NODE_ENV=production,FRONTEND_URL=https://toftalclip.io,EMAIL_SERVICE=gmail,EMAIL_USER=toftalpodium@gmail.com,EMAIL_FROM=Toftal Clip <toftalpodium@gmail.com>,EMAIL_PASSWORD=$emailPass,RATE_LIMIT_MAX=$rateLimitMax" `
         --quiet
 
     if ($LASTEXITCODE -ne 0) {
@@ -137,12 +136,12 @@ function Invoke-BackendDeploy {
     while ($healthRetries -lt $maxHealthRetries) {
         try {
             $health = Invoke-RestMethod -Uri "$serviceUrl/health" -Method Get -TimeoutSec 10
-            Write-Host "[BACKEND] Health: $($health.status) ✓" -ForegroundColor Green
+            Write-Host "[BACKEND] Health: $($health.status)" -ForegroundColor Green
             break
         } catch {
             $healthRetries++
             if ($healthRetries -lt $maxHealthRetries) {
-                Write-Host "[BACKEND] Health check failed, retrying... ($healthRetries/$maxHealthRetries)" -ForegroundColor Yellow
+                Write-Host "[BACKEND] Health check failed, retrying... ($healthRetries of $maxHealthRetries)" -ForegroundColor Yellow
                 Start-Sleep 3
             } else {
                 Write-Host "[BACKEND] Health check failed after $maxHealthRetries attempts" -ForegroundColor Red
@@ -178,7 +177,7 @@ function Invoke-FrontendDeploy {
         return $false
     }
 
-    Write-Host "[FRONTEND] Deployed to: https://toftal-clip.netlify.app" -ForegroundColor Green
+    Write-Host "[FRONTEND] Deployed to: https://toftalclip.io" -ForegroundColor Green
     return $true
 }
 
@@ -219,5 +218,5 @@ Write-Host "`n==========================================" -ForegroundColor Green
 Write-Host "  Deployment Complete!" -ForegroundColor Green
 Write-Host "==========================================" -ForegroundColor Green
 Write-Host "Backend:  https://toftal-clip-api-776016345965.europe-west1.run.app" -ForegroundColor Cyan
-Write-Host "Frontend: https://toftal-clip.netlify.app" -ForegroundColor Cyan
+Write-Host "Frontend: https://toftalclip.io" -ForegroundColor Cyan
 Write-Host ""

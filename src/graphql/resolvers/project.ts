@@ -149,6 +149,7 @@ export const projectResolvers = {
   Project: {
     client: (parent: any) => prisma.user.findUnique({ where: { id: parent.clientId } }),
     talent: (parent: any) => parent.talentId ? prisma.user.findUnique({ where: { id: parent.talentId } }) : null,
+    owner: (parent: any) => parent.ownerId ? prisma.user.findUnique({ where: { id: parent.ownerId } }) : null,
     deliverables: async (parent: any) => {
       const user = parent._contextUser;
 

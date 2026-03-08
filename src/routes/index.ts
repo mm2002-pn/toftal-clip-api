@@ -19,6 +19,7 @@ import invitationsRoutes from '../modules/invitations/routes';
 import accessRequestsRoutes from '../modules/access-requests/routes';
 import publicShareRoutes from '../modules/public-share/routes';
 import deliverableShareRoutes from '../modules/deliverable-share/routes';
+import betaSignupsRoutes from '../modules/beta-signups/routes';
 
 const router = Router();
 
@@ -48,6 +49,7 @@ router.get('/', (req, res) => {
         accessRequests: '/api/v1/access-requests',
         publicShare: '/api/v1/public-share',
         deliverableShare: '/api/v1/deliverable-share',
+        betaSignups: '/api/v1/beta-signups',
       },
       graphql: '/graphql',
     },
@@ -73,5 +75,6 @@ router.use('/invitations', invitationsRoutes);
 router.use('/access-requests', accessRequestsRoutes);
 router.use('/public-share', publicShareRoutes);
 router.use('/deliverable-share', deliverableShareRoutes);
+router.use('/beta-signups', betaSignupsRoutes);
 
 export default router;
