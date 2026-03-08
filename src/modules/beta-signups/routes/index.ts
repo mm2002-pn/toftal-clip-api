@@ -1,7 +1,7 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import * as betaSignupController from '../controllers';
 import { rateLimit } from 'express-rate-limit';
-import { authenticate } from '../../middlewares/auth';
+import { authenticate } from '../../../middlewares/auth';
 
 const router = Router();
 
