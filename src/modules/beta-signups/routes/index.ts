@@ -1,6 +1,7 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import * as betaSignupController from '../controllers';
 import { rateLimit } from 'express-rate-limit';
+import { authenticate } from '../../middlewares/auth';
 
 const router = Router();
 
@@ -52,6 +53,7 @@ router.post(
  */
 router.get(
   '/',
+  authenticate,
   adminLimiter,
   (req: Request, res: Response, next: NextFunction) => {
     betaSignupController.getAllBetaSignups(req, res, next);
@@ -64,6 +66,7 @@ router.get(
  */
 router.get(
   '/:id',
+  authenticate,
   adminLimiter,
   (req: Request, res: Response, next: NextFunction) => {
     betaSignupController.getBetaSignup(req, res, next);
@@ -77,6 +80,7 @@ router.get(
  */
 router.patch(
   '/:id/status',
+  authenticate,
   adminLimiter,
   (req: Request, res: Response, next: NextFunction) => {
     betaSignupController.updateBetaSignupStatus(req, res, next);
@@ -89,6 +93,7 @@ router.patch(
  */
 router.delete(
   '/:id',
+  authenticate,
   adminLimiter,
   (req: Request, res: Response, next: NextFunction) => {
     betaSignupController.deleteBetaSignup(req, res, next);
