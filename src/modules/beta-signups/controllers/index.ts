@@ -46,12 +46,6 @@ export const createBetaSignup = async (
       return;
     }
 
-    // Validate email format
-    if (!validateEmail(email)) {
-      ApiResponse.badRequest(res, 'Invalid email format');
-      return;
-    }
-
     // Validate name length
     if (name.trim().length < 2 || name.trim().length > 100) {
       ApiResponse.badRequest(res, 'Name must be between 2 and 100 characters');
@@ -63,6 +57,18 @@ export const createBetaSignup = async (
     const isPhoneContact = /^[\+\d\s\-\(\)]{10,}$/.test(contact.trim());
     if (!isEmailContact && !isPhoneContact) {
       ApiResponse.badRequest(res, 'Contact must be a valid email or phone number');
+      return;
+    }
+
+    // If contact is email, use it as email field; if phone, generate internal email
+    let finalEmail = email;
+    if (isPhoneContact && !isEmailContact) {
+      // Generate unique internal email from phone number
+      const phoneDigits = contact.trim().replace(/\D/g, '');
+      finalEmail = `phone-${phoneDigits}@toftal-internal.com`;
+    } else if (!validateEmail(email)) {
+      // If email field is provided but invalid, reject
+      ApiResponse.badRequest(res, 'Invalid email format');
       return;
     }
 
@@ -93,7 +99,10 @@ export const createBetaSignup = async (
     };
 
     // ============ CREATE SIGNUP ============
-    const signup = await betaSignupService.createBetaSignup(sanitizedData);
+    const signup = await betaSignupService.createBetaSignup({
+      ...sanitizedData,
+      email: finalEmail
+    });
 
     ApiResponse.created(
       res,

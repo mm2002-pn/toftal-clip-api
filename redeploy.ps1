@@ -8,7 +8,7 @@ param(
     [switch]$SkipBuild  # Ajouter -SkipBuild pour deployer sans rebuild
 )
 
-$ErrorActionPreference = "Stop"
+$ErrorActionPreference = "Continue"
 
 # Configuration
 $PROJECT_ID = "toftal-clip-api"
@@ -22,7 +22,7 @@ Write-Host "  Toftal Clip API - Redeploy" -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
 
 # Set project
-gcloud config set project $PROJECT_ID 2>$null
+gcloud config set project $PROJECT_ID 2>&1 | Out-Null
 
 # ==========================================
 # Migration / Seed (optionnel)

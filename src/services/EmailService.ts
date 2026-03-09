@@ -195,4 +195,64 @@ export class EmailService {
 
     await sendEmail(to, emailTemplate);
   }
+
+  /**
+   * Send beta signup notification to manager
+   */
+  async sendBetaSignupNotification(data: {
+    name: string;
+    email: string;
+    contact: string;
+    role?: string;
+    interests?: string[];
+    videoCount?: string;
+    collaboration?: string;
+    biggestProblem?: string;
+    feedbackReady?: string;
+    link?: string;
+    marketplaceInterest?: string;
+    source?: string;
+    signupNumber?: string;
+  }): Promise<void> {
+    const {
+      name,
+      email,
+      contact,
+      role,
+      interests,
+      videoCount,
+      collaboration,
+      biggestProblem,
+      feedbackReady,
+      link,
+      marketplaceInterest,
+      source,
+      signupNumber,
+    } = data;
+
+    // Build admin URL
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+    const adminUrl = `${frontendUrl}/#/admin/beta-signups`;
+
+    const emailTemplate = emailTemplates.betaSignupNotification(
+      name,
+      email,
+      contact,
+      role,
+      interests,
+      videoCount,
+      collaboration,
+      biggestProblem,
+      feedbackReady,
+      link,
+      marketplaceInterest,
+      source,
+      adminUrl,
+      signupNumber
+    );
+
+    // Send to manager
+    const managerEmail = process.env.BETA_MANAGER_EMAIL || 'papeserigne@toftal.com';
+    await sendEmail(managerEmail, emailTemplate);
+  }
 }

@@ -1,4 +1,5 @@
 import { prisma } from '../../../config/database';
+import { EmailService } from '../../../services/EmailService';
 
 interface CreateBetaSignupInput {
   name: string;
@@ -16,6 +17,8 @@ interface CreateBetaSignupInput {
   ipAddress?: string;
   userAgent?: string;
 }
+
+const emailService = new EmailService();
 
 /**
  * Create a beta signup entry
@@ -51,6 +54,39 @@ export const createBetaSignup = async (data: CreateBetaSignupInput) => {
       status: 'PENDING',
     },
   });
+
+  // Get total number of signups (this is the signup number)
+  const totalSignups = await prisma.betaSignup.count();
+
+  // Function to convert number to ordinal (1er, 2e, 3e, 10e, etc.)
+  const getOrdinalNumber = (num: number): string => {
+    if (num === 1) return '1er';
+    return `${num}e`;
+  };
+
+  const signupNumber = getOrdinalNumber(totalSignups);
+
+  // Send notification email to manager
+  try {
+    await emailService.sendBetaSignupNotification({
+      name: signup.name,
+      email: signup.email,
+      contact: signup.contact,
+      role: signup.role || undefined,
+      interests: signup.interests,
+      videoCount: signup.videoCount || undefined,
+      collaboration: signup.collaboration || undefined,
+      biggestProblem: signup.biggestProblem || undefined,
+      feedbackReady: signup.feedbackReady || undefined,
+      link: signup.link || undefined,
+      marketplaceInterest: signup.marketplaceInterest || undefined,
+      source: signup.source || undefined,
+      signupNumber: signupNumber,
+    });
+  } catch (error) {
+    console.error('Failed to send beta signup notification email:', error);
+    // Don't throw error - signup was still created successfully
+  }
 
   return signup;
 };

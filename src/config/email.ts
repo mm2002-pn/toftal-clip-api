@@ -542,6 +542,204 @@ export const emailTemplates = {
     `, 'Demande refusée', '❌'),
     text: `Votre demande d'accès au projet "${projectTitle}" a été refusée.`,
   }),
+
+  // Beta signup notification - sent to manager when new signup
+  betaSignupNotification: (
+    name: string,
+    email: string,
+    contact: string,
+    role?: string,
+    interests?: string[],
+    videoCount?: string,
+    collaboration?: string,
+    biggestProblem?: string,
+    feedbackReady?: string,
+    link?: string,
+    marketplaceInterest?: string,
+    source?: string,
+    adminUrl?: string,
+    signupNumber?: string
+  ) => {
+    const baseAdminUrl = adminUrl || 'http://localhost:5173/#/admin/beta-signups';
+    const signupNum = signupNumber || 'N/A';
+
+    return {
+      subject: `🎉 Nouvelle inscription bêta - ${name}`,
+      html: emailWrapper(`
+        <div style="text-align: center; margin-bottom: 24px;">
+          <p style="color: #71717A; font-size: 14px; margin: 0 0 8px 0; text-transform: uppercase; letter-spacing: 2px;">Inscription N°</p>
+          <h2 style="color: #E91E63; margin: 0; font-size: 48px; font-weight: 700;">${signupNum}</h2>
+        </div>
+
+        <h2 style="color: #FAFAFA; margin: 0 0 16px 0; font-size: 24px;">Nouvelle inscription bêta 🎉</h2>
+        <p style="color: #A1A1AA; font-size: 16px; line-height: 1.6; margin: 0 0 24px 0;">
+          Une nouvelle personne s'est inscrite à la bêta de Toftal Clip. Voici tous les détails :
+        </p>
+
+        <!-- Infos de Base -->
+        <div style="background-color: #18181B; border-radius: 12px; padding: 24px; margin: 32px 0; border: 1px solid #27272A;">
+          <h3 style="color: #FAFAFA; font-size: 16px; margin: 0 0 16px 0; border-bottom: 1px solid #27272A; padding-bottom: 12px;">📋 Informations Personnelles</h3>
+          <table width="100%" cellpadding="0" cellspacing="0">
+            <tr>
+              <td style="padding: 12px 0;">
+                <span style="color: #71717A; font-size: 12px; text-transform: uppercase; font-weight: 600;">Nom</span>
+                <p style="color: #FAFAFA; font-size: 16px; font-weight: 600; margin: 4px 0 0 0;">${name}</p>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding: 12px 0; border-top: 1px solid #27272A;">
+                <span style="color: #71717A; font-size: 12px; text-transform: uppercase; font-weight: 600;">Contact</span>
+                <p style="color: #E91E63; font-size: 16px; margin: 4px 0 0 0;">${contact}</p>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding: 12px 0; border-top: 1px solid #27272A;">
+                <span style="color: #71717A; font-size: 12px; text-transform: uppercase; font-weight: 600;">Email Backend</span>
+                <p style="color: #A1A1AA; font-size: 14px; margin: 4px 0 0 0; word-break: break-all;">${email}</p>
+              </td>
+            </tr>
+          </table>
+        </div>
+
+        <!-- Détails Professionnels -->
+        <div style="background-color: #18181B; border-radius: 12px; padding: 24px; margin: 32px 0; border: 1px solid #27272A;">
+          <h3 style="color: #FAFAFA; font-size: 16px; margin: 0 0 16px 0; border-bottom: 1px solid #27272A; padding-bottom: 12px;">💼 Détails Professionnels</h3>
+          <table width="100%" cellpadding="0" cellspacing="0">
+            ${role ? `
+            <tr>
+              <td style="padding: 12px 0;">
+                <span style="color: #71717A; font-size: 12px; text-transform: uppercase; font-weight: 600;">Rôle</span>
+                <p style="color: #FAFAFA; font-size: 16px; margin: 4px 0 0 0;">${role}</p>
+              </td>
+            </tr>
+            ` : ''}
+            ${videoCount ? `
+            <tr style="${role ? 'border-top: 1px solid #27272A;' : ''}">
+              <td style="padding: 12px 0;">
+                <span style="color: #71717A; font-size: 12px; text-transform: uppercase; font-weight: 600;">Vidéos/Mois</span>
+                <p style="color: #FAFAFA; font-size: 16px; margin: 4px 0 0 0;">${videoCount}</p>
+              </td>
+            </tr>
+            ` : ''}
+            ${collaboration ? `
+            <tr style="${role || videoCount ? 'border-top: 1px solid #27272A;' : ''}">
+              <td style="padding: 12px 0;">
+                <span style="color: #71717A; font-size: 12px; text-transform: uppercase; font-weight: 600;">Collaboration</span>
+                <p style="color: #FAFAFA; font-size: 16px; margin: 4px 0 0 0;">${collaboration}</p>
+              </td>
+            </tr>
+            ` : ''}
+          </table>
+        </div>
+
+        <!-- Besoins & Intérêts -->
+        <div style="background-color: #18181B; border-radius: 12px; padding: 24px; margin: 32px 0; border: 1px solid #27272A;">
+          <h3 style="color: #FAFAFA; font-size: 16px; margin: 0 0 16px 0; border-bottom: 1px solid #27272A; padding-bottom: 12px;">🎯 Besoins & Intérêts</h3>
+          <table width="100%" cellpadding="0" cellspacing="0">
+            ${biggestProblem ? `
+            <tr>
+              <td style="padding: 12px 0;">
+                <span style="color: #71717A; font-size: 12px; text-transform: uppercase; font-weight: 600;">Problème Principal</span>
+                <p style="color: #FAFAFA; font-size: 14px; margin: 4px 0 0 0;">${biggestProblem}</p>
+              </td>
+            </tr>
+            ` : ''}
+            ${interests && interests.length > 0 ? `
+            <tr ${biggestProblem ? 'style="border-top: 1px solid #27272A;"' : ''}>
+              <td style="padding: 12px 0;">
+                <span style="color: #71717A; font-size: 12px; text-transform: uppercase; font-weight: 600;">Intérêts</span>
+                <p style="color: #FAFAFA; font-size: 14px; margin: 4px 0 0 0;">${interests.join(', ')}</p>
+              </td>
+            </tr>
+            ` : ''}
+            ${marketplaceInterest ? `
+            <tr ${biggestProblem || (interests && interests.length > 0) ? 'style="border-top: 1px solid #27272A;"' : ''}>
+              <td style="padding: 12px 0;">
+                <span style="color: #71717A; font-size: 12px; text-transform: uppercase; font-weight: 600;">Intérêt Marketplace</span>
+                <p style="color: #FAFAFA; font-size: 14px; margin: 4px 0 0 0;">${marketplaceInterest}</p>
+              </td>
+            </tr>
+            ` : ''}
+          </table>
+        </div>
+
+        <!-- Infos Additionnelles -->
+        <div style="background-color: #18181B; border-radius: 12px; padding: 24px; margin: 32px 0; border: 1px solid #27272A;">
+          <h3 style="color: #FAFAFA; font-size: 16px; margin: 0 0 16px 0; border-bottom: 1px solid #27272A; padding-bottom: 12px;">ℹ️ Informations Additionnelles</h3>
+          <table width="100%" cellpadding="0" cellspacing="0">
+            ${feedbackReady ? `
+            <tr>
+              <td style="padding: 12px 0;">
+                <span style="color: #71717A; font-size: 12px; text-transform: uppercase; font-weight: 600;">Retour Prêt</span>
+                <p style="color: #FAFAFA; font-size: 14px; margin: 4px 0 0 0;">${feedbackReady}</p>
+              </td>
+            </tr>
+            ` : ''}
+            ${link ? `
+            <tr ${feedbackReady ? 'style="border-top: 1px solid #27272A;"' : ''}>
+              <td style="padding: 12px 0;">
+                <span style="color: #71717A; font-size: 12px; text-transform: uppercase; font-weight: 600;">Lien Portfolio</span>
+                <p style="color: #E91E63; font-size: 12px; margin: 4px 0 0 0; word-break: break-all;"><a href="${link}" style="color: #E91E63; text-decoration: none;">${link}</a></p>
+              </td>
+            </tr>
+            ` : ''}
+            ${source ? `
+            <tr ${feedbackReady || link ? 'style="border-top: 1px solid #27272A;"' : ''}>
+              <td style="padding: 12px 0;">
+                <span style="color: #71717A; font-size: 12px; text-transform: uppercase; font-weight: 600;">Source</span>
+                <p style="color: #FAFAFA; font-size: 14px; margin: 4px 0 0 0;">${source}</p>
+              </td>
+            </tr>
+            ` : ''}
+          </table>
+        </div>
+
+        <!-- Button -->
+        <table width="100%" cellpadding="0" cellspacing="0">
+          <tr>
+            <td align="center" style="padding: 32px 0;">
+              <a href="${baseAdminUrl}" style="display: inline-block; background: linear-gradient(135deg, #E91E63 0%, #C2185B 100%); color: white; text-decoration: none; padding: 16px 48px; border-radius: 8px; font-weight: 600; font-size: 16px;">
+                Gérer les Inscriptions
+              </a>
+            </td>
+          </tr>
+        </table>
+
+        <p style="color: #71717A; font-size: 12px; line-height: 1.6; margin: 32px 0 0 0; text-align: center;">
+          Cette inscription a été reçue à ${new Date().toLocaleString('fr-FR')}
+        </p>
+      `, 'Nouvelle Inscription Bêta', '✨'),
+      text: `
+NOUVELLE INSCRIPTION BÊTA #${signupNum}
+
+Une nouvelle personne s'est inscrite à la bêta de Toftal Clip.
+
+=== INFORMATIONS PERSONNELLES ===
+Nom: ${name}
+Contact: ${contact}
+Email: ${email}
+
+=== DÉTAILS PROFESSIONNELS ===
+${role ? `Rôle: ${role}` : ''}
+${videoCount ? `Vidéos/Mois: ${videoCount}` : ''}
+${collaboration ? `Collaboration: ${collaboration}` : ''}
+
+=== BESOINS & INTÉRÊTS ===
+${biggestProblem ? `Problème Principal: ${biggestProblem}` : ''}
+${interests && interests.length > 0 ? `Intérêts: ${interests.join(', ')}` : ''}
+${marketplaceInterest ? `Intérêt Marketplace: ${marketplaceInterest}` : ''}
+
+=== INFORMATIONS ADDITIONNELLES ===
+${feedbackReady ? `Retour Prêt: ${feedbackReady}` : ''}
+${link ? `Lien Portfolio: ${link}` : ''}
+${source ? `Source: ${source}` : ''}
+
+Allez à l'administration: ${baseAdminUrl}
+
+- L'équipe Toftal Clip
+      `,
+    };
+  },
 };
 
 // Send email function
