@@ -20,7 +20,7 @@ router.patch('/:id', validate(updateDeliverableValidation), deliverablesControll
 router.delete('/:id', deliverablesController.deleteDeliverable);
 router.patch('/:id/assign', validate(assignTalentValidation), deliverablesController.assignTalent);
 router.patch('/:id/status', validate(updateStatusValidation), deliverablesController.updateStatus);
-router.patch('/:id/validate', deliverablesController.updateStatus); // Alias for validating (VALIDE status)
+router.patch('/:id/validate', deliverablesController.validateDeliverable);
 
 // Assignment acceptance
 router.patch('/:id/accept', deliverablesController.acceptAssignment);

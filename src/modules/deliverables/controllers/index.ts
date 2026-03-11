@@ -174,6 +174,31 @@ export const updateStatus = async (req: Request, res: Response, next: NextFuncti
   }
 };
 
+export const validateDeliverable = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const id = String(req.params.id);
+
+    const deliverable = await prisma.deliverable.update({
+      where: { id },
+      data: { status: 'VALIDE' },
+      include: { project: { select: { id: true } } },
+    });
+
+    // Emit deliverable status change to project room
+    if (deliverable.project?.id) {
+      socketService.emitToProject(deliverable.project.id, 'deliverable:status', {
+        id: deliverable.id,
+        status: deliverable.status,
+        projectId: deliverable.project.id,
+      });
+    }
+
+    ApiResponse.success(res, deliverable, 'Deliverable validated');
+  } catch (error) {
+    next(error);
+  }
+};
+
 export const addVersion = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const id = String(req.params.id);
