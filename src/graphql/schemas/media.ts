@@ -9,6 +9,7 @@ export const mediaTypeDefs = gql`
     url: String!
     type: String!
     category: String
+    tags: [String!]!
     addedBy: String
     dateAdded: DateTime!
     createdAt: DateTime!
