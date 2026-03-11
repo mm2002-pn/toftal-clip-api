@@ -61,7 +61,7 @@ export const assignTalent = async (req: Request, res: Response, next: NextFuncti
     if (
       currentDeliverable.assignedTalentId &&
       currentDeliverable.acceptanceStatus === 'ACCEPTED' &&
-      currentDeliverable.status !== 'COMPLETED' &&
+      currentDeliverable.status !== 'VALIDE' &&
       !force
     ) {
       return ApiResponse.forbidden(res,
@@ -205,10 +205,10 @@ export const addVersion = async (req: Request, res: Response, next: NextFunction
       },
     });
 
-    // Update deliverable status to REVIEW
+    // Update deliverable status to VALIDATION
     await prisma.deliverable.update({
       where: { id },
-      data: { status: 'REVIEW' },
+      data: { status: 'VALIDATION' },
     });
 
     // Notify the client that a new version was uploaded
