@@ -212,6 +212,11 @@ export const addVersion = async (req: Request, res: Response, next: NextFunction
 
     if (!deliverable) throw new NotFoundError('Deliverable not found');
 
+    // Check if deliverable is already validated
+    if (deliverable.status === 'VALIDE') {
+      throw new Error('Cannot add version to a validated deliverable');
+    }
+
     // Get next version number
     const lastVersion = await prisma.version.findFirst({
       where: { deliverableId: id },
