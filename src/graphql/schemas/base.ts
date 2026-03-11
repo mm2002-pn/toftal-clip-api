@@ -14,6 +14,7 @@ export const baseTypeDefs = gql`
 
   enum ProjectStatus {
     DRAFT
+    PENDING
     MATCHING
     IN_PROGRESS
     REVIEW
@@ -21,10 +22,11 @@ export const baseTypeDefs = gql`
   }
 
   enum DeliverableStatus {
-    NOT_STARTED
-    IN_PROGRESS
-    REVIEW
-    COMPLETED
+    PREPARATION
+    PRODUCTION
+    RETOUR
+    VALIDATION
+    VALIDE
   }
 
   enum VersionStatus {
