@@ -7,6 +7,24 @@ import { socketService } from '../../../services/socketService';
 
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
 
+// Helper function to calculate progress from status
+const getProgressFromStatus = (status: string): number => {
+  switch (status) {
+    case 'PREPARATION':
+      return 0;
+    case 'RETOUR':
+      return 40;
+    case 'PRODUCTION':
+      return 50;
+    case 'VALIDATION':
+      return 75;
+    case 'VALIDE':
+      return 100;
+    default:
+      return 0;
+  }
+};
+
 export const updateDeliverable = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const id = String(req.params.id);
@@ -79,6 +97,10 @@ export const assignTalent = async (req: Request, res: Response, next: NextFuncti
       ) as any;
     }
 
+    // Calculate new status and progress
+    const newStatus = talentId && currentDeliverable.status === 'PREPARATION' ? 'PRODUCTION' : currentDeliverable.status;
+    const newProgress = getProgressFromStatus(newStatus);
+
     const deliverable = await prisma.deliverable.update({
       where: { id },
       data: {
@@ -86,6 +108,7 @@ export const assignTalent = async (req: Request, res: Response, next: NextFuncti
         acceptanceStatus: talentId ? 'PENDING' : null,
         // Auto-transition to PRODUCTION when talent is assigned (if in PREPARATION)
         status: talentId && currentDeliverable.status === 'PREPARATION' ? 'PRODUCTION' : undefined,
+        progress: talentId && currentDeliverable.status === 'PREPARATION' ? newProgress : undefined,
       },
       include: {
         assignedTalent: { select: { id: true, name: true, email: true, avatarUrl: true } },
@@ -162,7 +185,10 @@ export const assignTalent = async (req: Request, res: Response, next: NextFuncti
 export const updateStatus = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const id = String(req.params.id);
-    const { status, progress } = req.body;
+    const { status } = req.body;
+
+    // Calculate progress from status automatically
+    const progress = getProgressFromStatus(status);
 
     const deliverable = await prisma.deliverable.update({
       where: { id },
@@ -191,7 +217,10 @@ export const validateDeliverable = async (req: Request, res: Response, next: Nex
 
     const deliverable = await prisma.deliverable.update({
       where: { id },
-      data: { status: 'VALIDE' },
+      data: {
+        status: 'VALIDE',
+        progress: 100, // Automatically set to 100% when validated
+      },
       include: { project: { select: { id: true } } },
     });
 
@@ -246,10 +275,13 @@ export const addVersion = async (req: Request, res: Response, next: NextFunction
       },
     });
 
-    // Update deliverable status to VALIDATION
+    // Update deliverable status to VALIDATION with progress 75%
     await prisma.deliverable.update({
       where: { id },
-      data: { status: 'VALIDATION' },
+      data: {
+        status: 'VALIDATION',
+        progress: 75, // Automatically set to 75% when in validation
+      },
     });
 
     // Notify the client that a new version was uploaded
