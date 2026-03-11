@@ -75,6 +75,8 @@ export const assignTalent = async (req: Request, res: Response, next: NextFuncti
       data: {
         assignedTalentId: talentId,
         acceptanceStatus: talentId ? 'PENDING' : null,
+        // Auto-transition to PRODUCTION when talent is assigned (if in PREPARATION)
+        status: talentId && currentDeliverable.status === 'PREPARATION' ? 'PRODUCTION' : undefined,
       },
       include: {
         assignedTalent: { select: { id: true, name: true, email: true, avatarUrl: true } },
