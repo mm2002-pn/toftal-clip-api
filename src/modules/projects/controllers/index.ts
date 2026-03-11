@@ -9,6 +9,7 @@ export const createProject = async (req: Request, res: Response, next: NextFunct
   try {
     const { title, deadline, brief, talentId, type = 'PERSONAL', deliverables, collaboratorIds = [] } = req.body;
     const userId = req.user!.id;
+    const userRole = req.user!.role;
 
     const project = await prisma.project.create({
       data: {
@@ -30,12 +31,17 @@ export const createProject = async (req: Request, res: Response, next: NextFunct
     // Create deliverables if provided (for PERSONAL type)
     if (deliverables && Array.isArray(deliverables)) {
       for (const deliverable of deliverables) {
+        // Determine if this is a TALENT creating the deliverable - set status to PRODUCTION
+        const isTalentCreator = userRole === 'TALENT';
+        const finalStatus = isTalentCreator ? 'PRODUCTION' : 'PREPARATION';
+
         await prisma.deliverable.create({
           data: {
             projectId: project.id,
             title: deliverable.title || 'Untitled',
             type: deliverable.type || 'Video',
             assignedTalentId: deliverable.assignedTalentId || talentId || undefined, // Auto-assign talent if provided
+            status: finalStatus,
           },
         });
       }
@@ -435,6 +441,12 @@ export const addDeliverable = async (req: Request, res: Response, next: NextFunc
   try {
     const id = String(req.params.id);
     const { title, type, deadline, assignedTalentId, createWorkflow = true } = req.body;
+    const userId = req.user!.id;
+    const userRole = req.user!.role;
+
+    // Determine if this is a TALENT creating the deliverable - set status to PRODUCTION
+    const isTalentCreator = userRole === 'TALENT';
+    const finalStatus = isTalentCreator ? 'PRODUCTION' : 'PREPARATION';
 
     // Create deliverable
     const deliverable = await prisma.deliverable.create({
@@ -444,6 +456,7 @@ export const addDeliverable = async (req: Request, res: Response, next: NextFunc
         type,
         deadline: deadline ? new Date(deadline) : null,
         assignedTalentId,
+        status: finalStatus,
       },
     });
 
