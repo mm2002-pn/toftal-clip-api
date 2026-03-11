@@ -31,6 +31,11 @@ router.post('/upload', uploadLimiter, uploadAny.single('file'), mediaController.
 router.post('/upload/video', uploadLimiter, uploadAny.single('file'), mediaController.uploadVideo);
 
 // ============================================
+// Get media
+// ============================================
+router.get('/project/:projectId', mediaController.getProjectMedia);
+
+// ============================================
 // Delete (auto-detects provider from URL)
 // ============================================
 router.delete('/:id', mediaController.deleteMedia);
