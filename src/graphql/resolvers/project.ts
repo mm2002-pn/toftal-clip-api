@@ -8,7 +8,6 @@ export const projectResolvers = {
         include: {
           client: true,
           talent: true,
-          deliverables: true,
         },
       });
 
@@ -52,7 +51,6 @@ export const projectResolvers = {
           include: {
             client: true,
             talent: true,
-            deliverables: true,
           },
         }),
         prisma.project.count({ where }),
@@ -118,7 +116,6 @@ export const projectResolvers = {
           include: {
             client: true,
             talent: true,
-            deliverables: true,
             members: {
               where: { userId: context.user.id },
               select: { role: true, permissions: true },
