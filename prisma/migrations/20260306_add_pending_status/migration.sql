@@ -1,2 +1,1 @@
--- AlterEnum
-ALTER TYPE "ProjectStatus" ADD VALUE 'PENDING';
+-- This migration was already applied to the database

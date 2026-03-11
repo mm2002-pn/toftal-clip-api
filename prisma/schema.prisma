@@ -25,10 +25,11 @@ enum ProjectStatus {
 }
 
 enum DeliverableStatus {
-  NOT_STARTED
-  IN_PROGRESS
-  REVIEW
-  COMPLETED
+  PREPARATION
+  PRODUCTION
+  RETOUR
+  VALIDATION
+  VALIDE
 }
 
 enum VersionStatus {
@@ -83,6 +84,16 @@ enum InvitationStatus {
   ACCEPTED
   REJECTED
   EXPIRED
+}
+
+enum MediaResourceTag {
+  RUSH
+  AUDIO
+  MUSIC
+  LOGO
+  B_ROLL
+  SCRIPT
+  REFERENCE
 }
 
 // ==================== MODELS ====================
@@ -168,7 +179,7 @@ model Deliverable {
   projectId        String            @map("project_id")
   title            String
   type             String?
-  status           DeliverableStatus @default(NOT_STARTED)
+  status           DeliverableStatus @default(PREPARATION)
   progress         Int               @default(0)
   assignedTalentId String?           @map("assigned_talent_id")
   acceptanceStatus AcceptanceStatus? @map("acceptance_status")
@@ -276,6 +287,7 @@ model MediaResource {
   url           String
   type          String   @default("FOLDER")
   category      String?
+  tags          String[] @default([]) // Tags for organization (RUSH, AUDIO, MUSIC, etc.)
   addedBy       String?  @map("added_by")
   dateAdded     DateTime @default(now()) @map("date_added")
   createdAt     DateTime @default(now()) @map("created_at")
