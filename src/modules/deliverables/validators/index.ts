@@ -18,6 +18,7 @@ export const updateDeliverableValidation = [
 
 export const assignTalentValidation = [
   body('talentId')
+    .optional({ checkFalsy: true })
     .isUUID()
     .withMessage('Talent ID must be a valid UUID'),
 ];
