@@ -82,6 +82,7 @@ export const projectTypeDefs = gql`
     archivedAt: DateTime
     deletedAt: DateTime
     deliverables: [Deliverable!]!
+    mediaResources: [MediaResource!]!
     members: [ProjectMember!]!
     invitations: [ProjectInvitation!]!
     createdAt: DateTime!
