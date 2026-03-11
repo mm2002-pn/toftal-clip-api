@@ -54,10 +54,19 @@ export const assignTalent = async (req: Request, res: Response, next: NextFuncti
     const isOwnerOrAdmin = req.user!.id === currentDeliverable.project?.clientId || req.user!.role === 'ADMIN';
 
     // Prevent reassignment if:
-    // 1. There's an assigned talent
-    // 2. The acceptance status is ACCEPTED
-    // 3. The deliverable is not completed
+    // 1. The deliverable is already validated (VALIDE)
+    // 2. There's an assigned talent
+    // 3. The acceptance status is ACCEPTED
     // 4. The user is not forcing (admin only) or is not the owner/admin
+    if (
+      currentDeliverable.status === 'VALIDE' &&
+      !force
+    ) {
+      return ApiResponse.forbidden(res,
+        'Impossible de modifier: cette livrable est validée.'
+      ) as any;
+    }
+
     if (
       currentDeliverable.assignedTalentId &&
       currentDeliverable.acceptanceStatus === 'ACCEPTED' &&
