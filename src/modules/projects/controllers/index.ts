@@ -444,9 +444,13 @@ export const addDeliverable = async (req: Request, res: Response, next: NextFunc
     const userId = req.user!.id;
     const userRole = req.user!.role;
 
-    // Determine if this is a TALENT creating the deliverable - set status to PRODUCTION
+    // Determine status based on:
+    // 1. If talent is assigned → PRODUCTION (with PENDING acceptance)
+    // 2. If TALENT creates without assignment → PRODUCTION
+    // 3. Otherwise → PREPARATION
     const isTalentCreator = userRole === 'TALENT';
-    const finalStatus = isTalentCreator ? 'PRODUCTION' : 'PREPARATION';
+    const hasTalentAssigned = !!assignedTalentId;
+    const finalStatus = (hasTalentAssigned || isTalentCreator) ? 'PRODUCTION' : 'PREPARATION';
 
     // Create deliverable
     const deliverable = await prisma.deliverable.create({
@@ -457,6 +461,8 @@ export const addDeliverable = async (req: Request, res: Response, next: NextFunc
         deadline: deadline ? new Date(deadline) : null,
         assignedTalentId,
         status: finalStatus,
+        // If talent is assigned, set acceptanceStatus to PENDING so they can accept/reject
+        acceptanceStatus: hasTalentAssigned ? 'PENDING' : null,
       },
     });
 

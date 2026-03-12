@@ -70,6 +70,28 @@ export const uploadToGCS = async (
 };
 
 /**
+ * Upload image to GCS
+ */
+export const uploadImageToGCS = async (
+  filePath: string,
+  originalName: string
+): Promise<GCSUploadResult> => {
+  const ext = path.extname(originalName).toLowerCase();
+  const mimeTypes: Record<string, string> = {
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.png': 'image/png',
+    '.gif': 'image/gif',
+    '.webp': 'image/webp',
+    '.svg': 'image/svg+xml',
+    '.bmp': 'image/bmp',
+  };
+  const mimeType = mimeTypes[ext] || 'image/jpeg';
+
+  return uploadToGCS(filePath, originalName, mimeType, 'images');
+};
+
+/**
  * Upload video to GCS
  */
 export const uploadVideoToGCS = async (

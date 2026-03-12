@@ -8,6 +8,7 @@ import {
   uploadOptions
 } from '../../../config/cloudinary';
 import {
+  uploadImageToGCS,
   uploadVideoToGCS,
   uploadDocumentToGCS,
   deleteFromGCS,
@@ -17,10 +18,11 @@ import {
 import fs from 'fs';
 
 /**
- * Upload file - Routes to appropriate service based on file type
- * - Images → Cloudinary (transformations, optimization)
- * - Videos → Google Cloud Storage (large files, no size limit)
- * - PDFs/Documents → Google Cloud Storage
+ * Upload file - All files go to Google Cloud Storage
+ * - Images → Google Cloud Storage
+ * - Videos → Google Cloud Storage
+ * - Audio → Google Cloud Storage
+ * - Documents → Google Cloud Storage
  */
 export const uploadFile = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
@@ -30,22 +32,22 @@ export const uploadFile = async (req: Request, res: Response, next: NextFunction
 
     const mimeType = req.file.mimetype;
     let result: any;
+    let gcsResult;
 
-    // Images → Cloudinary
+    // Images → Google Cloud Storage
     if (mimeType.startsWith('image/')) {
-      const cloudinaryResult = await uploadToCloudinary(req.file.path, uploadOptions.image);
+      gcsResult = await uploadImageToGCS(req.file.path, req.file.originalname);
       result = {
-        url: cloudinaryResult.secure_url,
-        publicId: cloudinaryResult.public_id,
-        format: cloudinaryResult.format,
-        width: cloudinaryResult.width,
-        height: cloudinaryResult.height,
-        provider: 'cloudinary',
+        url: gcsResult.url,
+        fileName: gcsResult.fileName,
+        format: gcsResult.contentType,
+        size: gcsResult.size,
+        provider: 'gcs',
       };
     }
     // Videos → Google Cloud Storage
     else if (mimeType.startsWith('video/')) {
-      const gcsResult = await uploadVideoToGCS(req.file.path, req.file.originalname);
+      gcsResult = await uploadVideoToGCS(req.file.path, req.file.originalname);
       result = {
         url: gcsResult.url,
         fileName: gcsResult.fileName,
@@ -56,7 +58,7 @@ export const uploadFile = async (req: Request, res: Response, next: NextFunction
     }
     // Audio → Google Cloud Storage
     else if (mimeType.startsWith('audio/')) {
-      const gcsResult = await uploadDocumentToGCS(req.file.path, req.file.originalname);
+      gcsResult = await uploadDocumentToGCS(req.file.path, req.file.originalname);
       result = {
         url: gcsResult.url,
         fileName: gcsResult.fileName,
@@ -67,7 +69,7 @@ export const uploadFile = async (req: Request, res: Response, next: NextFunction
     }
     // Documents (PDF, etc.) → Google Cloud Storage
     else {
-      const gcsResult = await uploadDocumentToGCS(req.file.path, req.file.originalname);
+      gcsResult = await uploadDocumentToGCS(req.file.path, req.file.originalname);
       result = {
         url: gcsResult.url,
         fileName: gcsResult.fileName,

@@ -272,14 +272,14 @@ export class InvitationService {
     let memberRole: ProjectRole = ProjectRole.COLLABORATOR;
 
     if (isClientProject && isClient) {
-      // Client accepting invitation to a CLIENT project → Full owner access
+      // Client accepting invitation to a CLIENT project → Full access as collaborator
       permissions = {
         view: true,
         edit: true,
         comment: true,
         approve: true,
       };
-      memberRole = ProjectRole.OWNER;
+      memberRole = ProjectRole.COLLABORATOR;
     } else if (isTalent) {
       // Talent: Full access
       permissions = {
@@ -318,17 +318,16 @@ export class InvitationService {
         status: updatedInvitation.status,
       });
 
-      // For CLIENT projects: Transfer ownership to the client
+      // For CLIENT projects: Set the clientId (but keep talent as owner)
       if (isClientProject && isClient && project) {
-        console.log(`🔄 [ACCEPT_INVITATION] Transferring ownership to client...`);
+        console.log(`🔄 [ACCEPT_INVITATION] Setting clientId...`);
         await tx.project.update({
           where: { id: invitation.projectId },
           data: {
             clientId: userId,
-            ownerId: userId,
           },
         });
-        console.log(`✅ [ACCEPT_INVITATION] Project ownership transferred to client`);
+        console.log(`✅ [ACCEPT_INVITATION] Project clientId set`);
       }
 
       // Add user as project member (use upsert to handle race conditions)

@@ -56,11 +56,12 @@ export const assignTalent = async (req: Request, res: Response, next: NextFuncti
     const id = String(req.params.id);
     const { talentId, force } = req.body;
 
-    // Get current deliverable to check acceptance status
+    // Get current deliverable to check acceptance status and versions
     const currentDeliverable = await prisma.deliverable.findUnique({
       where: { id },
       include: {
         project: { select: { clientId: true } },
+        versions: { select: { id: true } },
       },
     });
 
@@ -71,11 +72,7 @@ export const assignTalent = async (req: Request, res: Response, next: NextFuncti
     // Check if user is the project owner or admin
     const isOwnerOrAdmin = req.user!.id === currentDeliverable.project?.clientId || req.user!.role === 'ADMIN';
 
-    // Prevent reassignment if:
-    // 1. The deliverable is already validated (VALIDE)
-    // 2. There's an assigned talent
-    // 3. The acceptance status is ACCEPTED
-    // 4. The user is not forcing (admin only) or is not the owner/admin
+    // Prevent modification if deliverable is validated
     if (
       currentDeliverable.status === 'VALIDE' &&
       !force
@@ -85,10 +82,24 @@ export const assignTalent = async (req: Request, res: Response, next: NextFuncti
       ) as any;
     }
 
+    // Prevent UNASSIGNMENT if there are uploaded versions
+    if (
+      !talentId &&
+      currentDeliverable.versions.length > 0 &&
+      !force
+    ) {
+      return ApiResponse.forbidden(res,
+        'Impossible de retirer l\'assignation: des versions ont déjà été uploadées.'
+      ) as any;
+    }
+
+    // Prevent reassignment if talent has already accepted
     if (
       currentDeliverable.assignedTalentId &&
       currentDeliverable.acceptanceStatus === 'ACCEPTED' &&
       currentDeliverable.status !== 'VALIDE' &&
+      talentId && // Only block if trying to reassign to someone else
+      talentId !== currentDeliverable.assignedTalentId &&
       !force
     ) {
       return ApiResponse.forbidden(res,
@@ -98,33 +109,46 @@ export const assignTalent = async (req: Request, res: Response, next: NextFuncti
     }
 
     // Calculate new status and progress
-    const newStatus = talentId && currentDeliverable.status === 'PREPARATION' ? 'PRODUCTION' : currentDeliverable.status;
-    const newProgress = getProgressFromStatus(newStatus);
+    // - Assigning: PREPARATION → PRODUCTION
+    // - Unassigning: Revert to PREPARATION (only if no versions uploaded - already checked above)
+    let updateData: any = {
+      assignedTalentId: talentId,
+      acceptanceStatus: talentId ? 'PENDING' : null,
+    };
+
+    if (talentId) {
+      // Assigning talent: move to PRODUCTION if currently in PREPARATION
+      if (currentDeliverable.status === 'PREPARATION') {
+        updateData.status = 'PRODUCTION';
+        updateData.progress = getProgressFromStatus('PRODUCTION');
+      }
+    } else {
+      // Unassigning talent: revert to PREPARATION
+      updateData.status = 'PREPARATION';
+      updateData.progress = getProgressFromStatus('PREPARATION');
+    }
 
     const deliverable = await prisma.deliverable.update({
       where: { id },
-      data: {
-        assignedTalentId: talentId,
-        acceptanceStatus: talentId ? 'PENDING' : null,
-        // Auto-transition to PRODUCTION when talent is assigned (if in PREPARATION)
-        status: talentId && currentDeliverable.status === 'PREPARATION' ? 'PRODUCTION' : undefined,
-        progress: talentId && currentDeliverable.status === 'PREPARATION' ? newProgress : undefined,
-      },
+      data: updateData,
       include: {
         assignedTalent: { select: { id: true, name: true, email: true, avatarUrl: true } },
         project: { select: { id: true, title: true, clientId: true } },
       },
     });
 
+    // Cast for TypeScript - include adds these relations
+    const del = deliverable as any;
+
     // Create notification and send email for the assigned talent
-    if (talentId && deliverable.project && deliverable.assignedTalent) {
+    if (talentId && del.project && del.assignedTalent) {
       const notification = await prisma.notification.create({
         data: {
           userId: talentId,
           type: 'TALENT_ASSIGNED',
           title: 'Nouvelle vidéo assignée',
-          message: `Vous avez été assigné à la vidéo "${deliverable.title}" du projet "${deliverable.project.title}"`,
-          link: `/workspace/${deliverable.project.id}`,
+          message: `Vous avez été assigné à la vidéo "${deliverable.title}" du projet "${del.project.title}"`,
+          link: `/workspace/${del.project.id}`,
         },
       });
 
@@ -133,13 +157,13 @@ export const assignTalent = async (req: Request, res: Response, next: NextFuncti
 
       // Send email notification
       try {
-        const workspaceUrl = `${FRONTEND_URL}/#/workspace/${deliverable.project.id}`;
+        const workspaceUrl = `${FRONTEND_URL}/#/workspace/${del.project.id}`;
         await sendEmail(
-          deliverable.assignedTalent.email,
+          del.assignedTalent.email,
           emailTemplates.talentAssigned(
-            deliverable.assignedTalent.name,
+            del.assignedTalent.name,
             deliverable.title,
-            deliverable.project.title,
+            del.project.title,
             workspaceUrl
           )
         );
@@ -150,24 +174,28 @@ export const assignTalent = async (req: Request, res: Response, next: NextFuncti
     }
 
     // Emit deliverable assignment event to project room for real-time updates
+    const projectId = del.project?.id || currentDeliverable.projectId;
     const assignmentPayload = {
       id: deliverable.id,
-      projectId: deliverable.project.id,
+      projectId: projectId,
       assignedTalentId: deliverable.assignedTalentId,
-      assignedTalent: deliverable.assignedTalent ? {
-        id: deliverable.assignedTalent.id,
-        name: deliverable.assignedTalent.name,
-        avatarUrl: deliverable.assignedTalent.avatarUrl || undefined,
+      assignedTalent: del.assignedTalent ? {
+        id: del.assignedTalent.id,
+        name: del.assignedTalent.name,
+        avatarUrl: del.assignedTalent.avatarUrl || undefined,
       } : undefined,
+      status: deliverable.status,
+      progress: deliverable.progress,
     };
 
-    console.log('[SOCKET] Emitting deliverable:assigned to project:', deliverable.project.id, assignmentPayload);
-    socketService.emitToProject(deliverable.project.id, 'deliverable:assigned', assignmentPayload);
+    console.log('[SOCKET] Emitting deliverable:assigned to project:', projectId, assignmentPayload);
+    socketService.emitToProject(projectId, 'deliverable:assigned', assignmentPayload);
 
     // Also emit directly to client (project owner)
-    if (deliverable.project?.clientId) {
-      console.log('[SOCKET] Emitting deliverable:assigned to client:', deliverable.project.clientId);
-      socketService.emitToUser(deliverable.project.clientId, 'deliverable:assigned', assignmentPayload);
+    const clientId = del.project?.clientId || currentDeliverable.project?.clientId;
+    if (clientId) {
+      console.log('[SOCKET] Emitting deliverable:assigned to client:', clientId);
+      socketService.emitToUser(clientId, 'deliverable:assigned', assignmentPayload);
     }
 
     // Also emit directly to assigned talent
@@ -176,7 +204,7 @@ export const assignTalent = async (req: Request, res: Response, next: NextFuncti
       socketService.emitToUser(talentId, 'deliverable:assigned', assignmentPayload);
     }
 
-    ApiResponse.success(res, deliverable, 'Talent assigned');
+    ApiResponse.success(res, deliverable, talentId ? 'Talent assigned' : 'Talent removed');
   } catch (error) {
     next(error);
   }

@@ -1,0 +1,39 @@
+# Node modules (Dockerfile installs them)
+node_modules/
+
+# Development files
+.env
+.env.local
+.env.development
+.env.test
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Git
+.git/
+.gitignore
+
+# Logs
+logs/
+
+# Build artifacts (compiled JS is in dist/)
+dist/
+
+# Documentation
+README.md
+docs/
+
+# Uploads (local)
+uploads/
+
+# Tests
+tests/
+*.test.ts
+*.test.js
+
+# Other
+.DS_Store
