@@ -33,6 +33,7 @@ export const deliverableTypeDefs = gql`
     uploadedBy: User
     aiAnalysis: JSON
     feedbacks: [Feedback!]!
+    createdAt: DateTime!
     uploadedAt: DateTime!
   }
 
