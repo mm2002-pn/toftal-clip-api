@@ -248,23 +248,55 @@ export class InvitationService {
       throw new Error('Invitation email does not match your account');
     }
 
-    // Determine permissions based on user role
+    // Get project to check if it's a CLIENT project
+    const project = await this.prisma.project.findUnique({
+      where: { id: invitation.projectId },
+      select: { id: true, type: true, clientId: true, ownerId: true },
+    });
+
+    console.log(`📁 [ACCEPT_INVITATION] Project:`, {
+      id: project?.id,
+      type: project?.type,
+      clientId: project?.clientId,
+    });
+
+    // Determine permissions and role based on user role and project type
     const isTalent = user.role === 'TALENT';
-    const permissions = isTalent
-      ? {
-          // Talent: Full access
-          view: true,
-          edit: true,
-          comment: true,
-          approve: true,
-        }
-      : {
-          // Client: Read-only
-          view: true,
-          edit: false,
-          comment: false,
-          approve: false,
-        };
+    const isClient = user.role === 'CLIENT';
+    const isClientProject = project?.type === 'CLIENT';
+
+    // For CLIENT project: Client gets full access as owner
+    // For other projects or TALENT: Full access
+    // For CLIENT in non-CLIENT projects: Read-only
+    let permissions;
+    let memberRole = ProjectRole.COLLABORATOR;
+
+    if (isClientProject && isClient) {
+      // Client accepting invitation to a CLIENT project → Full owner access
+      permissions = {
+        view: true,
+        edit: true,
+        comment: true,
+        approve: true,
+      };
+      memberRole = ProjectRole.OWNER;
+    } else if (isTalent) {
+      // Talent: Full access
+      permissions = {
+        view: true,
+        edit: true,
+        comment: true,
+        approve: true,
+      };
+    } else {
+      // Other clients in regular projects: Full access for collaboration
+      permissions = {
+        view: true,
+        edit: true,
+        comment: true,
+        approve: true,
+      };
+    }
 
     console.log(`✅ [ACCEPT_INVITATION] Permissions assigned:`, permissions);
 
@@ -286,11 +318,24 @@ export class InvitationService {
         status: updatedInvitation.status,
       });
 
+      // For CLIENT projects: Transfer ownership to the client
+      if (isClientProject && isClient && project) {
+        console.log(`🔄 [ACCEPT_INVITATION] Transferring ownership to client...`);
+        await tx.project.update({
+          where: { id: invitation.projectId },
+          data: {
+            clientId: userId,
+            ownerId: userId,
+          },
+        });
+        console.log(`✅ [ACCEPT_INVITATION] Project ownership transferred to client`);
+      }
+
       // Add user as project member (use upsert to handle race conditions)
       console.log(`📝 [ACCEPT_INVITATION] Creating/Updating ProjectMember:`, {
         projectId: invitation.projectId,
         userId: userId,
-        role: ProjectRole.COLLABORATOR,
+        role: memberRole,
       });
 
       const projectMember = await tx.projectMember.upsert({
@@ -303,12 +348,13 @@ export class InvitationService {
         create: {
           projectId: invitation.projectId,
           userId,
-          role: ProjectRole.COLLABORATOR,
+          role: memberRole,
           permissions,
         },
         update: {
-          // If already exists, just update permissions (in case they changed)
+          // If already exists, just update permissions and role
           permissions,
+          role: memberRole,
         },
         include: {
           user: {
