@@ -269,7 +269,7 @@ export class InvitationService {
     // For other projects or TALENT: Full access
     // For CLIENT in non-CLIENT projects: Read-only
     let permissions;
-    let memberRole = ProjectRole.COLLABORATOR;
+    let memberRole: ProjectRole = ProjectRole.COLLABORATOR;
 
     if (isClientProject && isClient) {
       // Client accepting invitation to a CLIENT project → Full owner access
