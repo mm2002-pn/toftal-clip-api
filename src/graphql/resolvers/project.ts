@@ -8,6 +8,9 @@ export const projectResolvers = {
         include: {
           client: true,
           talent: true,
+          mediaResources: {
+            orderBy: { createdAt: 'desc' },
+          },
         },
       });
 
