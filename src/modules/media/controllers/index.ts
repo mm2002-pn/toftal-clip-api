@@ -202,7 +202,7 @@ export const getGCSSignedUrl = async (req: Request, res: Response, next: NextFun
  */
 export const registerMedia = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const { projectId, deliverableId, name, url, publicId, type, category } = req.body;
+    const { projectId, deliverableId, name, url, publicId, type, category, tags } = req.body;
 
     const media = await prisma.mediaResource.create({
       data: {
@@ -212,6 +212,7 @@ export const registerMedia = async (req: Request, res: Response, next: NextFunct
         url,
         type: type || 'IMAGE',
         category,
+        tags: tags || [],
         addedBy: req.user!.id,
       },
     });

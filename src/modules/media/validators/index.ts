@@ -38,4 +38,8 @@ export const registerMediaValidation = [
     .optional()
     .isString()
     .withMessage('Category must be a string'),
+  body('tags')
+    .optional()
+    .isArray()
+    .withMessage('Tags must be an array'),
 ];
