@@ -30,14 +30,14 @@ if ($proxy.HasExited) {
     exit 1
 }
 
-Write-Host "✓ Proxy running (PID: $($proxy.Id))" -ForegroundColor Green
+Write-Host "Proxy running (PID: $($proxy.Id))" -ForegroundColor Green
 
 # Backup .env
 $envBackup = $null
 if (Test-Path ".env") {
     $envBackup = Get-Content ".env" -Raw
     Remove-Item ".env" -Force
-    Write-Host "✓ Backed up .env" -ForegroundColor Green
+    Write-Host "Backed up .env" -ForegroundColor Green
 }
 
 try {
@@ -46,20 +46,20 @@ try {
     npx prisma db push --skip-generate
 
     if ($LASTEXITCODE -eq 0) {
-        Write-Host "`n✓ Schema synchronized successfully!" -ForegroundColor Green
+        Write-Host "`nSchema synchronized successfully!" -ForegroundColor Green
     } else {
-        Write-Host "`n⚠ Schema sync completed with warnings" -ForegroundColor Yellow
+        Write-Host "`nSchema sync completed with warnings" -ForegroundColor Yellow
     }
 } catch {
-    Write-Host "`n✗ Error during schema sync: $_" -ForegroundColor Red
+    Write-Host "`nError during schema sync: $_" -ForegroundColor Red
     throw
 } finally {
     if ($envBackup) {
         Set-Content ".env" -Value $envBackup
-        Write-Host "✓ Restored .env" -ForegroundColor Green
+        Write-Host "Restored .env" -ForegroundColor Green
     }
     Stop-Process -Id $proxy.Id -Force -ErrorAction SilentlyContinue
-    Write-Host "✓ Proxy stopped" -ForegroundColor Green
+    Write-Host "Proxy stopped" -ForegroundColor Green
 }
 
 Write-Host "`n========================================" -ForegroundColor Green
