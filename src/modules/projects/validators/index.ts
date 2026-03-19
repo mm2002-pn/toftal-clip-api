@@ -41,9 +41,17 @@ export const updateProjectValidation = [
     .isISO8601()
     .withMessage('Deadline must be a valid date'),
   body('talentId')
-    .optional()
-    .isUUID()
-    .withMessage('Talent ID must be a valid UUID'),
+    .optional({ nullable: true })
+    .custom((value) => {
+      // Allow null to remove talent assignment
+      if (value === null) return true;
+      // Otherwise, must be a valid UUID
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+      if (!uuidRegex.test(value)) {
+        throw new Error('Talent ID must be a valid UUID');
+      }
+      return true;
+    }),
   body('brief')
     .optional()
     .isObject()

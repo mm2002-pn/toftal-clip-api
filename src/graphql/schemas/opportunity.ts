@@ -8,6 +8,7 @@ export const opportunityTypeDefs = gql`
     clientName: String
     clientAvatar: String
     type: String!
+    contentType: ContentType
     volume: String
     duration: String
     style: String

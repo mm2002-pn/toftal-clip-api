@@ -30,6 +30,11 @@ export const addFeedbackValidation = [
     .optional()
     .isIn(['TEXT', 'AUDIO'])
     .withMessage('Type must be TEXT or AUDIO'),
+  body('replyingToId')
+    .optional()
+    .isString()
+    .isUUID()
+    .withMessage('Replying to ID must be a valid UUID'),
   body('tasks')
     .optional()
     .isArray()

@@ -66,8 +66,9 @@ export const createBetaSignup = async (data: CreateBetaSignupInput) => {
 
   const signupNumber = getOrdinalNumber(totalSignups);
 
-  // Send notification email to manager
+  // Send notification emails
   try {
+    // Send notification to manager
     await emailService.sendBetaSignupNotification({
       name: signup.name,
       email: signup.email,
@@ -84,7 +85,17 @@ export const createBetaSignup = async (data: CreateBetaSignupInput) => {
       signupNumber: signupNumber,
     });
   } catch (error) {
-    console.error('Failed to send beta signup notification email:', error);
+    console.error('Failed to send beta signup notification email to manager:', error);
+    // Don't throw error - signup was still created successfully
+  }
+
+  // Send confirmation email to the user
+  try {
+    // Use the actual contact email for confirmation (not the internal email)
+    const userEmail = data.contact;
+    await emailService.sendBetaSignupConfirmation(userEmail, signup.name);
+  } catch (error) {
+    console.error('Failed to send beta signup confirmation email to user:', error);
     // Don't throw error - signup was still created successfully
   }
 

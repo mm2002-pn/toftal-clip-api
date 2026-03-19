@@ -94,6 +94,14 @@ export const deliverableResolvers = {
         include: {
           author: true,
           revisionTasks: true,
+          replyingTo: {
+            select: {
+              id: true,
+              rawText: true,
+              structuredText: true,
+              author: { select: { id: true, name: true } }
+            }
+          }
         },
       });
     },
@@ -104,6 +112,14 @@ export const deliverableResolvers = {
         include: {
           author: true,
           revisionTasks: true,
+          replyingTo: {
+            select: {
+              id: true,
+              rawText: true,
+              structuredText: true,
+              author: { select: { id: true, name: true } }
+            }
+          }
         },
       });
     },
@@ -116,7 +132,24 @@ export const deliverableResolvers = {
       prisma.version.findMany({
         where: { deliverableId: parent.id },
         orderBy: { versionNumber: 'desc' },
-        include: { uploadedBy: true, feedbacks: { include: { revisionTasks: true, author: true }, orderBy: { createdAt: 'asc' } } },
+        include: {
+          uploadedBy: true,
+          feedbacks: {
+            include: {
+              revisionTasks: true,
+              author: true,
+              replyingTo: {
+                select: {
+                  id: true,
+                  rawText: true,
+                  structuredText: true,
+                  author: { select: { id: true, name: true } }
+                }
+              }
+            },
+            orderBy: { createdAt: 'asc' }
+          }
+        },
       }),
     workflow: (parent: any, _args: any, context: any) => {
       // No phase filtering - all users see all phases
@@ -135,7 +168,18 @@ export const deliverableResolvers = {
       prisma.feedback.findMany({
         where: { versionId: parent.id },
         orderBy: { createdAt: 'asc' },
-        include: { revisionTasks: true, author: true },
+        include: {
+          revisionTasks: true,
+          author: true,
+          replyingTo: {
+            select: {
+              id: true,
+              rawText: true,
+              structuredText: true,
+              author: { select: { id: true, name: true } }
+            }
+          }
+        },
       }),
   },
   WorkflowPhase: {
@@ -147,7 +191,16 @@ export const deliverableResolvers = {
     },
   },
   Feedback: {
-    author: (parent: any) => prisma.user.findUnique({ where: { id: parent.authorId } }),
-    tasks: (parent: any) => prisma.revisionTask.findMany({ where: { feedbackId: parent.id } }),
+    author: (parent: any) => {
+      // If author is already included, return it. Otherwise fetch by authorId
+      if (parent.author) return parent.author;
+      if (!parent.authorId) return null;
+      return prisma.user.findUnique({ where: { id: parent.authorId } });
+    },
+    tasks: (parent: any) => {
+      // If tasks are already included, return them. Otherwise fetch by feedbackId
+      if (parent.tasks) return parent.tasks;
+      return prisma.revisionTask.findMany({ where: { feedbackId: parent.id } });
+    },
   },
 };

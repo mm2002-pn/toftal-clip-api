@@ -1,13 +1,25 @@
 import { gql } from 'graphql-tag';
 
 export const talentTypeDefs = gql`
+  type SocialLinks {
+    youtube: String
+    instagram: String
+    website: String
+    tiktok: String
+    vimeo: String
+    linkedin: String
+  }
+
   type TalentProfile {
     id: ID!
     user: User!
+    tagline: String
     bio: String
     location: String
     languages: [String]
     skills: [String]
+    expertise: [String]
+    tags: [String]
     videoType: String
     responseTime: String
     rating: Float
@@ -19,6 +31,7 @@ export const talentTypeDefs = gql`
     portfolio: [PortfolioItem!]!
     reviews: [Review!]!
     packages: [Package!]!
+    links: SocialLinks
     createdAt: DateTime!
   }
 
@@ -26,6 +39,8 @@ export const talentTypeDefs = gql`
     id: ID!
     thumbnail: String!
     title: String!
+    tag: String
+    contentType: ContentType
     views: String
   }
 
@@ -53,6 +68,7 @@ export const talentTypeDefs = gql`
 
   input TalentsFilterInput {
     skills: [String]
+    tags: [String]
     videoType: String
     verified: Boolean
     minRating: Float

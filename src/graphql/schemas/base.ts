@@ -41,6 +41,13 @@ export const baseTypeDefs = gql`
     DESC
   }
 
+  enum ContentType {
+    SHORT_FORM
+    LONG_FORM
+    PODCAST
+    THUMBNAIL
+  }
+
   # Pagination
   input PaginationInput {
     page: Int = 1

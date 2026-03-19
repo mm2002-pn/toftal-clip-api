@@ -3,6 +3,7 @@ import { prisma } from '../../../config/database';
 import { ApiResponse } from '../../../utils/apiResponse';
 import { NotFoundError, ForbiddenError } from '../../../utils/errors';
 import { socketService } from '../../../services/socketService';
+import { mapDeliverableTypeToContentType } from '../../../utils/contentTypeMapper';
 
 // Create project (now supports V2 with type and ownerId)
 export const createProject = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
@@ -129,6 +130,9 @@ export const updateProject = async (req: Request, res: Response, next: NextFunct
       throw new ForbiddenError('You do not have permission to update this project');
     }
 
+    // Store old talent ID to notify if removed
+    const oldTalentId = existingProject.talentId;
+
     const project = await prisma.project.update({
       where: { id },
       data: {
@@ -152,7 +156,7 @@ export const updateProject = async (req: Request, res: Response, next: NextFunct
       talentId: project.talentId,
     });
 
-    // Also notify the talent if they're not in the project room
+    // Notify the NEW talent if assigned
     if (project.talentId) {
       socketService.emitToUser(project.talentId, 'project:updated', {
         id: project.id,
@@ -160,6 +164,18 @@ export const updateProject = async (req: Request, res: Response, next: NextFunct
         status: project.status,
         talentId: project.talentId,
       });
+    }
+
+    // Notify the OLD talent if they were removed
+    if (oldTalentId && oldTalentId !== project.talentId) {
+      socketService.emitToUser(oldTalentId, 'project:updated', {
+        id: project.id,
+        title: project.title,
+        status: project.status,
+        talentId: project.talentId, // Will be null or different
+        removed: true, // Flag to indicate removal
+      });
+      console.log(`📡 Notified old talent ${oldTalentId} of removal from project ${id}`);
     }
 
     ApiResponse.success(res, project, 'Project updated successfully');
@@ -445,19 +461,21 @@ export const addDeliverable = async (req: Request, res: Response, next: NextFunc
     const userRole = req.user!.role;
 
     // Determine status based on:
-    // 1. If talent is assigned → PRODUCTION (with PENDING acceptance)
-    // 2. If TALENT creates without assignment → PRODUCTION
-    // 3. Otherwise → PREPARATION
-    const isTalentCreator = userRole === 'TALENT';
+    // Always start in PREPARATION when creating a deliverable
+    // Status will change to PRODUCTION only when talent accepts the assignment
     const hasTalentAssigned = !!assignedTalentId;
-    const finalStatus = (hasTalentAssigned || isTalentCreator) ? 'PRODUCTION' : 'PREPARATION';
+    const finalStatus = 'PREPARATION';
+
+    // Map legacy type to new ContentType system (supports both)
+    const contentType = type ? mapDeliverableTypeToContentType(type) : null;
 
     // Create deliverable
     const deliverable = await prisma.deliverable.create({
       data: {
         projectId: id,
         title,
-        type,
+        type, // Keep legacy field for backwards compatibility
+        contentType, // Set new ContentType field
         deadline: deadline ? new Date(deadline) : null,
         assignedTalentId,
         status: finalStatus,

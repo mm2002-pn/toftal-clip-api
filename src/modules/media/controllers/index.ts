@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { prisma } from '../../../config/database';
 import { ApiResponse } from '../../../utils/apiResponse';
+import { socketService } from '../../../services/socketService';
 import {
   uploadToCloudinary,
   deleteFromCloudinary,
@@ -216,6 +217,27 @@ export const registerMedia = async (req: Request, res: Response, next: NextFunct
         addedBy: req.user!.id,
       },
     });
+
+    // Emit real-time notification for media upload
+    const mediaPayload = {
+      id: media.id,
+      projectId,
+      deliverableId,
+      name,
+      url,
+      type: type || 'IMAGE',
+      category,
+    };
+
+    console.log('[SOCKET] Emitting media:added for project:', projectId, mediaPayload);
+
+    // Emit to project room
+    socketService.emitToProject(projectId, 'media:added', mediaPayload);
+
+    // Also emit to deliverable room if specified (for real-time updates on detail page)
+    if (deliverableId) {
+      socketService.emitToProject(projectId, 'media:added', mediaPayload);
+    }
 
     ApiResponse.created(res, media, 'Media registered successfully');
   } catch (error) {

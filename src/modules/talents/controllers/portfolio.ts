@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import { prisma } from '../../../config/database';
 import { ApiResponse } from '../../../utils/apiResponse';
 import { NotFoundError, ForbiddenError } from '../../../utils/errors';
+import { mapPortfolioTagToContentType } from '../../../utils/contentTypeMapper';
 
 // Add portfolio item
 export const addPortfolioItem = async (
@@ -12,7 +13,7 @@ export const addPortfolioItem = async (
   try {
     const { talentId } = req.params;
     const talentIdString = Array.isArray(talentId) ? talentId[0] : talentId;
-    const { title, thumbnail, videoUrl, type, views, duration, orderIndex } = req.body;
+    const { title, thumbnail, videoUrl, type, views, duration, orderIndex, tag } = req.body;
 
     // Verify talent profile exists and belongs to user
     const talentProfile = await prisma.talentProfile.findUnique({
@@ -27,6 +28,9 @@ export const addPortfolioItem = async (
       throw new ForbiddenError('Vous n\'avez pas la permission d\'ajouter un item au portfolio');
     }
 
+    // Map legacy tag to new ContentType system (supports both)
+    const contentType = tag ? mapPortfolioTagToContentType(tag) : null;
+
     // Create portfolio item
     const portfolioItem = await prisma.portfolioItem.create({
       data: {
@@ -37,7 +41,9 @@ export const addPortfolioItem = async (
         type,
         views,
         duration,
-        orderIndex: orderIndex || 0
+        orderIndex: orderIndex || 0,
+        tag, // Keep legacy field
+        contentType // Set new ContentType field
       }
     });
 
@@ -56,7 +62,7 @@ export const updatePortfolioItem = async (
   try {
     const { id } = req.params;
     const idString = Array.isArray(id) ? id[0] : id;
-    const { title, thumbnail, videoUrl, type, views, duration, orderIndex } = req.body;
+    const { title, thumbnail, videoUrl, type, views, duration, orderIndex, tag } = req.body;
 
     // Verify portfolio item exists
     const portfolioItem = await prisma.portfolioItem.findUnique({
@@ -72,6 +78,9 @@ export const updatePortfolioItem = async (
       throw new ForbiddenError('Vous n\'avez pas la permission de modifier cet item');
     }
 
+    // Map legacy tag to new ContentType system (supports both)
+    const contentType = tag ? mapPortfolioTagToContentType(tag) : undefined;
+
     // Update item
     const updatedItem = await prisma.portfolioItem.update({
       where: { id: idString },
@@ -82,7 +91,9 @@ export const updatePortfolioItem = async (
         type,
         views,
         duration,
-        orderIndex
+        orderIndex,
+        tag, // Keep legacy field
+        contentType // Set new ContentType field
       }
     });
 

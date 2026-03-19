@@ -96,79 +96,124 @@ enum MediaResourceTag {
   REFERENCE
 }
 
+enum TalentTag {
+  SHORT
+  PODCAST
+  LONG_FORM
+}
+
+enum ContentType {
+  SHORT_FORM
+  LONG_FORM
+  PODCAST
+  THUMBNAIL
+}
+
 // ==================== MODELS ====================
 
-model User {
-  id                     String    @id @default(uuid())
-  email                  String    @unique
-  passwordHash           String?   @map("password_hash")
-  name                   String
-  role                   UserRole  @default(CLIENT)
-  avatarUrl              String?   @map("avatar_url")
-  authProvider           String    @default("email") @map("auth_provider") // "email" | "google"
-  firebaseUid            String?   @unique @map("firebase_uid")
-  emailVerified          Boolean   @default(false) @map("email_verified")
-  emailVerificationToken String?   @map("email_verification_token")
-  emailVerificationExpires DateTime? @map("email_verification_expires")
-  passwordResetOtp       String?   @map("password_reset_otp")
-  passwordResetOtpExpires DateTime? @map("password_reset_otp_expires")
-  passwordResetToken     String?   @map("password_reset_token")
-  passwordResetTokenExpires DateTime? @map("password_reset_token_expires")
-  accountStatus          AccountStatus @default(ACTIVE) @map("account_status")
-  archivedAt             DateTime? @map("archived_at")
-  createdAt              DateTime  @default(now()) @map("created_at")
-  updatedAt              DateTime  @updatedAt @map("updated_at")
+model VideoFormatSpec {
+  contentType     ContentType @id // Unique identifier
+
+  // Video specifications
+  minWidth        Int         @map("min_width")        // Ex: 1080
+  minHeight       Int         @map("min_height")       // Ex: 1920
+  aspectRatio     String      @map("aspect_ratio")    // Ex: "9:16", "16:9", "1:1"
+
+  // Duration specs
+  minDuration     Int         @map("min_duration")     // In seconds
+  maxDuration     Int?        @map("max_duration")     // null = unlimited
+
+  // Encoding specs
+  recommendedCodec String     @map("recommended_codec") // Ex: "H.264", "VP9"
+  recommendedBitrate Int      @map("recommended_bitrate") // kbps
+
+  // Metadata
+  description     String
+  label           String      // "Short Form", "Long Form", etc.
+  icon            String?     // Icon URL or emoji
+
+  createdAt       DateTime    @default(now()) @map("created_at")
+  updatedAt       DateTime    @updatedAt @map("updated_at")
 
   // Relations
-  clientProjects   Project[]       @relation("ClientProjects")
-  talentProjects   Project[]       @relation("TalentProjects")
-  ownedProjects    Project[]       @relation("OwnedProjects")
-  assignedDeliverables Deliverable[]
-  uploadedVersions Version[]
-  feedbacks        Feedback[]
-  reviews          Review[]        @relation("ReviewAuthor")
-  talentProfile    TalentProfile?
-  opportunities    Opportunity[]
-  notifications    Notification[]
-  workspaceMembers WorkspaceMember[]
-  ownedWorkspaces  Workspace[]
-  projectMemberships ProjectMember[]
-  sentInvitations  ProjectInvitation[]
-  accessRequests   AccessRequest[]     @relation("AccessRequests")
-  createdPublicLinks PublicShareLink[] @relation("PublicShareLinks")
+  deliverables    Deliverable[]
+  portfolioItems  PortfolioItem[]
+  opportunities   Opportunity[]
+
+  @@map("video_format_specs")
+}
+
+model User {
+  id                        String        @id @default(uuid())
+  email                     String        @unique
+  passwordHash              String?       @map("password_hash")
+  name                      String
+  role                      UserRole      @default(CLIENT)
+  avatarUrl                 String?       @map("avatar_url")
+  authProvider              String        @default("email") @map("auth_provider") // "email" | "google"
+  firebaseUid               String?       @unique @map("firebase_uid")
+  emailVerified             Boolean       @default(false) @map("email_verified")
+  emailVerificationToken    String?       @map("email_verification_token")
+  emailVerificationExpires  DateTime?     @map("email_verification_expires")
+  passwordResetOtp          String?       @map("password_reset_otp")
+  passwordResetOtpExpires   DateTime?     @map("password_reset_otp_expires")
+  passwordResetToken        String?       @map("password_reset_token")
+  passwordResetTokenExpires DateTime?     @map("password_reset_token_expires")
+  accountStatus             AccountStatus @default(ACTIVE) @map("account_status")
+  archivedAt                DateTime?     @map("archived_at")
+  createdAt                 DateTime      @default(now()) @map("created_at")
+  updatedAt                 DateTime      @updatedAt @map("updated_at")
+
+  // Relations
+  clientProjects          Project[]              @relation("ClientProjects")
+  talentProjects          Project[]              @relation("TalentProjects")
+  ownedProjects           Project[]              @relation("OwnedProjects")
+  assignedDeliverables    Deliverable[]
+  uploadedVersions        Version[]
+  feedbacks               Feedback[]
+  reviews                 Review[]               @relation("ReviewAuthor")
+  talentProfile           TalentProfile?
+  opportunities           Opportunity[]
+  notifications           Notification[]
+  workspaceMembers        WorkspaceMember[]
+  ownedWorkspaces         Workspace[]
+  projectMemberships      ProjectMember[]
+  sentInvitations         ProjectInvitation[]
+  accessRequests          AccessRequest[]        @relation("AccessRequests")
+  createdPublicLinks      PublicShareLink[]      @relation("PublicShareLinks")
   createdDeliverableLinks DeliverableShareLink[] @relation("DeliverableShareLinks")
 
   @@map("users")
 }
 
 model Project {
-  id               String        @id @default(uuid())
-  title            String
-  clientId         String        @map("client_id")
-  talentId         String?       @map("talent_id")
-  type             ProjectType   @default(PERSONAL)
-  ownerId          String?       @map("owner_id")
-  status           ProjectStatus @default(DRAFT)
-  deadline         DateTime?
-  brief            Json?
-  briefCompletedAt DateTime?     @map("brief_completed_at") // When client completed onboarding
-  invitationRefusedAt DateTime?  @map("invitation_refused_at") // When client refused invitation
-  aiScore          Int?          @map("ai_score")
-  isArchived       Boolean       @default(false) @map("is_archived")
-  archivedAt       DateTime?     @map("archived_at")
-  deletedAt        DateTime?     @map("deleted_at")
-  createdAt        DateTime      @default(now()) @map("created_at")
-  updatedAt        DateTime      @updatedAt @map("updated_at")
+  id                  String        @id @default(uuid())
+  title               String
+  clientId            String        @map("client_id")
+  talentId            String?       @map("talent_id")
+  type                ProjectType   @default(PERSONAL)
+  ownerId             String?       @map("owner_id")
+  status              ProjectStatus @default(DRAFT)
+  deadline            DateTime?
+  brief               Json?
+  briefCompletedAt    DateTime?     @map("brief_completed_at") // When client completed onboarding
+  invitationRefusedAt DateTime?     @map("invitation_refused_at") // When client refused invitation
+  aiScore             Int?          @map("ai_score")
+  isArchived          Boolean       @default(false) @map("is_archived")
+  archivedAt          DateTime?     @map("archived_at")
+  deletedAt           DateTime?     @map("deleted_at")
+  createdAt           DateTime      @default(now()) @map("created_at")
+  updatedAt           DateTime      @updatedAt @map("updated_at")
 
   // Relations
-  client         User                 @relation("ClientProjects", fields: [clientId], references: [id], onDelete: Cascade)
-  talent         User?                @relation("TalentProjects", fields: [talentId], references: [id], onDelete: SetNull)
-  owner          User?                @relation("OwnedProjects", fields: [ownerId], references: [id], onDelete: SetNull)
+  client         User                @relation("ClientProjects", fields: [clientId], references: [id], onDelete: Cascade)
+  talent         User?               @relation("TalentProjects", fields: [talentId], references: [id], onDelete: SetNull)
+  owner          User?               @relation("OwnedProjects", fields: [ownerId], references: [id], onDelete: SetNull)
   deliverables   Deliverable[]
   mediaResources MediaResource[]
   members        ProjectMember[]
   invitations    ProjectInvitation[]
-  accessRequests AccessRequest[]      @relation("AccessRequests")
+  accessRequests AccessRequest[]     @relation("AccessRequests")
   publicLinks    PublicShareLink[]
 
   @@map("projects")
@@ -178,7 +223,8 @@ model Deliverable {
   id               String            @id @default(uuid())
   projectId        String            @map("project_id")
   title            String
-  type             String?
+  type             String?           // Legacy - kept for backwards compatibility
+  contentType      ContentType?      @map("content_type") // New unified system
   status           DeliverableStatus @default(PREPARATION)
   progress         Int               @default(0)
   assignedTalentId String?           @map("assigned_talent_id")
@@ -188,8 +234,9 @@ model Deliverable {
   updatedAt        DateTime          @updatedAt @map("updated_at")
 
   // Relations
-  project        Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  assignedTalent User?            @relation(fields: [assignedTalentId], references: [id], onDelete: SetNull)
+  project        Project                @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  assignedTalent User?                  @relation(fields: [assignedTalentId], references: [id], onDelete: SetNull)
+  formatSpec     VideoFormatSpec?       @relation(fields: [contentType], references: [contentType])
   versions       Version[]
   workflowPhases WorkflowPhase[]
   mediaResources MediaResource[]
@@ -207,8 +254,13 @@ model Version {
   status        VersionStatus @default(NEEDS_REVIEW)
   uploadedById  String?       @map("uploaded_by_id")
   aiAnalysis    Json?         @map("ai_analysis")
-  uploadedAt    DateTime      @default(now()) @map("uploaded_at")
-  createdAt     DateTime      @default(now()) @map("created_at")
+
+  // Video metadata
+  metadata             Json? // { width, height, duration, quality, fps, bitrate }
+  alternativeQualities Json? @map("alternative_qualities") // { "2K": "url", "1080p": "url" }
+
+  uploadedAt DateTime @default(now()) @map("uploaded_at")
+  createdAt  DateTime @default(now()) @map("created_at")
 
   // Relations
   deliverable Deliverable @relation(fields: [deliverableId], references: [id], onDelete: Cascade)
@@ -256,12 +308,15 @@ model Feedback {
   rawText        String       @map("raw_text")
   structuredText String?      @map("structured_text")
   type           FeedbackType @default(TEXT)
+  replyingToId   String?      @map("replying_to_id")
   createdAt      DateTime     @default(now()) @map("created_at")
 
   // Relations
   version       Version        @relation(fields: [versionId], references: [id], onDelete: Cascade)
   author        User           @relation(fields: [authorId], references: [id], onDelete: Cascade)
   revisionTasks RevisionTask[]
+  replyingTo    Feedback?      @relation("FeedbackReplies", fields: [replyingToId], references: [id], onDelete: SetNull)
+  replies       Feedback[]     @relation("FeedbackReplies")
 
   @@map("feedbacks")
 }
@@ -302,29 +357,30 @@ model MediaResource {
 // ==================== TALENT MODELS ====================
 
 model TalentProfile {
-  id                String   @id @default(uuid())
-  userId            String   @unique @map("user_id")
+  id                String       @id @default(uuid())
+  userId            String       @unique @map("user_id")
   bio               String?
-  tagline           String?  // Phrase d'accroche professionnelle
+  tagline           String? // Phrase d'accroche professionnelle
   location          String?
-  languages         String[] @default([])
-  skills            String[] @default([]) // Logiciels maîtrisés (Premiere, DaVinci, etc.)
-  expertise         String[] @default([]) // Domaines d'expertise (Color Grading, Motion Design, etc.)
-  videoType         String?  @map("video_type")
-  responseTime      String?  @map("response_time")
-  rating            Float    @default(0)
-  reviewsCount      Int      @default(0) @map("reviews_count")
-  completedProjects Int      @default(0) @map("completed_projects")
-  startingPrice     String?  @map("starting_price")
-  verified          Boolean  @default(false)
-  coverImage        String?  @map("cover_image")
+  languages         String[]     @default([])
+  skills            String[]     @default([]) // Logiciels maîtrisés (Premiere, DaVinci, etc.)
+  expertise         String[]     @default([]) // Domaines d'expertise (Color Grading, Motion Design, etc.)
+  tags              TalentTag[]  @default([]) // Tags prédéfinis (Short, Podcast, Long Form)
+  videoType         String?      @map("video_type")
+  responseTime      String?      @map("response_time")
+  rating            Float        @default(0)
+  reviewsCount      Int          @default(0) @map("reviews_count")
+  completedProjects Int          @default(0) @map("completed_projects")
+  startingPrice     String?      @map("starting_price")
+  verified          Boolean      @default(false)
+  coverImage        String?      @map("cover_image")
 
   // Nouveaux champs pour portfolio professionnel
-  socialLinks       Json?    @map("social_links") // { youtube, vimeo, instagram, tiktok, website, linkedin }
-  stats             Json?    // { totalViews, yearsExperience, clientsServed }
+  socialLinks Json? @map("social_links") // { youtube, vimeo, instagram, tiktok, website, linkedin }
+  stats       Json? // { totalViews, yearsExperience, clientsServed }
 
-  createdAt         DateTime @default(now()) @map("created_at")
-  updatedAt         DateTime @default(now()) @updatedAt @map("updated_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at")
 
   // Relations
   user      User            @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -336,20 +392,23 @@ model TalentProfile {
 }
 
 model PortfolioItem {
-  id        String   @id @default(uuid())
-  talentId  String   @map("talent_id")
-  title     String
-  thumbnail String
-  videoUrl  String?  @map("video_url") // URL de la vidéo (YouTube, Vimeo, etc.)
-  type      String?  // "YouTube Long", "Shorts", "Podcast", etc.
-  views     String?
-  duration  String?  // "12:34"
-  orderIndex Int     @default(0) @map("order_index") // Pour trier
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  id         String   @id @default(uuid())
+  talentId   String   @map("talent_id")
+  title      String
+  thumbnail  String
+  videoUrl   String?  @map("video_url") // URL de la vidéo (YouTube, Vimeo, etc.)
+  type       String? // Legacy - kept for backwards compatibility
+  tag        String?  // Legacy - Tag: SHORT, PODCAST, LONG_FORM
+  contentType ContentType? @map("content_type") // New unified system
+  views      String?
+  duration   String? // "12:34"
+  orderIndex Int      @default(0) @map("order_index") // Pour trier
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
 
   // Relations
-  talent TalentProfile @relation(fields: [talentId], references: [id], onDelete: Cascade)
+  talent     TalentProfile @relation(fields: [talentId], references: [id], onDelete: Cascade)
+  formatSpec VideoFormatSpec? @relation(fields: [contentType], references: [contentType])
 
   @@map("portfolio_items")
 }
@@ -393,7 +452,8 @@ model Opportunity {
   clientId       String            @map("client_id")
   clientName     String?           @map("client_name")
   clientAvatar   String?           @map("client_avatar")
-  type           OpportunityType
+  type           OpportunityType?  // Legacy - kept for backwards compatibility
+  contentType    ContentType?      @map("content_type") // New unified system
   volume         String?
   duration       String?
   style          String?
@@ -407,6 +467,7 @@ model Opportunity {
 
   // Relations
   client       User          @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  formatSpec   VideoFormatSpec? @relation(fields: [contentType], references: [contentType])
   applications Application[]
 
   @@map("opportunities")
@@ -429,18 +490,18 @@ model Application {
 // ==================== STUDIO MODELS ====================
 
 model Studio {
-  id            String   @id @default(uuid())
-  name          String
-  location      String?
-  pricePerHour  String?  @map("price_per_hour")
-  rating        Float    @default(0)
-  thumbnail     String?
-  gallery       String[] @default([])
-  tags          String[] @default([])
-  description   String?
-  whatsappNumber String? @map("whatsapp_number")
-  features      String[] @default([])
-  createdAt     DateTime @default(now()) @map("created_at")
+  id             String   @id @default(uuid())
+  name           String
+  location       String?
+  pricePerHour   String?  @map("price_per_hour")
+  rating         Float    @default(0)
+  thumbnail      String?
+  gallery        String[] @default([])
+  tags           String[] @default([])
+  description    String?
+  whatsappNumber String?  @map("whatsapp_number")
+  features       String[] @default([])
+  createdAt      DateTime @default(now()) @map("created_at")
 
   @@map("studios")
 }
@@ -500,7 +561,7 @@ model ProjectMember {
   projectId   String      @map("project_id")
   userId      String      @map("user_id")
   role        ProjectRole @default(COLLABORATOR)
-  permissions Json        // { view, edit, comment, approve }
+  permissions Json // { view, edit, comment, approve }
   joinedAt    DateTime    @default(now()) @map("joined_at")
 
   // Relations
@@ -561,17 +622,17 @@ model AccessRequest {
 // ==================== PUBLIC SHARING MODELS ====================
 
 model PublicShareLink {
-  id              String    @id @default(uuid())
-  projectId       String    @map("project_id")
-  creatorUserId   String    @map("creator_user_id")
-  token           String    @unique  // URL-safe token for public access
-  permission      String    @default("view")  // "view", "comment", "download"
-  expiresAt       DateTime? @map("expires_at")
-  isActive        Boolean   @default(true)
-  maxUses         Int?      @map("max_uses")  // Optional: limit number of accesses
-  usedCount       Int       @default(0) @map("used_count")
-  createdAt       DateTime  @default(now()) @map("created_at")
-  updatedAt       DateTime  @updatedAt @map("updated_at")
+  id            String    @id @default(uuid())
+  projectId     String    @map("project_id")
+  creatorUserId String    @map("creator_user_id")
+  token         String    @unique // URL-safe token for public access
+  permission    String    @default("view") // "view", "comment", "download"
+  expiresAt     DateTime? @map("expires_at")
+  isActive      Boolean   @default(true)
+  maxUses       Int?      @map("max_uses") // Optional: limit number of accesses
+  usedCount     Int       @default(0) @map("used_count")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
 
   // Relations
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
@@ -585,17 +646,17 @@ model PublicShareLink {
 
 // Deliverable-level sharing (video sharing)
 model DeliverableShareLink {
-  id              String    @id @default(uuid())
-  deliverableId   String    @map("deliverable_id")
-  creatorUserId   String    @map("creator_user_id")
-  token           String    @unique  // URL-safe token for public access
-  permission      String    @default("view")  // "view", "comment", "download"
-  expiresAt       DateTime? @map("expires_at")
-  isActive        Boolean   @default(true)
-  maxUses         Int?      @map("max_uses")
-  usedCount       Int       @default(0) @map("used_count")
-  createdAt       DateTime  @default(now()) @map("created_at")
-  updatedAt       DateTime  @updatedAt @map("updated_at")
+  id            String    @id @default(uuid())
+  deliverableId String    @map("deliverable_id")
+  creatorUserId String    @map("creator_user_id")
+  token         String    @unique // URL-safe token for public access
+  permission    String    @default("view") // "view", "comment", "download"
+  expiresAt     DateTime? @map("expires_at")
+  isActive      Boolean   @default(true)
+  maxUses       Int?      @map("max_uses")
+  usedCount     Int       @default(0) @map("used_count")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
 
   // Relations
   deliverable Deliverable @relation(fields: [deliverableId], references: [id], onDelete: Cascade)
@@ -610,25 +671,25 @@ model DeliverableShareLink {
 // ==================== BETA SIGNUP MODEL ====================
 
 model BetaSignup {
-  id                    String   @id @default(uuid())
-  name                  String
-  email                 String
-  contact               String
-  role                  String?
-  videoCount            String?  @map("video_count")
-  collaboration         String?
-  biggestProblem        String?  @map("biggest_problem") @db.Text
-  interests             String[] @default([])
-  feedbackReady         String?  @map("feedback_ready")
-  link                  String?
-  marketplaceInterest   String?  @map("marketplace_interest")
-  source                String?
-  ipAddress             String?  @map("ip_address")
-  userAgent             String?  @map("user_agent") @db.Text
-  status                String   @default("PENDING") // PENDING, VERIFIED, CONTACTED, REJECTED
-  notes                 String?  @db.Text
-  createdAt             DateTime @default(now()) @map("created_at")
-  updatedAt             DateTime @updatedAt @map("updated_at")
+  id                  String   @id @default(uuid())
+  name                String
+  email               String
+  contact             String
+  role                String?
+  videoCount          String?  @map("video_count")
+  collaboration       String?
+  biggestProblem      String?  @map("biggest_problem") @db.Text
+  interests           String[] @default([])
+  feedbackReady       String?  @map("feedback_ready")
+  link                String?
+  marketplaceInterest String?  @map("marketplace_interest")
+  source              String?
+  ipAddress           String?  @map("ip_address")
+  userAgent           String?  @map("user_agent") @db.Text
+  status              String   @default("PENDING") // PENDING, VERIFIED, CONTACTED, REJECTED
+  notes               String?  @db.Text
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @updatedAt @map("updated_at")
 
   @@unique([email])
   @@index([status])

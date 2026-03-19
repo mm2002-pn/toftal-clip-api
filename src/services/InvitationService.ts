@@ -2,6 +2,7 @@ import { PrismaClient, ProjectRole, InvitationStatus } from '@prisma/client';
 import crypto from 'crypto';
 import { EmailService } from './EmailService';
 import { PermissionService } from './PermissionService';
+import { socketService } from './socketService';
 
 interface CreateInvitationData {
   projectId: string;
@@ -251,7 +252,16 @@ export class InvitationService {
     // Get project to check if it's a CLIENT project
     const project = await this.prisma.project.findUnique({
       where: { id: invitation.projectId },
-      select: { id: true, type: true, clientId: true, ownerId: true },
+      select: {
+        id: true,
+        title: true,
+        type: true,
+        clientId: true,
+        ownerId: true,
+        owner: {
+          select: { id: true, name: true, email: true },
+        },
+      },
     });
 
     console.log(`📁 [ACCEPT_INVITATION] Project:`, {
@@ -301,7 +311,7 @@ export class InvitationService {
     console.log(`✅ [ACCEPT_INVITATION] Permissions assigned:`, permissions);
 
     // Transaction: update invitation and add project member
-    return await this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       console.log(`💾 [ACCEPT_INVITATION] Starting transaction...`);
 
       // Mark invitation as accepted
@@ -376,6 +386,37 @@ export class InvitationService {
 
       return { invitation: updatedInvitation, member: projectMember };
     });
+
+    // Emit real-time notification to project members
+    const memberAddedPayload = {
+      projectId: invitation.projectId,
+      userId: result.member.userId,
+      userName: result.member.user.name,
+      userEmail: result.member.user.email,
+      role: result.member.role,
+      addedBy: invitation.inviterUserId,
+    };
+    socketService.emitToProject(invitation.projectId, 'project:member:added', memberAddedPayload);
+    console.log(`📡 [ACCEPT_INVITATION] Emitted project:member:added event`);
+
+    // Send email to talent/owner that client has accepted and is doing onboarding
+    if (project && project.owner && isClientProject && isClient) {
+      try {
+        await this.emailService.sendInvitationAcceptedEmail({
+          to: project.owner.email,
+          talentName: project.owner.name,
+          clientName: user.name || user.email,
+          projectTitle: project.title,
+          projectId: project.id,
+        });
+        console.log(`📧 [ACCEPT_INVITATION] Email sent to owner ${project.owner.email}`);
+      } catch (emailError) {
+        console.error(`❌ [ACCEPT_INVITATION] Failed to send email:`, emailError);
+        // Don't fail the invitation acceptance if email fails
+      }
+    }
+
+    return result;
   }
 
   /**

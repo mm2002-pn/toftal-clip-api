@@ -44,7 +44,29 @@ export const updateDeliverable = async (req: Request, res: Response, next: NextF
 export const deleteDeliverable = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const id = String(req.params.id);
+
+    // Get deliverable before deleting to get projectId for Socket emission
+    const deliverable = await prisma.deliverable.findUnique({
+      where: { id },
+      include: {
+        project: { select: { id: true } },
+      },
+    });
+
+    if (!deliverable) {
+      throw new NotFoundError('Deliverable not found');
+    }
+
+    // Delete the deliverable
     await prisma.deliverable.delete({ where: { id } });
+
+    // Emit deletion event to project room for real-time UI update
+    const projectId = deliverable.project?.id;
+    if (projectId) {
+      console.log('[SOCKET] Emitting deliverable:deleted to project:', projectId, { id, projectId });
+      socketService.emitToProject(projectId, 'deliverable:deleted', { id, projectId });
+    }
+
     ApiResponse.success(res, null, 'Deliverable deleted');
   } catch (error) {
     next(error);
@@ -109,7 +131,7 @@ export const assignTalent = async (req: Request, res: Response, next: NextFuncti
     }
 
     // Calculate new status and progress
-    // - Assigning: PREPARATION → PRODUCTION
+    // - Assigning: Stay in PREPARATION, set acceptanceStatus to PENDING (talent must accept first)
     // - Unassigning: Revert to PREPARATION (only if no versions uploaded - already checked above)
     let updateData: any = {
       assignedTalentId: talentId,
@@ -117,11 +139,8 @@ export const assignTalent = async (req: Request, res: Response, next: NextFuncti
     };
 
     if (talentId) {
-      // Assigning talent: move to PRODUCTION if currently in PREPARATION
-      if (currentDeliverable.status === 'PREPARATION') {
-        updateData.status = 'PRODUCTION';
-        updateData.progress = getProgressFromStatus('PRODUCTION');
-      }
+      // Assigning talent: Stay in PREPARATION until talent accepts
+      // Status will change to PRODUCTION only when talent accepts the assignment
     } else {
       // Unassigning talent: revert to PREPARATION
       updateData.status = 'PREPARATION';
@@ -446,7 +465,12 @@ export const acceptAssignment = async (req: Request, res: Response, next: NextFu
 
     const updated = await prisma.deliverable.update({
       where: { id },
-      data: { acceptanceStatus: 'ACCEPTED' },
+      data: {
+        acceptanceStatus: 'ACCEPTED',
+        // Move to PRODUCTION when talent accepts the assignment
+        status: 'PRODUCTION',
+        progress: getProgressFromStatus('PRODUCTION'),
+      },
       include: {
         assignedTalent: { select: { id: true, name: true, avatarUrl: true } },
       },
@@ -477,6 +501,15 @@ export const acceptAssignment = async (req: Request, res: Response, next: NextFu
 
       // Emit real-time notification
       socketService.emitToUser(deliverable.project.clientId, 'notification:new', notification);
+
+      // Emit assignment accepted event to project room for real-time UI update
+      socketService.emitToProject(deliverable.project.id, 'deliverable:assignment:accepted', {
+        deliverableId: deliverable.id,
+        projectId: deliverable.project.id,
+        talentId: req.user!.id,
+        talentName: talent?.name,
+        acceptedAt: new Date(),
+      });
 
       // Send email notification
       if (client?.email) {
@@ -553,6 +586,16 @@ export const rejectAssignment = async (req: Request, res: Response, next: NextFu
       // Emit real-time notification
       socketService.emitToUser(deliverable.project.clientId, 'notification:new', notification);
 
+      // Emit assignment rejected event to project room for real-time UI update
+      socketService.emitToProject(deliverable.project.id, 'deliverable:assignment:rejected', {
+        deliverableId: deliverable.id,
+        projectId: deliverable.project.id,
+        talentId: req.user!.id,
+        talentName: deliverable.assignedTalent?.name,
+        reason: reason || null,
+        rejectedAt: new Date(),
+      });
+
       // Send email notification
       if (client?.email) {
         try {
@@ -576,6 +619,143 @@ export const rejectAssignment = async (req: Request, res: Response, next: NextFu
 
     ApiResponse.success(res, updated, 'Assignment rejected');
   } catch (error) {
+    next(error);
+  }
+};
+
+export const extractVersionMetadata = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const { id: deliverableId, versionId } = req.params;
+    const { metadata } = req.body; // Metadata can come from frontend OR be extracted from URL
+    const versionIdStr = String(versionId);
+
+    // Get version
+    const version = await prisma.version.findUnique({
+      where: { id: versionIdStr },
+      include: { deliverable: true },
+    });
+
+    if (!version) {
+      ApiResponse.error(res, 'Version not found', 404);
+      return;
+    }
+
+    if (version.deliverableId !== deliverableId) {
+      ApiResponse.error(res, 'Version does not belong to this deliverable', 400);
+      return;
+    }
+
+    // If metadata provided, validate and use it
+    let finalMetadata;
+    if (metadata) {
+      const { validateMetadata } = require('../../../services/VideoMetadataService');
+      finalMetadata = validateMetadata(metadata);
+
+      if (!finalMetadata) {
+        ApiResponse.error(res, 'Invalid metadata format', 400);
+        return;
+      }
+    } else {
+      // Extract using FFmpeg if no metadata provided
+      const { extractVideoMetadata } = require('../../../services/VideoMetadataService');
+      console.log(`📹 Extracting metadata for version ${versionIdStr}...`);
+      finalMetadata = await extractVideoMetadata(version.videoUrl);
+    }
+
+    console.log(`📹 Saving metadata for version ${versionIdStr}:`, finalMetadata);
+
+    // Save metadata to database
+    const updated = await prisma.version.update({
+      where: { id: versionIdStr },
+      data: { metadata: finalMetadata },
+    });
+
+    console.log(`✅ Metadata saved for version ${versionIdStr}`);
+
+    ApiResponse.success(res, finalMetadata, 'Metadata extracted and saved');
+  } catch (error) {
+    console.error('Error extracting metadata:', error);
+    next(error);
+  }
+};
+
+export const downscaleVersion = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const { id: deliverableId, versionId } = req.params;
+    const { quality } = req.body; // Target quality: "1080p", "2K", "4K", etc.
+    const versionIdStr = String(versionId);
+
+    if (!quality) {
+      ApiResponse.error(res, 'Target quality is required', 400);
+      return;
+    }
+
+    // Get version
+    const version = await prisma.version.findUnique({
+      where: { id: versionIdStr },
+      include: { deliverable: true },
+    });
+
+    if (!version) {
+      ApiResponse.error(res, 'Version not found', 404);
+      return;
+    }
+
+    if (version.deliverableId !== deliverableId) {
+      ApiResponse.error(res, 'Version does not belong to this deliverable', 400);
+      return;
+    }
+
+    // Get metadata (extract if needed)
+    let metadata = version.metadata as any;
+    if (!metadata) {
+      const { extractVideoMetadata } = require('../../../services/VideoMetadataService');
+      console.log('📹 Extracting metadata first...');
+      metadata = await extractVideoMetadata(version.videoUrl);
+
+      // Save metadata
+      await prisma.version.update({
+        where: { id: versionIdStr },
+        data: { metadata },
+      });
+    }
+
+    // Check if already cached
+    const alternativeQualities = version.alternativeQualities as any;
+    if (alternativeQualities && alternativeQualities[quality]) {
+      console.log(`✅ Returning cached version for quality ${quality}`);
+      ApiResponse.success(res, {
+        quality,
+        url: alternativeQualities[quality],
+        source: 'cached',
+      }, 'Downscaled version available');
+      return;
+    }
+
+    // Downscale video
+    const { downscaleAndUploadVideo } = require('../../../services/VideoMetadataService');
+
+    console.log(`🎬 Downscaling version ${versionIdStr} to ${quality}...`);
+    const downscaledUrl = await downscaleAndUploadVideo(version.videoUrl, quality, metadata);
+
+    // Save to database
+    const updatedAlternatives = alternativeQualities || {};
+    updatedAlternatives[quality] = downscaledUrl;
+
+    await prisma.version.update({
+      where: { id: versionIdStr },
+      data: { alternativeQualities: updatedAlternatives },
+    });
+
+    console.log(`✅ Version downscaled to ${quality}: ${downscaledUrl}`);
+
+    ApiResponse.success(res, {
+      quality,
+      url: downscaledUrl,
+      source: 'generated',
+    }, 'Version downscaled');
+  } catch (error) {
+    console.error('Error downscaling version:', error);
     next(error);
   }
 };

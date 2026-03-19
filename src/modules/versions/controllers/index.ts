@@ -23,7 +23,42 @@ export const updateVersion = async (req: Request, res: Response, next: NextFunct
 export const deleteVersion = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const id = String(req.params.id);
+
+    // Get version info before deleting to emit Socket event
+    const version = await prisma.version.findUnique({
+      where: { id },
+      include: {
+        deliverable: {
+          include: {
+            project: { select: { id: true } },
+          },
+        },
+      },
+    });
+
+    if (!version) throw new NotFoundError('Version not found');
+
+    // Delete the version
     await prisma.version.delete({ where: { id } });
+
+    // Emit deletion event to project room for real-time UI update
+    const projectId = version.deliverable?.project?.id;
+    const deliverableId = version.deliverableId;
+    if (projectId && deliverableId) {
+      console.log('[SOCKET] Emitting version:deleted to project:', projectId, {
+        id,
+        versionNumber: version.versionNumber,
+        deliverableId,
+        projectId,
+      });
+      socketService.emitToProject(projectId, 'version:deleted', {
+        id,
+        versionNumber: version.versionNumber,
+        deliverableId,
+        projectId,
+      });
+    }
+
     ApiResponse.success(res, null, 'Version deleted');
   } catch (error) {
     next(error);
@@ -124,7 +159,7 @@ export const updateStatus = async (req: Request, res: Response, next: NextFuncti
 export const addFeedback = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const id = String(req.params.id);
-    const { rawText, structuredText, type, tasks } = req.body;
+    const { rawText, structuredText, type, tasks, replyingToId } = req.body;
 
     // Get version with deliverable info for notification
     const version = await prisma.version.findUnique({
@@ -149,6 +184,7 @@ export const addFeedback = async (req: Request, res: Response, next: NextFunctio
         rawText,
         structuredText,
         type: type || 'TEXT',
+        replyingToId: replyingToId || undefined,
         revisionTasks: tasks ? {
           create: tasks.map((t: any) => ({ description: t.description })),
         } : undefined,
@@ -157,6 +193,14 @@ export const addFeedback = async (req: Request, res: Response, next: NextFunctio
         revisionTasks: true,
         author: {
           select: { id: true, name: true, avatarUrl: true }
+        },
+        replyingTo: {
+          select: {
+            id: true,
+            rawText: true,
+            structuredText: true,
+            author: { select: { id: true, name: true } }
+          }
         }
       },
     });
@@ -183,7 +227,86 @@ export const addFeedback = async (req: Request, res: Response, next: NextFunctio
       }
     }
 
-    // Notify the assigned talent that feedback was received
+    // Parse @mentions - check if any project user names appear after @ in the text
+    console.log('🔍 [MENTION] Raw text:', rawText);
+
+    if (rawText.includes('@') && version.deliverable?.projectId) {
+      // Find project members by name
+      const projectMembers = await prisma.projectMember.findMany({
+        where: { projectId: version.deliverable.projectId },
+        include: { user: { select: { id: true, name: true } } },
+      });
+
+      // Also get project talent, owner, client
+      const projectDetails = await prisma.project.findUnique({
+        where: { id: version.deliverable.projectId },
+        select: {
+          talent: { select: { id: true, name: true } },
+          owner: { select: { id: true, name: true } },
+          client: { select: { id: true, name: true } },
+        },
+      });
+
+      // Build list of all possible users to mention (deduplicated)
+      const allUsersMap = new Map<string, string>();
+      projectMembers.forEach(m => allUsersMap.set(m.user.id, m.user.name));
+      if (projectDetails?.talent) allUsersMap.set(projectDetails.talent.id, projectDetails.talent.name);
+      if (projectDetails?.owner) allUsersMap.set(projectDetails.owner.id, projectDetails.owner.name);
+      if (projectDetails?.client) allUsersMap.set(projectDetails.client.id, projectDetails.client.name);
+
+      const allUsers = Array.from(allUsersMap.entries()).map(([id, name]) => ({ id, name }));
+      console.log('🔍 [MENTION] All mentionable users:', allUsers.map(u => u.name));
+
+      // Check if any user name appears after @ in the text (case insensitive)
+      const mentionedUserIds = new Set<string>();
+      const textLower = rawText.toLowerCase();
+
+      for (const user of allUsers) {
+        // Skip current user (can't mention yourself)
+        if (user.id === req.user!.id) continue;
+
+        // Check if @username appears in text
+        const mentionPattern = '@' + user.name.toLowerCase();
+        if (textLower.includes(mentionPattern)) {
+          console.log(`✅ [MENTION] Found mention of "${user.name}"`);
+          mentionedUserIds.add(user.id);
+        }
+      }
+
+      console.log('🔍 [MENTION] Matched user IDs:', Array.from(mentionedUserIds));
+
+      // Create notifications and emit events for each mentioned user
+      for (const userId of mentionedUserIds) {
+        console.log(`📧 [MENTION] Creating notification for user ${userId}`);
+        const notification = await prisma.notification.create({
+          data: {
+            userId,
+            type: 'MENTION',
+            title: 'Vous avez été mentionné',
+            message: `${feedback.author?.name || 'Quelqu\'un'} vous a mentionné dans un commentaire sur "${version.deliverable.title}"`,
+            link: `/deliverable/${version.deliverableId}`,
+          },
+        });
+
+        console.log(`📡 [MENTION] Emitting mention:new to user ${userId}`);
+        // Emit mention notification with sound flag
+        socketService.emitToUser(userId, 'mention:new', {
+          ...notification,
+          authorName: feedback.author?.name,
+          feedbackId: feedback.id,
+          deliverableTitle: version.deliverable.title,
+          projectId: version.deliverable.project?.id,
+          playSound: true,
+        });
+
+        // Also emit standard notification
+        socketService.emitToUser(userId, 'notification:new', notification);
+      }
+    } else {
+      console.log('🔍 [MENTION] No @ found or no projectId');
+    }
+
+    // Notify the assigned talent that feedback was received (if not already mentioned)
     if (version.deliverable?.assignedTalent?.id && version.deliverable.assignedTalent.id !== req.user!.id) {
       const notification = await prisma.notification.create({
         data: {

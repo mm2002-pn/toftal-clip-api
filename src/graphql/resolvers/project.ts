@@ -11,6 +11,11 @@ export const projectResolvers = {
           mediaResources: {
             orderBy: { createdAt: 'desc' },
           },
+          members: {
+            include: {
+              user: true,
+            },
+          },
         },
       });
 
@@ -54,6 +59,11 @@ export const projectResolvers = {
           include: {
             client: true,
             talent: true,
+            members: {
+              include: {
+                user: true,
+              },
+            },
           },
         }),
         prisma.project.count({ where }),
@@ -120,8 +130,9 @@ export const projectResolvers = {
             client: true,
             talent: true,
             members: {
-              where: { userId: context.user.id },
-              select: { role: true, permissions: true },
+              include: {
+                user: true,
+              },
             },
           },
         }),

@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import { prisma } from '../../../config/database';
 import { ApiResponse } from '../../../utils/apiResponse';
 import { ForbiddenError, NotFoundError } from '../../../utils/errors';
+import { mapOpportunityTypeToContentType } from '../../../utils/contentTypeMapper';
 
 export const createOpportunity = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
@@ -13,13 +14,17 @@ export const createOpportunity = async (req: Request, res: Response, next: NextF
     // Normalize level (convert "Confirmé" to "Confirme" for Prisma enum)
     const normalizedLevel = level === 'Confirmé' ? 'Confirme' : level;
 
+    // Map legacy type to new ContentType system (supports both)
+    const contentType = type ? mapOpportunityTypeToContentType(type) : null;
+
     const opportunity = await prisma.opportunity.create({
       data: {
         title,
         clientId: req.user!.id,
         clientName: user?.name || req.user!.email,
         clientAvatar: user?.avatarUrl,
-        type,
+        type, // Keep legacy field
+        contentType, // Set new ContentType field
         volume,
         duration,
         style,
@@ -45,6 +50,11 @@ export const updateOpportunity = async (req: Request, res: Response, next: NextF
     // Normalize level if present
     if (data.level === 'Confirmé') {
       data.level = 'Confirme';
+    }
+
+    // Map legacy type to new ContentType system if type is present
+    if (data.type) {
+      data.contentType = mapOpportunityTypeToContentType(data.type);
     }
 
     const opportunity = await prisma.opportunity.update({

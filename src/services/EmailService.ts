@@ -197,6 +197,31 @@ export class EmailService {
   }
 
   /**
+   * Send invitation accepted email (to talent/owner when client accepts and starts onboarding)
+   */
+  async sendInvitationAcceptedEmail(data: {
+    to: string;
+    talentName: string;
+    clientName: string;
+    projectTitle: string;
+    projectId: string;
+  }): Promise<void> {
+    const { to, talentName, clientName, projectTitle, projectId } = data;
+
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+    const workspaceUrl = `${frontendUrl}/#/workspace/${projectId}`;
+
+    const emailTemplate = emailTemplates.invitationAccepted(
+      talentName,
+      clientName,
+      projectTitle,
+      workspaceUrl
+    );
+
+    await sendEmail(to, emailTemplate);
+  }
+
+  /**
    * Send beta signup notification to manager
    */
   async sendBetaSignupNotification(data: {
@@ -254,5 +279,13 @@ export class EmailService {
     // Send to manager
     const managerEmail = process.env.BETA_MANAGER_EMAIL || 'papeserigne@toftal.com';
     await sendEmail(managerEmail, emailTemplate);
+  }
+
+  /**
+   * Send beta signup confirmation email to the user
+   */
+  async sendBetaSignupConfirmation(userEmail: string, userName: string): Promise<void> {
+    const emailTemplate = emailTemplates.betaSignupConfirmation(userName);
+    await sendEmail(userEmail, emailTemplate);
   }
 }

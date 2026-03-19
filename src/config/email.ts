@@ -543,6 +543,62 @@ export const emailTemplates = {
     text: `Votre demande d'accès au projet "${projectTitle}" a été refusée.`,
   }),
 
+  // Invitation accepted - sent to talent/owner when client accepts invitation and starts onboarding
+  invitationAccepted: (talentName: string, clientName: string, projectTitle: string, workspaceUrl: string) => ({
+    subject: `🎉 ${clientName} a rejoint votre projet - ${projectTitle}`,
+    html: emailWrapper(`
+      <h2 style="color: #FAFAFA; margin: 0 0 16px 0; font-size: 24px;">Excellente nouvelle ${talentName} !</h2>
+      <p style="color: #A1A1AA; font-size: 16px; line-height: 1.6; margin: 0 0 24px 0;">
+        <strong style="color: #22C55E;">${clientName}</strong> a accepté votre invitation et rejoint le projet.
+      </p>
+
+      <!-- Project Details -->
+      <div style="background-color: #18181B; border-radius: 12px; padding: 24px; margin-bottom: 24px; border: 1px solid #27272A;">
+        <table width="100%" cellpadding="0" cellspacing="0">
+          <tr>
+            <td style="padding: 8px 0;">
+              <span style="color: #71717A; font-size: 12px; text-transform: uppercase;">Projet</span>
+              <p style="color: #FAFAFA; font-size: 18px; font-weight: 600; margin: 4px 0 0 0;">${projectTitle}</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 8px 0; border-top: 1px solid #27272A;">
+              <span style="color: #71717A; font-size: 12px; text-transform: uppercase;">Statut</span>
+              <p style="color: #F59E0B; font-size: 16px; font-weight: 600; margin: 4px 0 0 0;">⏳ Onboarding en cours</p>
+            </td>
+          </tr>
+        </table>
+      </div>
+
+      <p style="color: #A1A1AA; font-size: 14px; line-height: 1.6; margin: 0 0 24px 0;">
+        Le client est en train de compléter le brief du projet et d'ajouter les vidéos à créer. Vous serez notifié dès que l'onboarding sera terminé.
+      </p>
+
+      <!-- Button -->
+      <table width="100%" cellpadding="0" cellspacing="0">
+        <tr>
+          <td align="center" style="padding: 24px 0;">
+            <a href="${workspaceUrl}" style="display: inline-block; background: linear-gradient(135deg, #E91E63 0%, #C2185B 100%); color: white; text-decoration: none; padding: 16px 48px; border-radius: 8px; font-weight: 600; font-size: 16px;">
+              Voir le projet
+            </a>
+          </td>
+        </tr>
+      </table>
+    `, 'Invitation Acceptée', '🎉'),
+    text: `
+      Excellente nouvelle ${talentName} !
+
+      ${clientName} a accepté votre invitation et rejoint le projet "${projectTitle}".
+
+      Le client est en train de compléter le brief du projet (onboarding en cours).
+      Vous serez notifié dès que l'onboarding sera terminé.
+
+      Voir le projet: ${workspaceUrl}
+
+      - L'équipe Toftal Clip
+    `,
+  }),
+
   // Beta signup notification - sent to manager when new signup
   betaSignupNotification: (
     name: string,
@@ -740,6 +796,68 @@ Allez à l'administration: ${baseAdminUrl}
       `,
     };
   },
+
+  // Beta signup confirmation - sent to the user who signed up
+  betaSignupConfirmation: (name: string) => ({
+    subject: '🎉 Bienvenue chez Toftal Clip ! Votre inscription a été confirmée',
+    html: emailWrapper(`
+      <h2 style="color: #FAFAFA; margin: 0 0 16px 0; font-size: 24px;">Bienvenue ${name} ! 🎉</h2>
+      <p style="color: #A1A1AA; font-size: 16px; line-height: 1.6; margin: 0 0 24px 0;">
+        Merci de vous être inscrit à la liste d'attente de Toftal Clip. Nous sommes ravi de vous compter parmi nos premiers utilisateurs.
+      </p>
+
+      <div style="background: linear-gradient(135deg, #E91E63 0%, #C2185B 100%); border-radius: 12px; padding: 24px; margin: 32px 0; text-align: center;">
+        <h3 style="color: white; margin: 0 0 12px 0; font-size: 20px;">Prochaines étapes</h3>
+        <p style="color: white; font-size: 14px; margin: 0; line-height: 1.6;">
+          Notre équipe examinera votre inscription et vous contactera très bientôt pour vous donner accès à la plateforme.
+        </p>
+      </div>
+
+      <div style="background-color: #18181B; border-radius: 12px; padding: 24px; margin: 32px 0; border: 1px solid #27272A;">
+        <h3 style="color: #FAFAFA; font-size: 16px; margin: 0 0 16px 0; border-bottom: 1px solid #27272A; padding-bottom: 12px;">✨ À propos de Toftal Clip</h3>
+        <p style="color: #A1A1AA; font-size: 14px; line-height: 1.6; margin: 0 0 12px 0;">
+          Toftal Clip est la plateforme d'élite pour connecter les créateurs, entrepreneurs et influenceurs aux meilleurs monteurs vidéo pour une croissance explosive de votre contenu.
+        </p>
+        <ul style="color: #A1A1AA; font-size: 14px; line-height: 1.8; margin: 0; padding-left: 20px;">
+          <li>🎥 Accès à un talent pool curé de monteurs expérimentés</li>
+          <li>💬 Collaboration centralisée et feedback en temps réel</li>
+          <li>🤖 Assistance IA pour optimiser vos briefs et vos projets</li>
+          <li>📊 Suivi détaillé et analytics de vos productions</li>
+        </ul>
+      </div>
+
+      <div style="background-color: #18181B; border-radius: 12px; padding: 24px; margin: 32px 0; border: 1px solid #27272A;">
+        <h3 style="color: #FAFAFA; font-size: 16px; margin: 0 0 16px 0; border-bottom: 1px solid #27272A; padding-bottom: 12px;">❓ Des questions ?</h3>
+        <p style="color: #A1A1AA; font-size: 14px; line-height: 1.6; margin: 0;">
+          N'hésitez pas à nous contacter à <a href="mailto:support@toftalclip.com" style="color: #E91E63; text-decoration: none;">support@toftalclip.com</a> ou à nous répondre directement à cet email.
+        </p>
+      </div>
+
+      <p style="color: #71717A; font-size: 12px; line-height: 1.6; margin: 32px 0 0 0; text-align: center;">
+        À bientôt sur Toftal Clip !<br>
+        L'équipe Toftal Clip
+      </p>
+    `, 'Bienvenue chez Toftal Clip', '✨'),
+    text: `
+BIENVENUE CHEZ TOFTAL CLIP ! 🎉
+
+Merci de vous être inscrit à la liste d'attente de Toftal Clip.
+
+Notre équipe examinera votre inscription et vous contactera très bientôt pour vous donner accès à la plateforme.
+
+À PROPOS DE TOFTAL CLIP
+- Accès à un talent pool curé de monteurs expérimentés
+- Collaboration centralisée et feedback en temps réel
+- Assistance IA pour optimiser vos briefs et vos projets
+- Suivi détaillé et analytics de vos productions
+
+Des questions ?
+N'hésitez pas à nous contacter à support@toftalclip.com ou à nous répondre directement à cet email.
+
+À bientôt sur Toftal Clip !
+L'équipe Toftal Clip
+    `,
+  }),
 };
 
 // Send email function

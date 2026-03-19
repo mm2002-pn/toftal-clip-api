@@ -161,6 +161,18 @@ export class AccessRequestService {
       createdAt: notification.createdAt,
     });
 
+    // Emit access-request:approved event to both user and project room
+    const approvedPayload = {
+      id: requestId,
+      projectId,
+      userId,
+      userName: request.user.name,
+      userEmail: request.user.email,
+      status: 'APPROVED' as const,
+    };
+    socketService.emitToUser(userId, 'access-request:approved', approvedPayload);
+    socketService.emitToProject(projectId, 'access-request:approved', approvedPayload);
+
     console.log(`✅ Access request approved for ${request.user.email}`);
 
     return request;
@@ -205,6 +217,18 @@ export class AccessRequestService {
       link: notification.link,
       createdAt: notification.createdAt,
     });
+
+    // Emit access-request:rejected event to both user and project room
+    const rejectedPayload = {
+      id: requestId,
+      projectId: request.project.id,
+      userId: request.user.id,
+      userName: request.user.name,
+      userEmail: request.user.email,
+      status: 'REJECTED' as const,
+    };
+    socketService.emitToUser(request.user.id, 'access-request:rejected', rejectedPayload);
+    socketService.emitToProject(request.project.id, 'access-request:rejected', rejectedPayload);
 
     console.log(`✅ Access request rejected for ${request.user.email}`);
 

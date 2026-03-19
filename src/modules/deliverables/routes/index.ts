@@ -28,6 +28,8 @@ router.patch('/:id/reject', deliverablesController.rejectAssignment);
 
 // Versions (Create only - Read via GraphQL)
 router.post('/:id/versions', validate(addVersionValidation), deliverablesController.addVersion);
+router.post('/:id/versions/:versionId/extract-metadata', deliverablesController.extractVersionMetadata);
+router.post('/:id/versions/:versionId/downscale', deliverablesController.downscaleVersion);
 
 // Media (Create only - Read via GraphQL)
 router.post('/:id/media', validate(addMediaValidation), deliverablesController.addMedia);

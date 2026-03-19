@@ -9,17 +9,27 @@ export type SocketEvent =
   | 'notification:new'
   | 'version:new'
   | 'version:status'
+  | 'version:deleted'
   | 'feedback:new'
+  | 'mention:new'
   | 'project:new'
   | 'project:updated'
   | 'project:status'
   | 'project:archived'
   | 'project:restored'
   | 'project:brief-completed'
+  | 'project:member:added'
+  | 'project:member:removed'
   | 'deliverable:status'
   | 'deliverable:assigned'
+  | 'deliverable:assignment:accepted'
+  | 'deliverable:assignment:rejected'
   | 'deliverable:created'
-  | 'access-request:new';
+  | 'deliverable:deleted'
+  | 'media:added'
+  | 'access-request:new'
+  | 'access-request:approved'
+  | 'access-request:rejected';
 
 // Payload types for each event
 export interface NotificationPayload {
@@ -35,6 +45,13 @@ export interface VersionPayload {
   id: string;
   versionNumber: number;
   status: string;
+  deliverableId: string;
+  projectId: string;
+}
+
+export interface VersionDeletedPayload {
+  id: string;
+  versionNumber: number;
   deliverableId: string;
   projectId: string;
 }
@@ -89,6 +106,68 @@ export interface DeliverableCreatedPayload {
   projectId: string;
   title: string;
   type?: string;
+}
+
+export interface DeliverableDeletedPayload {
+  id: string;
+  projectId: string;
+}
+
+export interface MediaAddedPayload {
+  id: string;
+  projectId: string;
+  deliverableId?: string;
+  name: string;
+  url: string;
+  type: string;
+  category?: string;
+}
+
+// Project member events
+export interface ProjectMemberAddedPayload {
+  projectId: string;
+  userId: string;
+  userName: string;
+  userEmail: string;
+  role: string;
+  addedBy: string;
+  addedByName?: string;
+}
+
+export interface ProjectMemberRemovedPayload {
+  projectId: string;
+  userId: string;
+  userName: string;
+  removedBy: string;
+  removedByName?: string;
+}
+
+// Access request events
+export interface AccessRequestPayload {
+  id: string;
+  projectId: string;
+  userId: string;
+  userName: string;
+  userEmail: string;
+  message?: string;
+  status: 'PENDING' | 'APPROVED' | 'REJECTED';
+  respondedBy?: string;
+  respondedByName?: string;
+  respondedAt?: string;
+}
+
+// Mention notification payload
+export interface MentionPayload {
+  id: string;
+  type: string;
+  title: string;
+  message: string;
+  link?: string;
+  authorName: string;
+  feedbackId: string;
+  deliverableTitle: string;
+  projectId: string;
+  playSound: boolean;
 }
 
 // JWT payload interface (matches auth service token structure)

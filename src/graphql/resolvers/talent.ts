@@ -45,6 +45,7 @@ export const talentResolvers = {
       if (filter?.verified !== undefined) where.verified = filter.verified;
       if (filter?.videoType) where.videoType = filter.videoType;
       if (filter?.minRating) where.rating = { gte: filter.minRating };
+      if (filter?.tags?.length) where.tags = { hasSome: filter.tags };
       if (filter?.skills?.length) where.skills = { hasSome: filter.skills };
       if (filter?.search) {
         where.OR = [

@@ -2,6 +2,9 @@ import { Request, Response, NextFunction } from 'express';
 import { prisma } from '../../../config/database';
 import { ApiResponse } from '../../../utils/apiResponse';
 import { ForbiddenError } from '../../../utils/errors';
+import { uploadImageToGCS } from '../../../config/gcs';
+import * as fs from 'fs';
+import * as path from 'path';
 
 export const createProfile = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {

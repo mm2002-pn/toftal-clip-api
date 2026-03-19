@@ -4,6 +4,7 @@ import { PrismaClient } from '@prisma/client';
 import { InvitationService } from '../../services/InvitationService';
 import { EmailService } from '../../services/EmailService';
 import { PermissionService } from '../../services/PermissionService';
+import { socketService } from '../../services/socketService';
 import { authenticate } from '../../middlewares/auth';
 import { requireProjectOwner, requireProjectAccess } from '../../middlewares/permissions';
 
@@ -338,8 +339,39 @@ router.delete(
     try {
       const projectId = String(req.params.projectId);
       const memberId = String(req.params.memberId);
+      const removedBy = req.user!.id;
+
+      // Get member info before deleting for socket notification
+      const memberInfo = await prisma.projectMember.findUnique({
+        where: {
+          projectId_userId: {
+            projectId,
+            userId: memberId,
+          },
+        },
+        include: {
+          user: {
+            select: { id: true, name: true, email: true },
+          },
+        },
+      });
 
       await permissionService.removeMember(projectId, memberId);
+
+      // Emit real-time notification
+      if (memberInfo) {
+        const memberRemovedPayload = {
+          projectId,
+          userId: memberId,
+          userName: memberInfo.user.name,
+          removedBy,
+        };
+        // Notify the removed user
+        socketService.emitToUser(memberId, 'project:member:removed', memberRemovedPayload);
+        // Notify other project members
+        socketService.emitToProject(projectId, 'project:member:removed', memberRemovedPayload);
+        console.log(`📡 Emitted project:member:removed event for user ${memberId}`);
+      }
 
       res.json({
         success: true,

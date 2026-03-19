@@ -3,8 +3,8 @@ FROM node:20-slim AS builder
 
 WORKDIR /app
 
-# Install OpenSSL for Prisma
-RUN apt-get update && apt-get install -y openssl && rm -rf /var/lib/apt/lists/*
+# Install OpenSSL for Prisma and FFmpeg for video processing
+RUN apt-get update && apt-get install -y openssl ffmpeg && rm -rf /var/lib/apt/lists/*
 
 # Copy package files
 COPY package*.json ./
@@ -28,8 +28,8 @@ FROM node:20-slim AS production
 
 WORKDIR /app
 
-# Install OpenSSL for Prisma
-RUN apt-get update && apt-get install -y openssl wget && rm -rf /var/lib/apt/lists/*
+# Install OpenSSL, FFmpeg for video processing, and wget for health checks
+RUN apt-get update && apt-get install -y openssl ffmpeg wget && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user
 RUN groupadd -g 1001 nodejs && \

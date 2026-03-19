@@ -12,6 +12,7 @@ export const deliverableTypeDefs = gql`
     project: Project!
     title: String!
     type: String
+    contentType: ContentType
     status: DeliverableStatus!
     progress: Int!
     assignedTalent: User
@@ -59,6 +60,7 @@ export const deliverableTypeDefs = gql`
     structuredText: String
     type: String!
     tasks: [RevisionTask!]!
+    replyingTo: Feedback
     createdAt: DateTime!
   }
 
