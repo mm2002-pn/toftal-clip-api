@@ -42,3 +42,7 @@ coverage/
 # Deployment sensitive files
 deployment-info.txt
 firebase-service-account.json
+
+
+# les fichiers .md
+*.md
