@@ -11,7 +11,7 @@ interface RegisterInput {
   email: string;
   password: string;
   name: string;
-  role?: 'CLIENT' | 'TALENT';
+  // role removed - all new users are 'USER' by default
   emailVerified?: boolean; // True when registering via invitation
 }
 
@@ -40,15 +40,15 @@ interface AuthResponse {
 }
 
 // Generate JWT tokens
-const generateTokens = (userId: string, email: string, role: string): AuthTokens => {
+const generateTokens = (userId: string, email: string, role: string, talentModeEnabled: boolean = false): AuthTokens => {
   const accessToken = jwt.sign(
-    { id: userId, email, role },
+    { id: userId, email, role, talentModeEnabled },
     config.jwt.secret,
     { expiresIn: config.jwt.expiresIn }
   );
 
   const refreshToken = jwt.sign(
-    { id: userId, email, role },
+    { id: userId, email, role, talentModeEnabled },
     config.jwt.refreshSecret,
     { expiresIn: config.jwt.refreshExpiresIn }
   );
@@ -63,12 +63,12 @@ const generateVerificationToken = (): string => {
 
 // Register new user
 export const register = async (input: RegisterInput): Promise<AuthResponse> => {
-  const { email, password, name, role = 'CLIENT', emailVerified = false } = input;
+  const { email, password, name, emailVerified = false } = input;
 
   console.log('📝 Register attempt');
   console.log('📧 Email:', email);
   console.log('👤 Name:', name);
-  console.log('🎭 Role:', role);
+  console.log('🎭 Role: USER (default)');
   console.log('✉️ Email Verified (from invitation):', emailVerified);
 
   // Check if user already exists
@@ -91,13 +91,14 @@ export const register = async (input: RegisterInput): Promise<AuthResponse> => {
   const emailVerificationToken = generateVerificationToken();
   const emailVerificationExpires = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
 
-  // Create user
+  // Create user (all new users start as USER role)
   const user = await prisma.user.create({
     data: {
       email,
       passwordHash,
       name,
-      role,
+      role: 'USER', // All new registrations are USER by default
+      talentModeEnabled: false, // Talent mode is disabled by default
       emailVerified: emailVerified, // Use the passed value (true for invitations, false for normal signup)
       emailVerificationToken,
       emailVerificationExpires,
@@ -110,17 +111,12 @@ export const register = async (input: RegisterInput): Promise<AuthResponse> => {
       avatarUrl: true,
       authProvider: true,
       emailVerified: true,
+      talentModeEnabled: true,
     },
   });
 
-  // If talent, create talent profile
-  if (role === 'TALENT') {
-    await prisma.talentProfile.create({
-      data: {
-        userId: user.id,
-      },
-    });
-  }
+  // Note: TalentProfile is NO LONGER created automatically on registration
+  // It will be created when user enables talent mode via Settings
 
   // Send verification email
   const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
@@ -140,7 +136,7 @@ export const register = async (input: RegisterInput): Promise<AuthResponse> => {
   // For normal signups, user must verify email first
   let tokens = null;
   if (user.emailVerified) {
-    tokens = generateTokens(user.id, user.email, user.role);
+    tokens = generateTokens(user.id, user.email, user.role, user.talentModeEnabled);
   }
 
   return {
@@ -260,7 +256,7 @@ export const login = async (input: LoginInput): Promise<AuthResponse> => {
   console.log('✅ Email verified');
 
   // Generate tokens
-  const tokens = generateTokens(user.id, user.email, user.role);
+  const tokens = generateTokens(user.id, user.email, user.role, user.talentModeEnabled || false);
 
   return {
     user: {
@@ -294,7 +290,7 @@ export const refreshAccessToken = async (refreshToken: string): Promise<AuthToke
     }
 
     // Generate new tokens
-    return generateTokens(user.id, user.email, user.role);
+    return generateTokens(user.id, user.email, user.role, user.talentModeEnabled || false);
   } catch (error) {
     throw new UnauthorizedError('Invalid or expired refresh token');
   }
@@ -545,7 +541,7 @@ export const loginWithGoogle = async (input: GoogleAuthInput): Promise<AuthRespo
   }
 
   // Generate JWT tokens
-  const tokens = generateTokens(user.id, user.email, user.role);
+  const tokens = generateTokens(user.id, user.email, user.role, user.talentModeEnabled || false);
 
   return {
     user: {
@@ -555,6 +551,130 @@ export const loginWithGoogle = async (input: GoogleAuthInput): Promise<AuthRespo
       role: user.role,
       avatarUrl: user.avatarUrl,
       authProvider: user.authProvider,
+    },
+    tokens,
+  };
+};
+
+// ==================== TALENT MODE MANAGEMENT ====================
+
+interface TalentQuestionnaire {
+  isCreator: boolean;
+  seekingWork: boolean;
+  hasPortfolio: boolean;
+  isFreelance: boolean;
+}
+
+// Enable talent mode for a user
+export const enableTalentMode = async (
+  userId: string,
+  questionnaire: TalentQuestionnaire,
+  ipAddress?: string,
+  userAgent?: string
+): Promise<{ user: any; tokens: AuthTokens }> => {
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user) throw new NotFoundError('User not found');
+  if (user.talentModeEnabled === true) throw new ConflictError('Talent mode is already enabled');
+
+  // Validate questionnaire
+  const requiredFields: (keyof TalentQuestionnaire)[] = ['isCreator', 'seekingWork', 'hasPortfolio', 'isFreelance'];
+  for (const field of requiredFields) {
+    if (typeof questionnaire[field] !== 'boolean') {
+      throw new BadRequestError(`Questionnaire field '${field}' is required and must be boolean`);
+    }
+  }
+
+  // Rate limit check
+  const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const recentActivation = await prisma.talentModeActivationLog.findFirst({
+    where: { userId, action: 'ENABLED', createdAt: { gte: oneDayAgo } },
+  });
+  if (recentActivation) {
+    throw new ConflictError('Talent mode can only be enabled once per 24 hours');
+  }
+
+  // Enable in transaction
+  const updatedUser = await prisma.$transaction(async (tx) => {
+    const updated = await tx.user.update({
+      where: { id: userId },
+      data: {
+        talentModeEnabled: true,
+        talentActivationDate: new Date(),
+        talentQuestionnaire: questionnaire as any,
+      },
+    });
+
+    const existingProfile = await tx.talentProfile.findUnique({ where: { userId } });
+    if (!existingProfile) {
+      await tx.talentProfile.create({ data: { userId } });
+    }
+
+    await tx.talentModeActivationLog.create({
+      data: { userId, action: 'ENABLED', questionnaire: questionnaire as any, ipAddress, userAgent },
+    });
+
+    return updated;
+  });
+
+  console.log(\`✅ Talent mode enabled for user \${userId}\`);
+  const tokens = generateTokens(updatedUser.id, updatedUser.email, updatedUser.role, true);
+
+  return {
+    user: {
+      id: updatedUser.id,
+      email: updatedUser.email,
+      name: updatedUser.name,
+      role: updatedUser.role,
+      talentModeEnabled: updatedUser.talentModeEnabled,
+      talentActivationDate: updatedUser.talentActivationDate,
+    },
+    tokens,
+  };
+};
+
+// Disable talent mode for a user
+export const disableTalentMode = async (
+  userId: string,
+  ipAddress?: string,
+  userAgent?: string
+): Promise<{ user: any; tokens: AuthTokens }> => {
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user) throw new NotFoundError('User not found');
+  if (user.talentModeEnabled === false) throw new BadRequestError('Talent mode is not enabled');
+
+  // Check active work
+  const activeClientProjects = await prisma.project.findMany({
+    where: { talentId: userId, status: { in: ['PENDING', 'MATCHING', 'IN_PROGRESS', 'REVIEW'] } },
+  });
+  if (activeClientProjects.length > 0) {
+    throw new ConflictError(\`Cannot disable talent mode with \${activeClientProjects.length} active client projects\`);
+  }
+
+  const activeAssignments = await prisma.deliverable.findMany({
+    where: { assignedTalentId: userId, status: { in: ['PRODUCTION', 'RETOUR', 'VALIDATION'] } },
+  });
+  if (activeAssignments.length > 0) {
+    throw new ConflictError(\`Cannot disable talent mode with \${activeAssignments.length} active assignments\`);
+  }
+
+  // Disable in transaction
+  const updatedUser = await prisma.$transaction(async (tx) => {
+    await tx.talentModeActivationLog.create({
+      data: { userId, action: 'DISABLED', ipAddress, userAgent },
+    });
+    return await tx.user.update({ where: { id: userId }, data: { talentModeEnabled: false } });
+  });
+
+  console.log(\`✅ Talent mode disabled for user \${userId}\`);
+  const tokens = generateTokens(updatedUser.id, updatedUser.email, updatedUser.role, false);
+
+  return {
+    user: {
+      id: updatedUser.id,
+      email: updatedUser.email,
+      name: updatedUser.name,
+      role: updatedUser.role,
+      talentModeEnabled: updatedUser.talentModeEnabled,
     },
     tokens,
   };
