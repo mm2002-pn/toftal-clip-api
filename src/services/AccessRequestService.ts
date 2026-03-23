@@ -39,7 +39,7 @@ export class AccessRequestService {
         status: 'PENDING',
       },
       include: {
-        user: { select: { id: true, name: true, email: true } },
+        user: { select: { id: true, name: true, email: true, role: true, talentModeEnabled: true } },
         project: { select: { id: true, title: true, ownerId: true, owner: { select: { email: true, name: true } } } },
       },
     });
@@ -116,7 +116,7 @@ export class AccessRequestService {
       where: { id: requestId },
       data: { status: 'APPROVED' },
       include: {
-        user: { select: { email: true, name: true, role: true } },
+        user: { select: { email: true, name: true, role: true, talentModeEnabled: true } },
         project: { select: { title: true } },
       },
     });

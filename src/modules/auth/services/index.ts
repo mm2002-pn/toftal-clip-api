@@ -6,6 +6,7 @@ import { config } from '../../../config';
 import { firebaseAuth } from '../../../config/firebase';
 import { sendEmail, emailTemplates } from '../../../config/email';
 import { ConflictError, UnauthorizedError, NotFoundError, BadRequestError } from '../../../utils/errors';
+import { UserRole } from '@prisma/client';
 
 interface RegisterInput {
   email: string;
@@ -97,7 +98,7 @@ export const register = async (input: RegisterInput): Promise<AuthResponse> => {
       email,
       passwordHash,
       name,
-      role: 'USER', // All new registrations are USER by default
+      role: UserRole.USER, // All new registrations are USER by default
       talentModeEnabled: false, // Talent mode is disabled by default
       emailVerified: emailVerified, // Use the passed value (true for invitations, false for normal signup)
       emailVerificationToken,
@@ -472,12 +473,12 @@ export const resetPassword = async (email: string, resetToken: string, newPasswo
 // Login/Register with Google (Firebase)
 interface GoogleAuthInput {
   idToken: string;
-  role?: 'CLIENT' | 'TALENT';
   createIfNotExists?: boolean; // true for /register, false for /login
+  // role is no longer a parameter - all new users are USER by default
 }
 
 export const loginWithGoogle = async (input: GoogleAuthInput): Promise<AuthResponse> => {
-  const { idToken, role = 'CLIENT' } = input;
+  const { idToken } = input;
 
   // Verify Firebase ID token
   let decodedToken;
@@ -525,7 +526,8 @@ export const loginWithGoogle = async (input: GoogleAuthInput): Promise<AuthRespo
             name: name || email.split('@')[0],
             firebaseUid: uid,
             authProvider: 'google',
-            role,
+            // role defaults to USER (set in schema.prisma)
+            // talentModeEnabled defaults to false (set in schema.prisma)
             avatarUrl: picture || null,
             emailVerified: true, // Google accounts are pre-verified
           },
@@ -616,7 +618,7 @@ export const enableTalentMode = async (
     return updated;
   });
 
-  console.log(\`✅ Talent mode enabled for user \${userId}\`);
+  console.log(`Talent mode enabled for user ${userId}`);
   const tokens = generateTokens(updatedUser.id, updatedUser.email, updatedUser.role, true);
 
   return {
@@ -647,14 +649,14 @@ export const disableTalentMode = async (
     where: { talentId: userId, status: { in: ['PENDING', 'MATCHING', 'IN_PROGRESS', 'REVIEW'] } },
   });
   if (activeClientProjects.length > 0) {
-    throw new ConflictError(\`Cannot disable talent mode with \${activeClientProjects.length} active client projects\`);
+    throw new ConflictError(`Cannot disable talent mode with ${activeClientProjects.length} active client projects`);
   }
 
   const activeAssignments = await prisma.deliverable.findMany({
     where: { assignedTalentId: userId, status: { in: ['PRODUCTION', 'RETOUR', 'VALIDATION'] } },
   });
   if (activeAssignments.length > 0) {
-    throw new ConflictError(\`Cannot disable talent mode with \${activeAssignments.length} active assignments\`);
+    throw new ConflictError(`Cannot disable talent mode with ${activeAssignments.length} active assignments`);
   }
 
   // Disable in transaction
@@ -665,7 +667,7 @@ export const disableTalentMode = async (
     return await tx.user.update({ where: { id: userId }, data: { talentModeEnabled: false } });
   });
 
-  console.log(\`✅ Talent mode disabled for user \${userId}\`);
+  console.log(`Talent mode disabled for user ${userId}`);
   const tokens = generateTokens(updatedUser.id, updatedUser.email, updatedUser.role, false);
 
   return {

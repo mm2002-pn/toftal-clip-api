@@ -10,8 +10,7 @@ datasource db {
 // ==================== ENUMS ====================
 
 enum UserRole {
-  CLIENT
-  TALENT
+  USER
   ADMIN
 }
 
@@ -148,7 +147,7 @@ model User {
   email                     String        @unique
   passwordHash              String?       @map("password_hash")
   name                      String
-  role                      UserRole      @default(CLIENT)
+  role                      UserRole      @default(USER)
   avatarUrl                 String?       @map("avatar_url")
   authProvider              String        @default("email") @map("auth_provider") // "email" | "google"
   firebaseUid               String?       @unique @map("firebase_uid")

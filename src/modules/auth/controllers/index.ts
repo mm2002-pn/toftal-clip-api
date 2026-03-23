@@ -19,8 +19,8 @@ export const register = async (
   next: NextFunction
 ): Promise<void> => {
   try {
-    const { email, password, name, role } = req.body;
-    const result = await authService.register({ email, password, name, role });
+    const { email, password, name } = req.body;
+    const result = await authService.register({ email, password, name });
 
     // Set refresh token in cookie if tokens exist
     if (result.tokens) {
@@ -150,8 +150,8 @@ export const googleAuth = async (
   next: NextFunction
 ): Promise<void> => {
   try {
-    const { idToken, role, createIfNotExists } = req.body;
-    const result = await authService.loginWithGoogle({ idToken, role, createIfNotExists });
+    const { idToken, createIfNotExists } = req.body;
+    const result = await authService.loginWithGoogle({ idToken, createIfNotExists });
 
     // Set refresh token in cookie if tokens exist
     if (result.tokens) {
