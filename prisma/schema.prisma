@@ -164,8 +164,14 @@ model User {
   createdAt                 DateTime      @default(now()) @map("created_at")
   updatedAt                 DateTime      @updatedAt @map("updated_at")
 
+  // Talent Mode Fields (NEW!)
+  talentModeEnabled         Boolean       @default(false) @map("talent_mode_enabled")
+  talentActivationDate      DateTime?     @map("talent_activation_date")
+  talentQuestionnaire       Json?         @map("talent_questionnaire")
+
   // Relations
   clientProjects          Project[]              @relation("ClientProjects")
+  talentModeActivationLogs TalentModeActivationLog[]
   talentProjects          Project[]              @relation("TalentProjects")
   ownedProjects           Project[]              @relation("OwnedProjects")
   assignedDeliverables    Deliverable[]
@@ -695,4 +701,21 @@ model BetaSignup {
   @@index([status])
   @@index([createdAt])
   @@map("beta_signups")
+}
+
+// ==================== TALENT MODE ACTIVATION LOG ====================
+
+model TalentModeActivationLog {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  action    String   // "ENABLED" | "DISABLED"
+  questionnaire Json? // Store questionnaire answers
+  ipAddress String?  @map("ip_address")
+  userAgent String?  @map("user_agent") @db.Text
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@index([createdAt])
+  @@map("talent_mode_activation_logs")
 }
