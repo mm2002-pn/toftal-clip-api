@@ -246,3 +246,42 @@ export const resetPassword = async (
     next(error);
   }
 };
+
+// Enable talent mode
+export const enableTalentMode = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const userId = req.user!.id;
+    const { questionnaire } = req.body;
+    const ipAddress = req.ip || req.socket.remoteAddress;
+    const userAgent = req.get('user-agent');
+
+    const result = await authService.enableTalentMode(userId, questionnaire, ipAddress, userAgent);
+
+    ApiResponse.success(res, result, 'Talent mode enabled successfully');
+  } catch (error) {
+    next(error);
+  }
+};
+
+// Disable talent mode
+export const disableTalentMode = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const userId = req.user!.id;
+    const ipAddress = req.ip || req.socket.remoteAddress;
+    const userAgent = req.get('user-agent');
+
+    const result = await authService.disableTalentMode(userId, ipAddress, userAgent);
+
+    ApiResponse.success(res, result, 'Talent mode disabled successfully');
+  } catch (error) {
+    next(error);
+  }
+};

@@ -9,7 +9,8 @@ import {
   changePasswordValidation,
   googleAuthValidation,
   verifyEmailValidation,
-  resendVerificationValidation
+  resendVerificationValidation,
+  enableTalentModeValidation
 } from '../validators';
 
 const router = Router();
@@ -29,5 +30,9 @@ router.post('/reset-password', authLimiter, authController.resetPassword);
 router.post('/logout', authenticate, authController.logout);
 router.get('/me', authenticate, authController.getMe);
 router.post('/change-password', authenticate, validate(changePasswordValidation), authController.changePassword);
+
+// Talent mode management (protected)
+router.patch('/enable-talent-mode', authenticate, validate(enableTalentModeValidation), authController.enableTalentMode);
+router.patch('/disable-talent-mode', authenticate, authController.disableTalentMode);
 
 export default router;

@@ -14,10 +14,7 @@ export const registerValidation = [
     .trim()
     .isLength({ min: 2, max: 100 })
     .withMessage('Name must be between 2 and 100 characters'),
-  body('role')
-    .optional()
-    .isIn(['CLIENT', 'TALENT'])
-    .withMessage('Role must be CLIENT or TALENT'),
+  // role removed - all new users are USER by default
 ];
 
 export const loginValidation = [
@@ -45,10 +42,7 @@ export const googleAuthValidation = [
   body('idToken')
     .notEmpty()
     .withMessage('Firebase ID token is required'),
-  body('role')
-    .optional()
-    .isIn(['CLIENT', 'TALENT'])
-    .withMessage('Role must be CLIENT or TALENT'),
+  // role removed - all new users are USER by default
 ];
 
 export const verifyEmailValidation = [
@@ -62,4 +56,23 @@ export const resendVerificationValidation = [
     .isEmail()
     .withMessage('Please provide a valid email')
     .normalizeEmail(),
+];
+
+// Enable talent mode validation
+export const enableTalentModeValidation = [
+  body('questionnaire')
+    .notEmpty()
+    .withMessage('Questionnaire is required'),
+  body('questionnaire.isCreator')
+    .isBoolean()
+    .withMessage('isCreator must be boolean'),
+  body('questionnaire.seekingWork')
+    .isBoolean()
+    .withMessage('seekingWork must be boolean'),
+  body('questionnaire.hasPortfolio')
+    .isBoolean()
+    .withMessage('hasPortfolio must be boolean'),
+  body('questionnaire.isFreelance')
+    .isBoolean()
+    .withMessage('isFreelance must be boolean'),
 ];
