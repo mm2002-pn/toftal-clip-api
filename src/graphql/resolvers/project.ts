@@ -102,14 +102,22 @@ export const projectResolvers = {
       };
 
       // Filter projects based on user role
-      if (context.user.role === 'CLIENT' || context.user.role === 'TALENT') {
-        // Clients and Talents see their own projects AND projects they're invited to (members of) AND projects where they're assigned
-        where.OR = [
-          { clientId: context.user.id },
-          { talentId: context.user.id },
-          { deliverables: { some: { assignedTalentId: context.user.id } } },
-          { members: { some: { userId: context.user.id } } },
+      if (context.user.role !== 'ADMIN') {
+        // Users see their own projects AND projects they're members of
+        const filters: any[] = [
+          { clientId: context.user.id }, // Projects created by this user
+          { members: { some: { userId: context.user.id } } }, // Projects where user is member
         ];
+
+        // If talent mode enabled, also see projects where assigned as talent
+        if (context.user.talentModeEnabled === true) {
+          filters.push(
+            { talentId: context.user.id }, // Projects where user is the main talent
+            { deliverables: { some: { assignedTalentId: context.user.id } } } // Projects with assigned deliverables
+          );
+        }
+
+        where.OR = filters;
       } else {
         // ADMIN sees all - or use original OR logic
         where.OR = [
@@ -187,17 +195,17 @@ export const projectResolvers = {
         },
       };
 
-      // If no user context or user is ADMIN/CLIENT, return all deliverables
-      if (!user || user.role === 'ADMIN' || user.role === 'CLIENT') {
+      // If no user context, or ADMIN, or USER without talent mode, return all deliverables
+      if (!user || user.role === 'ADMIN' || user.talentModeEnabled === false) {
         return prisma.deliverable.findMany({
           where: { projectId: parent.id },
           include: includeOptions,
         });
       }
 
-      // For TALENT: only return deliverables assigned to them
+      // For USER with talent mode enabled: only return deliverables assigned to them
       // Either as project's main talent or specifically assigned to the deliverable
-      if (user.role === 'TALENT') {
+      if (user.talentModeEnabled === true) {
         return prisma.deliverable.findMany({
           where: {
             projectId: parent.id,

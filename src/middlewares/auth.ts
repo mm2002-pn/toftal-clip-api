@@ -12,6 +12,7 @@ declare global {
         id: string;
         email: string;
         role: string;
+        talentModeEnabled: boolean;
       };
     }
   }
@@ -21,6 +22,7 @@ export interface JwtPayload {
   id: string;
   email: string;
   role: string;
+  talentModeEnabled: boolean;
   iat: number;
   exp: number;
 }
@@ -49,7 +51,7 @@ export const authenticate = async (
     // Check if user still exists
     const user = await prisma.user.findUnique({
       where: { id: decoded.id },
-      select: { id: true, email: true, role: true },
+      select: { id: true, email: true, role: true, talentModeEnabled: true },
     });
 
     if (!user) {
@@ -61,6 +63,7 @@ export const authenticate = async (
       id: user.id,
       email: user.email,
       role: user.role,
+      talentModeEnabled: user.talentModeEnabled || false,
     };
 
     next();
@@ -94,6 +97,7 @@ export const optionalAuth = async (
         id: decoded.id,
         email: decoded.email,
         role: decoded.role,
+        talentModeEnabled: decoded.talentModeEnabled || false,
       };
     }
 

@@ -121,8 +121,8 @@ export class AccessRequestService {
       },
     });
 
-    // Update project member permissions based on role
-    const isTalent = request.user.role === 'TALENT';
+    // Update project member permissions based on talent mode
+    const isTalent = request.user.talentModeEnabled === true;
     const permissions = isTalent
       ? { view: true, edit: true, comment: true, approve: true }
       : { view: true, edit: true, comment: true, approve: false };

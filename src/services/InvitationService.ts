@@ -270,9 +270,9 @@ export class InvitationService {
       clientId: project?.clientId,
     });
 
-    // Determine permissions and role based on user role and project type
-    const isTalent = user.role === 'TALENT';
-    const isClient = user.role === 'CLIENT';
+    // Determine permissions and role based on talent mode and project type
+    const isTalent = user.talentModeEnabled === true;
+    const isClient = user.talentModeEnabled === false || user.talentModeEnabled === undefined;
     const isClientProject = project?.type === 'CLIENT';
 
     // For CLIENT project: Client gets full access as owner
@@ -282,7 +282,7 @@ export class InvitationService {
     let memberRole: ProjectRole = ProjectRole.COLLABORATOR;
 
     if (isClientProject && isClient) {
-      // Client accepting invitation to a CLIENT project → Full access as collaborator
+      // User without talent mode accepting invitation to a CLIENT project → Full access as collaborator
       permissions = {
         view: true,
         edit: true,
@@ -291,7 +291,7 @@ export class InvitationService {
       };
       memberRole = ProjectRole.COLLABORATOR;
     } else if (isTalent) {
-      // Talent: Full access
+      // User with talent mode enabled: Full access with approve rights
       permissions = {
         view: true,
         edit: true,
@@ -299,7 +299,7 @@ export class InvitationService {
         approve: true,
       };
     } else {
-      // Other clients in regular projects: Full access for collaboration
+      // Other users in regular projects: Full access for collaboration
       permissions = {
         view: true,
         edit: true,
