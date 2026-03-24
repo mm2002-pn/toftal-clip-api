@@ -1,0 +1,1 @@
+UPDATE "User" SET "talentModeEnabled" = true, "talentActivationDate" = COALESCE("talentActivationDate", CURRENT_TIMESTAMP) WHERE role = 'USER' AND "talentModeEnabled" = false AND EXISTS (SELECT 1 FROM "TalentProfile" WHERE "TalentProfile"."userId" = "User".id);

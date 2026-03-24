@@ -147,6 +147,62 @@ export const emailTemplates = {
     `,
   }),
 
+  // Unassignment notification - sent to talent when unassigned from a deliverable
+  talentUnassigned: (talentName: string, deliverableTitle: string, projectTitle: string, workspaceUrl: string) => ({
+    subject: `Assignation retirée - ${projectTitle}`,
+    html: emailWrapper(`
+      <h2 style="color: #FAFAFA; margin: 0 0 16px 0; font-size: 24px;">Bonjour ${talentName},</h2>
+      <p style="color: #A1A1AA; font-size: 16px; line-height: 1.6; margin: 0 0 24px 0;">
+        Votre assignation à une vidéo a été retirée.
+      </p>
+
+      <!-- Mission Details -->
+      <div style="background-color: #18181B; border-radius: 12px; padding: 24px; margin-bottom: 24px; border: 1px solid #27272A;">
+        <table width="100%" cellpadding="0" cellspacing="0">
+          <tr>
+            <td style="padding: 8px 0;">
+              <span style="color: #71717A; font-size: 12px; text-transform: uppercase;">Projet</span>
+              <p style="color: #FAFAFA; font-size: 18px; font-weight: 600; margin: 4px 0 0 0;">${projectTitle}</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 8px 0; border-top: 1px solid #27272A;">
+              <span style="color: #71717A; font-size: 12px; text-transform: uppercase;">Vidéo</span>
+              <p style="color: #FAFAFA; font-size: 18px; font-weight: 600; margin: 4px 0 0 0;">${deliverableTitle}</p>
+            </td>
+          </tr>
+        </table>
+      </div>
+
+      <p style="color: #A1A1AA; font-size: 14px; line-height: 1.6; margin: 24px 0;">
+        Vous n'êtes plus assigné à cette vidéo. Si vous avez des questions, veuillez contacter le responsable du projet.
+      </p>
+
+      <!-- Button -->
+      <table width="100%" cellpadding="0" cellspacing="0">
+        <tr>
+          <td align="center" style="padding: 24px 0;">
+            <a href="${workspaceUrl}" style="display: inline-block; background: linear-gradient(135deg, #E91E63 0%, #C2185B 100%); color: white; text-decoration: none; padding: 16px 48px; border-radius: 8px; font-weight: 600; font-size: 16px;">
+              Voir le projet
+            </a>
+          </td>
+        </tr>
+      </table>
+    `, 'Assignation Retirée', 'ℹ️'),
+    text: `
+      Bonjour ${talentName},
+
+      Votre assignation à une vidéo a été retirée.
+
+      Projet: ${projectTitle}
+      Vidéo: ${deliverableTitle}
+
+      Si vous avez des questions, veuillez contacter le responsable du projet: ${workspaceUrl}
+
+      - L'équipe Toftal Clip
+    `,
+  }),
+
   // New version notification - sent to client when talent uploads a version
   newVersion: (clientName: string, deliverableTitle: string, projectTitle: string, versionNumber: number, workspaceUrl: string) => ({
     subject: `Nouvelle version disponible - ${deliverableTitle}`,

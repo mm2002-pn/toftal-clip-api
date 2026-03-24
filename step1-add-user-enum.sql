@@ -1,0 +1,4 @@
+ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "talent_mode_enabled" BOOLEAN DEFAULT false;
+ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "talent_activation_date" TIMESTAMP;
+ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "talent_questionnaire" JSONB;
+ALTER TYPE "UserRole" ADD VALUE IF NOT EXISTS 'USER';

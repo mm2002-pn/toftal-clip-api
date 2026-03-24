@@ -83,7 +83,7 @@ export const assignTalent = async (req: Request, res: Response, next: NextFuncti
       where: { id },
       include: {
         project: { select: { clientId: true } },
-        versions: { select: { id: true } },
+        versions: { select: { id: true, status: true } },
       },
     });
 
@@ -104,14 +104,15 @@ export const assignTalent = async (req: Request, res: Response, next: NextFuncti
       ) as any;
     }
 
-    // Prevent UNASSIGNMENT if there are uploaded versions
+    // Prevent UNASSIGNMENT if there are APPROVED versions
+    const hasApprovedVersions = currentDeliverable.versions.some((v: any) => v.status === 'APPROVED');
     if (
       !talentId &&
-      currentDeliverable.versions.length > 0 &&
+      hasApprovedVersions &&
       !force
     ) {
       return ApiResponse.forbidden(res,
-        'Impossible de retirer l\'assignation: des versions ont déjà été uploadées.'
+        'Impossible de retirer l\'assignation: des versions ont déjà été validées.'
       ) as any;
     }
 
@@ -146,6 +147,14 @@ export const assignTalent = async (req: Request, res: Response, next: NextFuncti
       updateData.status = 'PREPARATION';
       updateData.progress = getProgressFromStatus('PREPARATION');
     }
+
+    // Get info about the previously assigned talent before unassignment
+    const previousTalent = !talentId && currentDeliverable.assignedTalentId
+      ? await prisma.user.findUnique({
+          where: { id: currentDeliverable.assignedTalentId },
+          select: { id: true, name: true, email: true, avatarUrl: true },
+        })
+      : null;
 
     const deliverable = await prisma.deliverable.update({
       where: { id },
@@ -188,6 +197,39 @@ export const assignTalent = async (req: Request, res: Response, next: NextFuncti
         );
       } catch (emailError) {
         console.error('Failed to send assignment email:', emailError);
+        // Don't fail the request if email fails
+      }
+    }
+
+    // Create notification and send email for the UNASSIGNED talent
+    if (!talentId && previousTalent && del.project) {
+      const notification = await prisma.notification.create({
+        data: {
+          userId: previousTalent.id,
+          type: 'TALENT_UNASSIGNED',
+          title: 'Assignation retirée',
+          message: `Votre assignation à la vidéo "${deliverable.title}" du projet "${del.project.title}" a été retirée`,
+          link: `/workspace/${del.project.id}`,
+        },
+      });
+
+      // Emit real-time notification
+      socketService.emitToUser(previousTalent.id, 'notification:new', notification);
+
+      // Send email notification
+      try {
+        const workspaceUrl = `${FRONTEND_URL}/#/workspace/${del.project.id}`;
+        await sendEmail(
+          previousTalent.email,
+          emailTemplates.talentUnassigned(
+            previousTalent.name,
+            deliverable.title,
+            del.project.title,
+            workspaceUrl
+          )
+        );
+      } catch (emailError) {
+        console.error('Failed to send unassignment email:', emailError);
         // Don't fail the request if email fails
       }
     }
