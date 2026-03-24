@@ -267,6 +267,8 @@ export const login = async (input: LoginInput): Promise<AuthResponse> => {
       role: user.role,
       avatarUrl: user.avatarUrl,
       authProvider: user.authProvider,
+      talentModeEnabled: user.talentModeEnabled || false,
+      talentActivationDate: user.talentActivationDate || null,
     },
     tokens,
   };
@@ -310,6 +312,8 @@ export const getCurrentUser = async (userId: string) => {
       authProvider: true,
       accountStatus: true,
       createdAt: true,
+      talentModeEnabled: true,
+      talentActivationDate: true,
     },
   });
 
@@ -553,6 +557,8 @@ export const loginWithGoogle = async (input: GoogleAuthInput): Promise<AuthRespo
       role: user.role,
       avatarUrl: user.avatarUrl,
       authProvider: user.authProvider,
+      talentModeEnabled: user.talentModeEnabled || false,
+      talentActivationDate: user.talentActivationDate || null,
     },
     tokens,
   };
