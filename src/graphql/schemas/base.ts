@@ -7,6 +7,7 @@ export const baseTypeDefs = gql`
 
   # Enums
   enum UserRole {
+    USER
     CLIENT
     TALENT
     ADMIN
