@@ -175,6 +175,7 @@ interface JwtPayload {
   id: string;
   email: string;
   role: string;
+  talentModeEnabled: boolean;
 }
 
 // Extended socket with user data
