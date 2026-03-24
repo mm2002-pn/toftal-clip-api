@@ -35,6 +35,8 @@ interface AuthResponse {
     avatarUrl: string | null;
     authProvider?: string;
     emailVerified?: boolean;
+    talentModeEnabled?: boolean;
+    talentActivationDate?: Date | null;
   };
   tokens: AuthTokens | null;
   emailSent?: boolean;
