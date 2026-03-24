@@ -41,15 +41,25 @@ export const talentResolvers = {
       const limit = pagination?.limit || 10;
       const skip = (page - 1) * limit;
 
-      const where: any = {};
+      const where: any = {
+        // IMPORTANT: Only show talents with active talent mode
+        user: {
+          talentModeEnabled: true,
+        },
+      };
       if (filter?.verified !== undefined) where.verified = filter.verified;
       if (filter?.videoType) where.videoType = filter.videoType;
       if (filter?.minRating) where.rating = { gte: filter.minRating };
       if (filter?.tags?.length) where.tags = { hasSome: filter.tags };
       if (filter?.skills?.length) where.skills = { hasSome: filter.skills };
       if (filter?.search) {
+        // Combine talentModeEnabled filter with search
+        where.user = {
+          talentModeEnabled: true,
+          name: { contains: filter.search, mode: 'insensitive' },
+        };
         where.OR = [
-          { user: { name: { contains: filter.search, mode: 'insensitive' } } },
+          { user: { talentModeEnabled: true, name: { contains: filter.search, mode: 'insensitive' } } },
           { bio: { contains: filter.search, mode: 'insensitive' } },
         ];
       }
