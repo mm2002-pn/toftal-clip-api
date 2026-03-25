@@ -493,6 +493,18 @@ export class InvitationService {
 
     const invitation = await this.prisma.projectInvitation.findUnique({
       where: { token },
+      include: {
+        project: {
+          select: {
+            id: true,
+            title: true,
+            ownerId: true,
+            owner: {
+              select: { id: true, name: true, email: true },
+            },
+          },
+        },
+      },
     });
 
     if (!invitation) {
@@ -531,6 +543,46 @@ export class InvitationService {
     });
 
     console.log('✅ [REFUSE_INVITATION] Invitation refused successfully');
+
+    // Notify the project owner (talent who created the project)
+    if (invitation.project && invitation.project.ownerId && invitation.project.owner) {
+      const notificationMessage = reason
+        ? `${invitation.email} a refusé l'invitation pour "${invitation.project.title}". Raison: ${reason}`
+        : `${invitation.email} a refusé l'invitation pour "${invitation.project.title}"`;
+
+      // Create notification in database
+      const notification = await this.prisma.notification.create({
+        data: {
+          userId: invitation.project.ownerId,
+          type: 'INVITATION_REJECTED',
+          title: 'Invitation refusée',
+          message: notificationMessage,
+          link: `/workspace/${invitation.projectId}`,
+        },
+      });
+
+      console.log(`📧 [REFUSE_INVITATION] Notification created for owner ${invitation.project.ownerId}`);
+
+      // Emit real-time notification to the owner
+      socketService.emitToUser(invitation.project.ownerId, 'notification:new', notification);
+      console.log(`📡 [REFUSE_INVITATION] Real-time notification sent to owner`);
+
+      // Send email notification to the owner
+      try {
+        await this.emailService.sendInvitationRejectedEmail({
+          to: invitation.project.owner.email,
+          talentName: invitation.project.owner.name,
+          clientEmail: invitation.email,
+          projectTitle: invitation.project.title,
+          projectId: invitation.project.id,
+          reason: reason || undefined,
+        });
+        console.log(`📧 [REFUSE_INVITATION] Email sent to owner ${invitation.project.owner.email}`);
+      } catch (emailError) {
+        console.error(`❌ [REFUSE_INVITATION] Failed to send email:`, emailError);
+        // Don't fail the invitation refusal if email fails
+      }
+    }
 
     return updatedInvitation;
   }

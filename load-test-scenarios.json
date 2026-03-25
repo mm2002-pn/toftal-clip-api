@@ -1,0 +1,185 @@
+{
+  "scenarios": {
+    "light": {
+      "description": "Test léger - Validation des endpoints",
+      "threadGroups": [
+        {
+          "name": "Auth Setup",
+          "numThreads": 1,
+          "rampUp": 1,
+          "loops": 1
+        },
+        {
+          "name": "Read Operations",
+          "numThreads": 5,
+          "rampUp": 5,
+          "loops": 3
+        }
+      ],
+      "duration": "5-10 minutes",
+      "expectedMetrics": {
+        "avgLatency": "< 150ms",
+        "p95Latency": "< 300ms",
+        "errorRate": "0%"
+      }
+    },
+    "moderate": {
+      "description": "Test modéré - Charge normale",
+      "threadGroups": [
+        {
+          "name": "Auth Setup",
+          "numThreads": 1,
+          "rampUp": 1,
+          "loops": 1
+        },
+        {
+          "name": "Read Operations",
+          "numThreads": 10,
+          "rampUp": 10,
+          "loops": 5
+        },
+        {
+          "name": "Moderate Load",
+          "numThreads": 50,
+          "rampUp": 30,
+          "loops": 3
+        }
+      ],
+      "duration": "10-15 minutes",
+      "expectedMetrics": {
+        "avgLatency": "< 200ms",
+        "p95Latency": "< 500ms",
+        "errorRate": "< 0.5%"
+      }
+    },
+    "heavy": {
+      "description": "Test de stress - Charge maximale",
+      "threadGroups": [
+        {
+          "name": "Auth Setup",
+          "numThreads": 1,
+          "rampUp": 1,
+          "loops": 1
+        },
+        {
+          "name": "Read Operations",
+          "numThreads": 50,
+          "rampUp": 30,
+          "loops": 10
+        },
+        {
+          "name": "Moderate Load",
+          "numThreads": 100,
+          "rampUp": 60,
+          "loops": 10
+        },
+        {
+          "name": "Heavy Load",
+          "numThreads": 150,
+          "rampUp": 90,
+          "loops": 5
+        }
+      ],
+      "duration": "20-30 minutes",
+      "expectedMetrics": {
+        "avgLatency": "< 300ms",
+        "p95Latency": "< 1000ms",
+        "errorRate": "< 1%"
+      }
+    },
+    "stress": {
+      "description": "Test extrême - Limite du système",
+      "threadGroups": [
+        {
+          "name": "Auth Setup",
+          "numThreads": 5,
+          "rampUp": 5,
+          "loops": 1
+        },
+        {
+          "name": "Extreme Load",
+          "numThreads": 500,
+          "rampUp": 120,
+          "loops": 3
+        }
+      ],
+      "duration": "30-40 minutes",
+      "expectedMetrics": {
+        "avgLatency": "< 1000ms",
+        "p95Latency": "< 5000ms",
+        "errorRate": "< 5%"
+      },
+      "warning": "Attention: Ce scénario peut surcharger le système. À utiliser uniquement pour tester les limites."
+    }
+  },
+  "endpoints": [
+    {
+      "name": "Authentication",
+      "path": "/api/v1/auth/login",
+      "method": "POST",
+      "importance": "CRITICAL",
+      "description": "Authentification utilisateur"
+    },
+    {
+      "name": "Get Current User",
+      "path": "/api/v1/auth/me",
+      "method": "GET",
+      "importance": "HIGH",
+      "description": "Récupérer l'utilisateur courant"
+    },
+    {
+      "name": "List Projects",
+      "graphql": true,
+      "query": "projects(limit: 10, offset: 0)",
+      "importance": "HIGH",
+      "description": "Lister les projets"
+    },
+    {
+      "name": "List Talents",
+      "graphql": true,
+      "query": "talents(limit: 20, offset: 0)",
+      "importance": "MEDIUM",
+      "description": "Lister les talents disponibles"
+    },
+    {
+      "name": "Projects with Deliverables",
+      "graphql": true,
+      "query": "projects { id title deliverables { id title status } }",
+      "importance": "HIGH",
+      "description": "Projets avec livrables"
+    },
+    {
+      "name": "Assign Talent",
+      "path": "/api/v1/deliverables/:id/assign",
+      "method": "PATCH",
+      "importance": "MEDIUM",
+      "description": "Assigner un talent à une livrable"
+    }
+  ],
+  "systemLimits": {
+    "postgresql": {
+      "maxConnections": 100,
+      "description": "Nombre maximum de connexions simultanées à PostgreSQL"
+    },
+    "nodejs": {
+      "maxHeapSize": "2GB",
+      "maxEventListeners": 10,
+      "description": "Limites par défaut de Node.js"
+    },
+    "cloudRun": {
+      "maxConcurrentRequests": 1000,
+      "maxInstances": 100,
+      "description": "Limites de Cloud Run"
+    }
+  },
+  "recommendations": [
+    "Toujours tester sur une instance isolée, pas en production",
+    "Commencer par le scénario 'light' pour valider la configuration",
+    "Augmenter progressivement: light → moderate → heavy",
+    "Attendre la stabilisation (2-3 minutes) avant de mesurer",
+    "Répéter chaque test 3x pour valider la stabilité",
+    "Surveiller les ressources du serveur (CPU, RAM, connections)",
+    "Sauvegarder les résultats pour comparaison future",
+    "Documenter les changements effectués entre les tests"
+  ]
+}

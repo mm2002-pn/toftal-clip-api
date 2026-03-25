@@ -176,7 +176,7 @@ export const assignTalent = async (req: Request, res: Response, next: NextFuncti
           type: 'TALENT_ASSIGNED',
           title: 'Nouvelle vidéo assignée',
           message: `Vous avez été assigné à la vidéo "${deliverable.title}" du projet "${del.project.title}"`,
-          link: `/workspace/${del.project.id}`,
+          link: `/deliverable/${deliverable.id}`,
         },
       });
 
@@ -209,7 +209,7 @@ export const assignTalent = async (req: Request, res: Response, next: NextFuncti
           type: 'TALENT_UNASSIGNED',
           title: 'Assignation retirée',
           message: `Votre assignation à la vidéo "${deliverable.title}" du projet "${del.project.title}" a été retirée`,
-          link: `/workspace/${del.project.id}`,
+          link: `/deliverable/${deliverable.id}`,
         },
       });
 
@@ -304,6 +304,32 @@ export const validateDeliverable = async (req: Request, res: Response, next: Nex
   try {
     const id = String(req.params.id);
 
+    // First get deliverable with all needed info
+    const existingDeliverable = await prisma.deliverable.findUnique({
+      where: { id },
+      include: {
+        project: {
+          select: {
+            id: true,
+            title: true,
+            clientId: true,
+          },
+        },
+        assignedTalent: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+          },
+        },
+      },
+    });
+
+    if (!existingDeliverable) {
+      throw new NotFoundError('Deliverable not found');
+    }
+
+    // Update deliverable status
     const deliverable = await prisma.deliverable.update({
       where: { id },
       data: {
@@ -320,6 +346,23 @@ export const validateDeliverable = async (req: Request, res: Response, next: Nex
         status: deliverable.status,
         projectId: deliverable.project.id,
       });
+    }
+
+    // Notify the assigned talent about validation
+    if (existingDeliverable.assignedTalent && existingDeliverable.project) {
+      const notification = await prisma.notification.create({
+        data: {
+          userId: existingDeliverable.assignedTalent.id,
+          type: 'DELIVERABLE_VALIDATED',
+          title: '✅ Vidéo validée',
+          message: `Votre vidéo "${existingDeliverable.title}" du projet "${existingDeliverable.project.title}" a été validée. Excellent travail !`,
+          link: `/deliverable/${existingDeliverable.id}`,
+        },
+      });
+
+      // Emit real-time notification to the talent
+      socketService.emitToUser(existingDeliverable.assignedTalent.id, 'notification:new', notification);
+      console.log(`📡 [VALIDATE_DELIVERABLE] Notification sent to talent ${existingDeliverable.assignedTalent.id}`);
     }
 
     ApiResponse.success(res, deliverable, 'Deliverable validated');
@@ -387,7 +430,7 @@ export const addVersion = async (req: Request, res: Response, next: NextFunction
           type: 'VERSION_UPLOADED',
           title: 'Nouvelle version disponible',
           message: `La version ${versionNumber} de "${deliverable.title}" est prête pour review`,
-          link: `/workspace/${deliverable.project.id}`,
+          link: `/deliverable/${deliverable.id}`,
         },
       });
 
@@ -537,7 +580,7 @@ export const acceptAssignment = async (req: Request, res: Response, next: NextFu
           type: 'ASSIGNMENT_ACCEPTED',
           title: 'Mission acceptée',
           message: `${talent?.name || 'Le talent'} a accepté de travailler sur "${deliverable.title}"`,
-          link: `/workspace/${deliverable.project.id}`,
+          link: `/deliverable/${deliverable.id}`,
         },
       });
 
@@ -621,7 +664,7 @@ export const rejectAssignment = async (req: Request, res: Response, next: NextFu
           type: 'ASSIGNMENT_REJECTED',
           title: 'Mission refusée',
           message: `${deliverable.assignedTalent?.name || 'Le talent'} a refusé de travailler sur "${deliverable.title}"${reason ? `. Raison: ${reason}` : ''}`,
-          link: `/workspace/${deliverable.project.id}`,
+          link: `/deliverable/${deliverable.id}`,
         },
       });
 

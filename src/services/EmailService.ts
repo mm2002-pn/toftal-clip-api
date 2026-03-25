@@ -222,6 +222,33 @@ export class EmailService {
   }
 
   /**
+   * Send invitation rejected email (to talent/owner when client refuses invitation)
+   */
+  async sendInvitationRejectedEmail(data: {
+    to: string;
+    talentName: string;
+    clientEmail: string;
+    projectTitle: string;
+    projectId: string;
+    reason?: string;
+  }): Promise<void> {
+    const { to, talentName, clientEmail, projectTitle, projectId, reason } = data;
+
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+    const workspaceUrl = `${frontendUrl}/#/workspace/${projectId}`;
+
+    const emailTemplate = emailTemplates.invitationRejected(
+      talentName,
+      clientEmail,
+      projectTitle,
+      workspaceUrl,
+      reason
+    );
+
+    await sendEmail(to, emailTemplate);
+  }
+
+  /**
    * Send beta signup notification to manager
    */
   async sendBetaSignupNotification(data: {

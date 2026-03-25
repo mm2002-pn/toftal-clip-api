@@ -655,6 +655,74 @@ export const emailTemplates = {
     `,
   }),
 
+  // Invitation rejected - sent to talent/owner when client refuses invitation
+  invitationRejected: (talentName: string, clientEmail: string, projectTitle: string, workspaceUrl: string, reason?: string) => ({
+    subject: `❌ Invitation refusée - ${projectTitle}`,
+    html: emailWrapper(`
+      <h2 style="color: #FAFAFA; margin: 0 0 16px 0; font-size: 24px;">Invitation refusée</h2>
+      <p style="color: #A1A1AA; font-size: 16px; line-height: 1.6; margin: 0 0 24px 0;">
+        Bonjour ${talentName},
+      </p>
+      <p style="color: #A1A1AA; font-size: 16px; line-height: 1.6; margin: 0 0 24px 0;">
+        <strong style="color: #EF4444;">${clientEmail}</strong> a refusé l'invitation pour le projet <strong style="color: #FAFAFA;">${projectTitle}</strong>.
+      </p>
+
+      <!-- Project Details -->
+      <div style="background-color: #18181B; border-radius: 12px; padding: 24px; margin-bottom: 24px; border: 1px solid #27272A;">
+        <table width="100%" cellpadding="0" cellspacing="0">
+          <tr>
+            <td style="padding: 8px 0;">
+              <span style="color: #71717A; font-size: 12px; text-transform: uppercase;">Projet</span>
+              <p style="color: #FAFAFA; font-size: 18px; font-weight: 600; margin: 4px 0 0 0;">${projectTitle}</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 8px 0; border-top: 1px solid #27272A;">
+              <span style="color: #71717A; font-size: 12px; text-transform: uppercase;">Email du client</span>
+              <p style="color: #FAFAFA; font-size: 16px; margin: 4px 0 0 0;">${clientEmail}</p>
+            </td>
+          </tr>
+          ${reason ? `
+          <tr>
+            <td style="padding: 8px 0; border-top: 1px solid #27272A;">
+              <span style="color: #71717A; font-size: 12px; text-transform: uppercase;">Motif du refus</span>
+              <p style="color: #FAFAFA; font-size: 16px; margin: 4px 0 0 0; font-style: italic;">"${reason}"</p>
+            </td>
+          </tr>
+          ` : ''}
+        </table>
+      </div>
+
+      <p style="color: #A1A1AA; font-size: 14px; line-height: 1.6; margin: 0 0 24px 0;">
+        Vous pouvez contacter le client directement pour comprendre les raisons de ce refus, ou inviter un autre client pour ce projet.
+      </p>
+
+      <!-- Button -->
+      <table width="100%" cellpadding="0" cellspacing="0">
+        <tr>
+          <td align="center" style="padding: 24px 0;">
+            <a href="${workspaceUrl}" style="display: inline-block; background: linear-gradient(135deg, #E91E63 0%, #C2185B 100%); color: white; text-decoration: none; padding: 16px 48px; border-radius: 8px; font-weight: 600; font-size: 16px;">
+              Voir le projet
+            </a>
+          </td>
+        </tr>
+      </table>
+    `, 'Invitation Refusée', '❌'),
+    text: `
+      Bonjour ${talentName},
+
+      ${clientEmail} a refusé l'invitation pour le projet "${projectTitle}".
+
+      ${reason ? `Motif du refus: "${reason}"` : ''}
+
+      Vous pouvez contacter le client directement pour comprendre les raisons de ce refus, ou inviter un autre client pour ce projet.
+
+      Voir le projet: ${workspaceUrl}
+
+      - L'équipe Toftal Clip
+    `,
+  }),
+
   // Beta signup notification - sent to manager when new signup
   betaSignupNotification: (
     name: string,

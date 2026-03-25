@@ -98,10 +98,10 @@ export const getQualityLabel = (width: number, height: number): VideoMetadata['q
  */
 export const getAvailableQualities = (originalQuality: VideoMetadata['quality']): string[] => {
   const qualityMap: Record<string, string[]> = {
-    '8K': ['4K', '2K', '1080p'],
-    '4K': ['2K', '1080p'],
-    '2K': ['1080p'],
-    '1080p': [],
+    '8K': ['4K', '2K', '1080p', '720p'],
+    '4K': ['2K', '1080p', '720p'],
+    '2K': ['1080p', '720p'],
+    '1080p': ['720p'],
     '720p': [],
     'SD': [],
   };

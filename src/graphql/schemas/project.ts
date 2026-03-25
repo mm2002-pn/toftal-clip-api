@@ -8,6 +8,7 @@ export const projectTypeDefs = gql`
     tone: String
     budget: String
     deadline: String
+    description: String
     aiSummary: String
     aiStructure: [String]
     aiHook: String
