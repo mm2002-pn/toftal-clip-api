@@ -46,3 +46,7 @@ firebase-service-account.json
 
 # les fichiers .md
 *.md
+
+
+# exclure le dosser jmeter
+jmeter/
