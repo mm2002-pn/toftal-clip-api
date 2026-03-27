@@ -564,18 +564,20 @@ export const addDeliverable = async (req: Request, res: Response, next: NextFunc
     let finalStatus: 'PREPARATION' | 'PRODUCTION' | 'RETOUR' | 'VALIDATION' | 'VALIDE';
     let acceptanceStatus: 'PENDING' | 'ACCEPTED' | 'REJECTED' | null;
 
-    if (isCreatorATalent && !assignedTalentId) {
-      // Auto-assign to creator if they're a talent and no one else is assigned
-      finalAssignedTalentId = userId;
-      finalStatus = 'PRODUCTION';
-      acceptanceStatus = 'ACCEPTED';
-      console.log('[DELIVERABLE] Auto-assigning and auto-accepting: Creator is talent');
-    } else if (isCreatorATalent && assignedTalentId === userId) {
-      // Creator is talent and assigning to themselves
-      finalStatus = 'PRODUCTION';
-      acceptanceStatus = 'ACCEPTED';
-      console.log('[DELIVERABLE] Auto-accepting: Creator is talent assigning to self');
-    } else if (assignedTalentId) {
+    // DISABLED: Auto-assignation logic commented out (no talents for now)
+    // if (isCreatorATalent && !assignedTalentId) {
+    //   // Auto-assign to creator if they're a talent and no one else is assigned
+    //   finalAssignedTalentId = userId;
+    //   finalStatus = 'PRODUCTION';
+    //   acceptanceStatus = 'ACCEPTED';
+    //   console.log('[DELIVERABLE] Auto-assigning and auto-accepting: Creator is talent');
+    // } else if (isCreatorATalent && assignedTalentId === userId) {
+    //   // Creator is talent and assigning to themselves
+    //   finalStatus = 'PRODUCTION';
+    //   acceptanceStatus = 'ACCEPTED';
+    //   console.log('[DELIVERABLE] Auto-accepting: Creator is talent assigning to self');
+    // } else
+    if (assignedTalentId) {
       // Assigning to someone else - normal workflow
       finalStatus = 'PREPARATION';
       acceptanceStatus = 'PENDING';
