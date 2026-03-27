@@ -365,6 +365,32 @@ export const validateDeliverable = async (req: Request, res: Response, next: Nex
       console.log(`📡 [VALIDATE_DELIVERABLE] Notification sent to talent ${existingDeliverable.assignedTalent.id}`);
     }
 
+    // Check if all deliverables in the project are now validated
+    if (deliverable.project?.id) {
+      const allDeliverables = await prisma.deliverable.findMany({
+        where: { projectId: deliverable.project.id },
+        select: { status: true },
+      });
+
+      const allValidated = allDeliverables.length > 0 && allDeliverables.every(d => d.status === 'VALIDE');
+
+      if (allValidated) {
+        // Update project status to COMPLETED
+        await prisma.project.update({
+          where: { id: deliverable.project.id },
+          data: { status: 'COMPLETED' },
+        });
+
+        // Emit project status change
+        socketService.emitToProject(deliverable.project.id, 'project:status', {
+          projectId: deliverable.project.id,
+          status: 'COMPLETED',
+        });
+
+        console.log(`✅ [VALIDATE_DELIVERABLE] Project ${deliverable.project.id} marked as COMPLETED - all deliverables validated`);
+      }
+    }
+
     ApiResponse.success(res, deliverable, 'Deliverable validated');
   } catch (error) {
     next(error);

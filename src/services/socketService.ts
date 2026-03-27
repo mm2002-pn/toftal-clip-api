@@ -20,6 +20,7 @@ export type SocketEvent =
   | 'project:brief-completed'
   | 'project:member:added'
   | 'project:member:removed'
+  | 'project:member:role-updated'
   | 'deliverable:status'
   | 'deliverable:assigned'
   | 'deliverable:assignment:accepted'

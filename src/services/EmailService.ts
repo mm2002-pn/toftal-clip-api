@@ -315,4 +315,50 @@ export class EmailService {
     const emailTemplate = emailTemplates.betaSignupConfirmation(userName);
     await sendEmail(userEmail, emailTemplate);
   }
+
+  /**
+   * Send collaborator added email
+   */
+  async sendCollaboratorAddedEmail(data: {
+    to: string;
+    collaboratorName: string;
+    projectTitle: string;
+    projectId: string;
+    addedBy: string;
+    permissions?: { view?: boolean; edit?: boolean; comment?: boolean; approve?: boolean };
+  }): Promise<void> {
+    const { to, collaboratorName, projectTitle, projectId, addedBy, permissions } = data;
+    const emailTemplate = emailTemplates.collaboratorAdded(
+      collaboratorName,
+      projectTitle,
+      addedBy,
+      projectId,
+      permissions
+    );
+    await sendEmail(to, emailTemplate);
+  }
+
+  /**
+   * Send member role updated email
+   */
+  async sendMemberRoleUpdatedEmail(data: {
+    to: string;
+    memberName: string;
+    projectTitle: string;
+    projectId: string;
+    oldRole: string;
+    newRole: string;
+    updatedBy: string;
+  }): Promise<void> {
+    const { to, memberName, projectTitle, projectId, oldRole, newRole, updatedBy } = data;
+    const emailTemplate = emailTemplates.memberRoleUpdated(
+      memberName,
+      projectTitle,
+      projectId,
+      oldRole,
+      newRole,
+      updatedBy
+    );
+    await sendEmail(to, emailTemplate);
+  }
 }

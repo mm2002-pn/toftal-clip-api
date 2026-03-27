@@ -1,0 +1,28 @@
+﻿Prisma schema loaded from prisma\schema.prisma
+Datasource "db": PostgreSQL database "toftal_clip", schema "public" at "127.0.0.1:5433"
+
+6 migrations found in prisma/migrations
+
+node : Error: Failing row contains 
+(8490ad2c-d3f4-4836-a19a-f0fb8487af87, ca3ad2dea2cee45c0efa1
+8a9ee05e01ff24bc26387b7a352ad7700839a96d7ba, null, 
+20260323_add_talent_mode, null, null, 2026-03-27 
+12:15:37.500737, null, 0).
+Au caractère 
+C:\xampp\htdocs\toftal-clip-api\migrate-prod.ps1:39 : 1
++ node .\node_modules\prisma\build\index.js migrate deploy 
+> migration_ ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Error: Failing 
+    ...0737, null, 0).:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+   0: schema_core::commands::apply_migrations::Applying 
+migration
+           with migration_name="20260323_add_talent_mode"
+             at 
+schema-engine\core\src\commands\apply_migrations.rs:91
+   1: schema_core::state::ApplyMigrations
+             at schema-engine\core\src\state.rs:226
+

@@ -17,8 +17,8 @@ export const options = {
 };
 
 // Configuration
-const BASE_URL = 'http://localhost:4000/api/v1';
-const GRAPHQL_URL = 'http://localhost:4000/graphql';
+const BASE_URL = 'https://toftal-clip-api-776016345965.europe-west1.run.app/api/v1';
+const GRAPHQL_URL = 'https://toftal-clip-api-776016345965.europe-west1.run.app/graphql';
 
 // Variables globales
 let authToken = '';

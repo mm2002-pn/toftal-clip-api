@@ -1,0 +1,7 @@
+Environment variables loaded from .env
+Prisma schema loaded from prisma\schema.prisma
+Datasource "db": PostgreSQL database "toftal_clip", schema "public" at "127.0.0.1:5433"
+
+Error: P1001: Can't reach database server at `127.0.0.1:5433`
+
+Please make sure your database server is running at `127.0.0.1:5433`.

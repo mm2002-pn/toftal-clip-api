@@ -10,6 +10,11 @@ export const getNotifications = async (req: Request, res: Response, next: NextFu
       take: 50,
     });
 
+    // Disable caching for notifications to ensure real-time updates
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+
     ApiResponse.success(res, notifications);
   } catch (error) {
     next(error);

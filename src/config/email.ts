@@ -982,6 +982,166 @@ N'hésitez pas à nous contacter à support@toftalclip.com ou à nous répondre 
 L'équipe Toftal Clip
     `,
   }),
+
+  // Collaborator added - sent to collaborator when added to a project
+  collaboratorAdded: (collaboratorName: string, projectTitle: string, addedBy: string, projectId: string, permissions?: { view?: boolean; edit?: boolean; comment?: boolean; approve?: boolean }) => {
+    // Default permissions if not provided
+    const perms = permissions || { view: true, edit: true, comment: true, approve: false };
+
+    // Build permissions list dynamically
+    const permissionsList = [
+      perms.view && '<li>✅ Voir tous les livrables du projet</li>',
+      perms.edit && '<li>✏️ Modifier et éditer les contenus</li>',
+      perms.comment && '<li>💬 Laisser des commentaires et feedbacks</li>',
+      perms.approve && '<li>✔️ Approuver les livrables</li>',
+    ].filter(Boolean).join('');
+
+    const permissionsText = [
+      perms.view && '- Voir tous les livrables du projet',
+      perms.edit && '- Modifier et éditer les contenus',
+      perms.comment && '- Laisser des commentaires et feedbacks',
+      perms.approve && '- Approuver les livrables',
+    ].filter(Boolean).join('\n');
+
+    return {
+    subject: `Vous avez été ajouté au projet "${projectTitle}"`,
+    html: emailWrapper(`
+      <h2 style="color: #FAFAFA; margin: 0 0 16px 0; font-size: 24px;">Bonjour ${collaboratorName} ! 👋</h2>
+      <p style="color: #A1A1AA; font-size: 16px; line-height: 1.6; margin: 0 0 24px 0;">
+        <strong style="color: #E91E63;">${addedBy}</strong> vous a ajouté comme collaborateur sur le projet <strong style="color: #FAFAFA;">${projectTitle}</strong>.
+      </p>
+
+      <div style="background-color: #18181B; border-radius: 12px; padding: 24px; margin: 24px 0; border-left: 4px solid #E91E63;">
+        <h3 style="color: #FAFAFA; font-size: 18px; margin: 0 0 12px 0;">🎯 Vos permissions</h3>
+        <p style="color: #A1A1AA; font-size: 14px; line-height: 1.6; margin: 0;">
+          En tant que <strong style="color: #FAFAFA;">collaborateur</strong>, vous pouvez:
+        </p>
+        <ul style="color: #A1A1AA; font-size: 14px; line-height: 1.8; margin: 12px 0 0 0; padding-left: 20px;">
+          ${permissionsList}
+          <li>🔔 Recevoir les notifications en temps réel</li>
+        </ul>
+      </div>
+
+      <div style="text-align: center; margin: 32px 0;">
+        <a href="${process.env.FRONTEND_URL || 'http://localhost:3000'}/#/workspace/${projectId}"
+           style="display: inline-block; background: linear-gradient(135deg, #E91E63 0%, #C2185B 100%);
+                  color: white; padding: 16px 32px; text-decoration: none; border-radius: 8px;
+                  font-weight: bold; font-size: 16px; box-shadow: 0 4px 12px rgba(233, 30, 99, 0.3);">
+          📂 Accéder au projet
+        </a>
+      </div>
+
+      <div style="background-color: #18181B; border-radius: 12px; padding: 20px; margin: 24px 0; border: 1px solid #27272A;">
+        <p style="color: #71717A; font-size: 13px; line-height: 1.6; margin: 0;">
+          💡 <strong style="color: #A1A1AA;">Astuce:</strong> Vous recevrez des notifications pour tous les événements importants du projet (nouveaux livrables, commentaires, versions, etc.).
+        </p>
+      </div>
+
+      <p style="color: #A1A1AA; font-size: 14px; line-height: 1.6; margin: 24px 0 0 0;">
+        Bonne collaboration ! 🚀<br>
+        <span style="color: #71717A;">L'équipe Toftal Clip</span>
+      </p>
+    `, 'Nouveau collaborateur', '🤝'),
+    text: `
+Bonjour ${collaboratorName} !
+
+${addedBy} vous a ajouté comme collaborateur sur le projet "${projectTitle}".
+
+VOS PERMISSIONS
+En tant que collaborateur, vous pouvez:
+${permissionsText}
+- Recevoir les notifications en temps réel
+
+Accéder au projet: ${config.frontendUrl}/workspace/${projectId}
+
+Astuce: Vous recevrez des notifications pour tous les événements importants du projet.
+
+Bonne collaboration !
+L'équipe Toftal Clip
+    `,
+  };
+  },
+
+  // Member role updated - sent to member when their role changes
+  memberRoleUpdated: (
+    memberName: string,
+    projectTitle: string,
+    projectId: string,
+    oldRole: string,
+    newRole: string,
+    updatedBy: string
+  ) => {
+    const getRoleLabel = (role: string) => {
+      switch (role) {
+        case 'OWNER': return 'Propriétaire';
+        case 'COLLABORATOR': return 'Éditeur';
+        case 'VIEWER': return 'Lecteur';
+        default: return role;
+      }
+    };
+
+    return {
+      subject: `Votre rôle a changé - ${projectTitle}`,
+      html: emailWrapper(`
+      <h2 style="color: #FAFAFA; margin: 0 0 16px 0; font-size: 24px;">Bonjour ${memberName} !</h2>
+
+      <p style="color: #A1A1AA; font-size: 16px; line-height: 1.6; margin: 0 0 24px 0;">
+        ${updatedBy} a modifié votre rôle sur le projet <strong style="color: #FAFAFA;">"${projectTitle}"</strong>.
+      </p>
+
+      <!-- Role Change Box -->
+      <div style="background: linear-gradient(135deg, rgba(233, 30, 99, 0.1) 0%, rgba(194, 24, 91, 0.05) 100%); border: 1px solid rgba(233, 30, 99, 0.2); border-radius: 12px; padding: 24px; margin: 24px 0;">
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <div style="background: rgba(113, 113, 122, 0.2); padding: 12px 16px; border-radius: 8px; flex: 1; text-align: center;">
+            <span style="color: #71717A; font-size: 12px; text-transform: uppercase; font-weight: 600;">Ancien rôle</span>
+            <p style="color: #FAFAFA; font-size: 16px; font-weight: 600; margin: 4px 0 0 0;">${getRoleLabel(oldRole)}</p>
+          </div>
+          <div style="color: #E91E63; font-size: 24px;">→</div>
+          <div style="background: rgba(233, 30, 99, 0.2); padding: 12px 16px; border-radius: 8px; flex: 1; text-align: center; border: 1px solid rgba(233, 30, 99, 0.3);">
+            <span style="color: #E91E63; font-size: 12px; text-transform: uppercase; font-weight: 600;">Nouveau rôle</span>
+            <p style="color: #FAFAFA; font-size: 16px; font-weight: 600; margin: 4px 0 0 0;">${getRoleLabel(newRole)}</p>
+          </div>
+        </div>
+      </div>
+
+      <p style="color: #A1A1AA; font-size: 14px; line-height: 1.6; margin: 24px 0;">
+        Vos nouvelles permissions sont maintenant actives.
+      </p>
+
+      <!-- Button -->
+      <table width="100%" cellpadding="0" cellspacing="0">
+        <tr>
+          <td align="center" style="padding: 24px 0;">
+            <a href="${config.frontendUrl}/#/workspace/${projectId}" style="display: inline-block; background: linear-gradient(135deg, #E91E63 0%, #C2185B 100%); color: white; text-decoration: none; padding: 16px 48px; border-radius: 8px; font-weight: 600; font-size: 16px;">
+              Accéder au Projet
+            </a>
+          </td>
+        </tr>
+      </table>
+
+      <p style="color: #A1A1AA; font-size: 14px; line-height: 1.6; margin: 24px 0 0 0;">
+        Bonne collaboration ! 🚀<br>
+        <span style="color: #71717A;">L'équipe Toftal Clip</span>
+      </p>
+    `, 'Rôle modifié', '🔄'),
+      text: `
+Bonjour ${memberName} !
+
+${updatedBy} a modifié votre rôle sur le projet "${projectTitle}".
+
+CHANGEMENT DE RÔLE
+Ancien rôle: ${getRoleLabel(oldRole)}
+Nouveau rôle: ${getRoleLabel(newRole)}
+
+Vos nouvelles permissions sont maintenant actives.
+
+Accéder au projet: ${config.frontendUrl}/#/workspace/${projectId}
+
+Bonne collaboration !
+L'équipe Toftal Clip
+      `,
+    };
+  },
 };
 
 // Send email function

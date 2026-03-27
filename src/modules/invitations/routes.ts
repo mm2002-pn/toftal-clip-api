@@ -328,6 +328,141 @@ router.get(
 );
 
 /**
+ * PATCH /api/v1/invitations/project/:projectId/members/:memberId
+ * Update a member's role in a project
+ */
+router.patch(
+  '/project/:projectId/members/:memberId',
+  authenticate,
+  requireProjectOwner(),
+  async (req: Request, res: Response) => {
+    try {
+      const projectId = String(req.params.projectId);
+      const memberId = String(req.params.memberId);
+      const { role } = req.body;
+      const updatedBy = req.user!.id;
+
+      console.log('🔄 PATCH /project/:projectId/members/:memberId - Updating member role');
+      console.log('📁 ProjectId:', projectId);
+      console.log('👤 MemberId:', memberId);
+      console.log('🎭 New Role:', role);
+
+      // Validate role
+      const validRoles = ['VIEWER', 'COLLABORATOR', 'OWNER'];
+      if (!role || !validRoles.includes(role)) {
+        return res.status(400).json({
+          success: false,
+          error: `Invalid role. Must be one of: ${validRoles.join(', ')}`,
+        });
+      }
+
+      // Cannot change owner's role
+      const currentMember = await prisma.projectMember.findUnique({
+        where: {
+          projectId_userId: {
+            projectId,
+            userId: memberId,
+          },
+        },
+      });
+
+      if (!currentMember) {
+        return res.status(404).json({
+          success: false,
+          error: 'Member not found in project',
+        });
+      }
+
+      if (currentMember.role === 'OWNER') {
+        return res.status(403).json({
+          success: false,
+          error: 'Cannot change the role of the project owner',
+        });
+      }
+
+      // Update the member's role
+      const updatedMember = await prisma.projectMember.update({
+        where: {
+          projectId_userId: {
+            projectId,
+            userId: memberId,
+          },
+        },
+        data: {
+          role,
+        },
+        include: {
+          user: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+              avatarUrl: true,
+            },
+          },
+        },
+      });
+
+      // Get project details and updater name for email
+      const project = await prisma.project.findUnique({
+        where: { id: projectId },
+        select: { title: true },
+      });
+
+      const updater = await prisma.user.findUnique({
+        where: { id: updatedBy },
+        select: { name: true },
+      });
+
+      // Send email notification
+      if (project && updater) {
+        await emailService.sendMemberRoleUpdatedEmail({
+          to: updatedMember.user.email,
+          memberName: updatedMember.user.name,
+          projectTitle: project.title,
+          projectId,
+          oldRole: currentMember.role,
+          newRole: role,
+          updatedBy: updater.name,
+        });
+        console.log(`📧 Role update email sent to ${updatedMember.user.email}`);
+      }
+
+      // Emit real-time notification
+      const roleUpdatePayload = {
+        projectId,
+        userId: memberId,
+        userName: updatedMember.user.name,
+        newRole: role,
+        oldRole: currentMember.role,
+        updatedBy,
+      };
+
+      socketService.emitToUser(memberId, 'project:member:role-updated', roleUpdatePayload);
+      socketService.emitToProject(projectId, 'project:member:role-updated', roleUpdatePayload);
+      console.log(`📡 Emitted project:member:role-updated event for user ${memberId}`);
+
+      res.json({
+        success: true,
+        message: 'Member role updated successfully',
+        data: {
+          id: updatedMember.id,
+          userId: updatedMember.userId,
+          role: updatedMember.role,
+          user: updatedMember.user,
+        },
+      });
+    } catch (error: any) {
+      console.error('Update member role error:', error);
+      res.status(400).json({
+        success: false,
+        error: error.message || 'Failed to update member role',
+      });
+    }
+  }
+);
+
+/**
  * DELETE /api/v1/invitations/project/:projectId/members/:memberId
  * Remove a member from a project
  */

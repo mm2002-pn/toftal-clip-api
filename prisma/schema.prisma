@@ -12,15 +12,18 @@ datasource db {
 enum UserRole {
   USER
   ADMIN
+  CLIENT  // Legacy - kept for backwards compatibility
+  TALENT  // Legacy - kept for backwards compatibility
 }
 
 enum ProjectStatus {
-  DRAFT
+  DRAFT         // Brouillon
   PENDING
   MATCHING
-  IN_PROGRESS
+  IN_PROGRESS   // Production (projet actif)
   REVIEW
-  COMPLETED
+  COMPLETED     // Terminé (auto: tous livrables à 100%)
+  ARCHIVED      // Archivé (action manuelle)
 }
 
 enum DeliverableStatus {

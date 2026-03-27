@@ -288,10 +288,24 @@ export const addFeedback = async (req: Request, res: Response, next: NextFunctio
           },
         });
 
+        console.log(`📡 [MENTION] Created notification:`, {
+          id: notification.id,
+          type: notification.type,
+          userId: notification.userId,
+          createdAt: notification.createdAt,
+          read: notification.read,
+        });
+
         console.log(`📡 [MENTION] Emitting mention:new to user ${userId}`);
         // Emit mention notification with sound flag
         socketService.emitToUser(userId, 'mention:new', {
-          ...notification,
+          id: notification.id,
+          type: notification.type,
+          title: notification.title,
+          message: notification.message,
+          link: notification.link,
+          read: notification.read,
+          createdAt: notification.createdAt.toISOString(),
           authorName: feedback.author?.name,
           feedbackId: feedback.id,
           deliverableTitle: version.deliverable.title,
@@ -299,8 +313,18 @@ export const addFeedback = async (req: Request, res: Response, next: NextFunctio
           playSound: true,
         });
 
-        // Also emit standard notification
-        socketService.emitToUser(userId, 'notification:new', notification);
+        // Also emit standard notification with proper format
+        socketService.emitToUser(userId, 'notification:new', {
+          id: notification.id,
+          type: notification.type,
+          title: notification.title,
+          message: notification.message,
+          link: notification.link,
+          read: notification.read,
+          createdAt: notification.createdAt.toISOString(),
+        });
+
+        console.log(`✅ [MENTION] Notifications emitted for user ${userId}`);
       }
     } else {
       console.log('🔍 [MENTION] No @ found or no projectId');

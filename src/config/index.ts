@@ -39,6 +39,9 @@ export const config = {
   // CORS - supports comma or semicolon-separated origins
   corsOrigin: (process.env.CORS_ORIGIN || 'http://localhost:3000').split(/[,;]/).map(s => s.trim()).filter(s => s),
 
+  // Frontend URL (for emails and redirects)
+  frontendUrl: process.env.FRONTEND_URL || process.env.CORS_ORIGIN?.split(/[,;]/)[0]?.trim() || 'http://localhost:3000',
+
   // Rate Limiting
   rateLimit: {
     windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS || '900000', 10),

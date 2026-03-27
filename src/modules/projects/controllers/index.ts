@@ -4,11 +4,15 @@ import { ApiResponse } from '../../../utils/apiResponse';
 import { NotFoundError, ForbiddenError } from '../../../utils/errors';
 import { socketService } from '../../../services/socketService';
 import { mapDeliverableTypeToContentType } from '../../../utils/contentTypeMapper';
+import { EmailService } from '../../../services/EmailService';
+
+// Initialize EmailService
+const emailService = new EmailService();
 
 // Create project (now supports V2 with type and ownerId)
 export const createProject = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const { title, deadline, brief, talentId, type = 'PERSONAL', deliverables, collaboratorIds = [] } = req.body;
+    const { title, deadline, brief, talentId, type = 'PERSONAL', deliverables, collaboratorIds = [], collaborators = [], status = 'DRAFT' } = req.body;
     const userId = req.user!.id;
     const userRole = req.user!.role;
 
@@ -19,6 +23,7 @@ export const createProject = async (req: Request, res: Response, next: NextFunct
         talentId,
         ownerId: userId, // Set owner as current user
         type: type || 'PERSONAL',
+        status: status as any, // DRAFT or IN_PROGRESS
         deadline: deadline ? new Date(deadline) : null,
         brief,
       },
@@ -64,12 +69,25 @@ export const createProject = async (req: Request, res: Response, next: NextFunct
     });
 
     // Add collaborators if provided
-    if (collaboratorIds && collaboratorIds.length > 0) {
-      const collaboratorMembers = collaboratorIds.map((collabId: string) => ({
+    // Support both old format (collaboratorIds) and new format (collaborators with permissions)
+    const collabsToAdd = collaborators.length > 0
+      ? collaborators
+      : collaboratorIds.map((collabId: string) => ({
+          userId: collabId,
+          permissions: {
+            view: true,
+            edit: true,
+            comment: true,
+            approve: false,
+          },
+        }));
+
+    if (collabsToAdd.length > 0) {
+      const collaboratorMembers = collabsToAdd.map((collab: any) => ({
         projectId: project.id,
-        userId: collabId,
+        userId: collab.userId,
         role: 'COLLABORATOR',
-        permissions: {
+        permissions: collab.permissions || {
           view: true,
           edit: true,
           comment: true,
@@ -81,6 +99,57 @@ export const createProject = async (req: Request, res: Response, next: NextFunct
         data: collaboratorMembers,
         skipDuplicates: true,
       });
+
+      // Fetch current user name for email
+      const currentUser = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { name: true },
+      });
+      const creatorName = currentUser?.name || req.user!.email;
+
+      // Send notifications and emails to each collaborator
+      for (const collab of collabsToAdd) {
+        const collabId = collab.userId;
+        try {
+          // Fetch collaborator details
+          const collaborator = await prisma.user.findUnique({
+            where: { id: collabId },
+            select: { id: true, name: true, email: true },
+          });
+
+          if (collaborator) {
+            // Create notification in database
+            const notification = await prisma.notification.create({
+              data: {
+                userId: collabId,
+                type: 'PROJECT_COLLABORATOR',
+                title: 'Ajouté comme collaborateur',
+                message: `Vous avez été ajouté au projet "${title}"`,
+                link: `/workspace/${project.id}`,
+              },
+            });
+
+            // Send real-time notification
+            socketService.emitToUser(collabId, 'notification:new', notification);
+
+            // Send email notification
+            if (collaborator.email) {
+              await emailService.sendCollaboratorAddedEmail({
+                to: collaborator.email,
+                collaboratorName: collaborator.name,
+                projectTitle: title,
+                projectId: project.id,
+                addedBy: creatorName,
+                permissions: collab.permissions,
+              });
+              console.log(`📧 [CREATE_PROJECT] Email sent to collaborator ${collaborator.email} with permissions:`, collab.permissions);
+            }
+          }
+        } catch (emailError) {
+          // Log error but don't fail the project creation if email fails
+          console.error(`❌ [CREATE_PROJECT] Failed to notify collaborator ${collabId}:`, emailError);
+        }
+      }
     }
 
     // Notify the talent if assigned
@@ -260,6 +329,7 @@ export const archiveProject = async (req: Request, res: Response, next: NextFunc
       data: {
         isArchived: true,
         archivedAt: new Date(),
+        status: 'ARCHIVED' as any, // Migration needed
       },
       include: {
         client: { select: { id: true, name: true, email: true, avatarUrl: true } },
@@ -267,10 +337,15 @@ export const archiveProject = async (req: Request, res: Response, next: NextFunc
       },
     });
 
-    // Emit project:archived event
+    // Emit project events
     socketService.emitToProject(id, 'project:archived', {
       id: project.id,
       isArchived: project.isArchived,
+    });
+
+    socketService.emitToProject(id, 'project:status', {
+      projectId: id,
+      status: 'ARCHIVED',
     });
 
     ApiResponse.success(res, project, 'Project archived successfully');
@@ -294,12 +369,22 @@ export const restoreProject = async (req: Request, res: Response, next: NextFunc
       throw new ForbiddenError('You do not have permission to restore this project');
     }
 
+    // Check if all deliverables are validated to determine status
+    const deliverables = await prisma.deliverable.findMany({
+      where: { projectId: id },
+      select: { status: true },
+    });
+
+    const allValidated = deliverables.length > 0 && deliverables.every(d => d.status === 'VALIDE');
+    const newStatus = allValidated ? 'COMPLETED' : 'IN_PROGRESS';
+
     const project = await prisma.project.update({
       where: { id },
       data: {
         isArchived: false,
         archivedAt: null,
         deletedAt: null,
+        status: newStatus as any, // Migration needed
       },
       include: {
         client: { select: { id: true, name: true, email: true, avatarUrl: true } },
@@ -307,11 +392,16 @@ export const restoreProject = async (req: Request, res: Response, next: NextFunc
       },
     });
 
-    // Emit project:restored event
+    // Emit project events
     socketService.emitToProject(id, 'project:restored', {
       id: project.id,
       isArchived: project.isArchived,
       deletedAt: project.deletedAt,
+    });
+
+    socketService.emitToProject(id, 'project:status', {
+      projectId: id,
+      status: newStatus,
     });
 
     ApiResponse.success(res, project, 'Project restored successfully');
@@ -460,11 +550,40 @@ export const addDeliverable = async (req: Request, res: Response, next: NextFunc
     const userId = req.user!.id;
     const userRole = req.user!.role;
 
-    // Determine status based on:
-    // Always start in PREPARATION when creating a deliverable
-    // Status will change to PRODUCTION only when talent accepts the assignment
-    const hasTalentAssigned = !!assignedTalentId;
-    const finalStatus = 'PREPARATION';
+    // Get user details to check if creator is a talent (editor)
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { talentModeEnabled: true },
+    });
+
+    const isCreatorATalent = user?.talentModeEnabled === true;
+
+    // DEFAULT BEHAVIOR for talents creating deliverables:
+    // If creator is a talent (editor), auto-assign and auto-accept
+    let finalAssignedTalentId = assignedTalentId;
+    let finalStatus: 'PREPARATION' | 'PRODUCTION' | 'RETOUR' | 'VALIDATION' | 'VALIDE';
+    let acceptanceStatus: 'PENDING' | 'ACCEPTED' | 'REJECTED' | null;
+
+    if (isCreatorATalent && !assignedTalentId) {
+      // Auto-assign to creator if they're a talent and no one else is assigned
+      finalAssignedTalentId = userId;
+      finalStatus = 'PRODUCTION';
+      acceptanceStatus = 'ACCEPTED';
+      console.log('[DELIVERABLE] Auto-assigning and auto-accepting: Creator is talent');
+    } else if (isCreatorATalent && assignedTalentId === userId) {
+      // Creator is talent and assigning to themselves
+      finalStatus = 'PRODUCTION';
+      acceptanceStatus = 'ACCEPTED';
+      console.log('[DELIVERABLE] Auto-accepting: Creator is talent assigning to self');
+    } else if (assignedTalentId) {
+      // Assigning to someone else - normal workflow
+      finalStatus = 'PREPARATION';
+      acceptanceStatus = 'PENDING';
+    } else {
+      // No talent assigned and creator is not talent
+      finalStatus = 'PREPARATION';
+      acceptanceStatus = null;
+    }
 
     // Map legacy type to new ContentType system (supports both)
     const contentType = type ? mapDeliverableTypeToContentType(type) : null;
@@ -477,10 +596,9 @@ export const addDeliverable = async (req: Request, res: Response, next: NextFunc
         type, // Keep legacy field for backwards compatibility
         contentType, // Set new ContentType field
         deadline: deadline ? new Date(deadline) : null,
-        assignedTalentId,
+        assignedTalentId: finalAssignedTalentId,
         status: finalStatus,
-        // If talent is assigned, set acceptanceStatus to PENDING so they can accept/reject
-        acceptanceStatus: hasTalentAssigned ? 'PENDING' : null,
+        acceptanceStatus,
       },
     });
 
@@ -537,6 +655,27 @@ export const addDeliverable = async (req: Request, res: Response, next: NextFunc
     };
     console.log('[SOCKET] Emitting deliverable:created to project:', id, creationPayload);
     socketService.emitToProject(id, 'deliverable:created', creationPayload);
+
+    // If project was COMPLETED, reopen it to IN_PROGRESS since a new deliverable was added
+    const project = await prisma.project.findUnique({
+      where: { id },
+      select: { status: true },
+    });
+
+    if (project?.status === 'COMPLETED') {
+      await prisma.project.update({
+        where: { id },
+        data: { status: 'IN_PROGRESS' },
+      });
+
+      // Emit project status change
+      socketService.emitToProject(id, 'project:status', {
+        projectId: id,
+        status: 'IN_PROGRESS',
+      });
+
+      console.log(`🔄 [ADD_DELIVERABLE] Project ${id} reopened to IN_PROGRESS - new deliverable added`);
+    }
 
     ApiResponse.created(res, completeDeliverable, 'Deliverable added successfully');
   } catch (error) {
