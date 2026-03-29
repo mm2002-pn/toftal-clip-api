@@ -18,6 +18,7 @@ import routes from './routes';
 
 // Import GraphQL schema
 import { schema } from './graphql';
+import { createDataLoaders, DataLoaders } from './graphql/dataloaders';
 
 interface MyContext {
   user?: {
@@ -25,6 +26,7 @@ interface MyContext {
     email: string;
     role: string;
   };
+  loaders: DataLoaders;
 }
 
 // CORS options to reuse
@@ -138,15 +140,20 @@ export const createApp = async (): Promise<Application> => {
     }) as express.RequestHandler,
     expressMiddleware(apolloServer, {
       context: async ({ req }): Promise<MyContext> => {
+        // ✅ PHASE 2: Créer les DataLoaders pour chaque requête
+        // IMPORTANT: Les loaders doivent être créés par requête pour éviter
+        // le cache entre requêtes et les problèmes de permissions
+        const loaders = createDataLoaders();
+
         // Extract token from Authorization header
         const authHeader = req.headers.authorization;
         if (!authHeader?.startsWith('Bearer ')) {
-          return {};
+          return { loaders };
         }
 
         const token = authHeader.split(' ')[1];
         if (!token) {
-          return {};
+          return { loaders };
         }
 
         try {
@@ -163,10 +170,11 @@ export const createApp = async (): Promise<Application> => {
               email: decoded.email,
               role: decoded.role,
             },
+            loaders,
           };
         } catch {
-          // Invalid token - return empty context
-          return {};
+          // Invalid token - return empty context with loaders
+          return { loaders };
         }
       },
     }) as unknown as express.RequestHandler

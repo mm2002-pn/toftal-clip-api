@@ -250,6 +250,9 @@ model Deliverable {
   mediaResources MediaResource[]
   shareLinks     DeliverableShareLink[]
 
+  // ✅ PHASE 2: Index pour optimiser les queries
+  @@index([projectId])
+  @@index([assignedTalentId])
   @@map("deliverables")
 }
 
@@ -275,6 +278,9 @@ model Version {
   uploadedBy  User?       @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
   feedbacks   Feedback[]
 
+  // ✅ PHASE 2: Index pour optimiser les queries
+  @@index([deliverableId])
+  @@index([uploadedById])
   @@map("versions")
 }
 
@@ -326,6 +332,9 @@ model Feedback {
   replyingTo    Feedback?      @relation("FeedbackReplies", fields: [replyingToId], references: [id], onDelete: SetNull)
   replies       Feedback[]     @relation("FeedbackReplies")
 
+  // ✅ PHASE 2: Index pour optimiser les queries
+  @@index([versionId])
+  @@index([authorId])
   @@map("feedbacks")
 }
 

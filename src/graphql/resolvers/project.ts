@@ -166,9 +166,23 @@ export const projectResolvers = {
     },
   },
   Project: {
-    client: (parent: any) => prisma.user.findUnique({ where: { id: parent.clientId } }),
-    talent: (parent: any) => parent.talentId ? prisma.user.findUnique({ where: { id: parent.talentId } }) : null,
-    owner: (parent: any) => parent.ownerId ? prisma.user.findUnique({ where: { id: parent.ownerId } }) : null,
+    client: (parent: any, _args: any, context: any) => {
+      // ✅ PHASE 2: Utiliser DataLoader
+      if (parent.client !== undefined) return parent.client;
+      return context.loaders.userLoader.load(parent.clientId);
+    },
+    talent: (parent: any, _args: any, context: any) => {
+      // ✅ PHASE 2: Utiliser DataLoader
+      if (parent.talent !== undefined) return parent.talent;
+      if (!parent.talentId) return null;
+      return context.loaders.userLoader.load(parent.talentId);
+    },
+    owner: (parent: any, _args: any, context: any) => {
+      // ✅ PHASE 2: Utiliser DataLoader
+      if (parent.owner !== undefined) return parent.owner;
+      if (!parent.ownerId) return null;
+      return context.loaders.userLoader.load(parent.ownerId);
+    },
     deliverables: async (parent: any) => {
       const user = parent._contextUser;
 

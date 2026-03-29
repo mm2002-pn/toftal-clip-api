@@ -1,0 +1,358 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>K6 Load Test Results - Toftal Clip</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 40px; background: #f5f5f5; }
+    .container { max-width: 1200px; margin: 0 auto; background: white; padding: 30px; border-radius: 8px; }
+    h1 { color: #333; border-bottom: 3px solid #4CAF50; padding-bottom: 10px; }
+    .metric-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin: 20px 0; }
+    .metric-card { background: #f9f9f9; padding: 20px; border-radius: 8px; border-left: 4px solid #4CAF50; }
+    .metric-card.warning { border-left-color: #ff9800; }
+    .metric-card.error { border-left-color: #f44336; }
+    .metric-value { font-size: 32px; font-weight: bold; color: #333; }
+    .metric-label { font-size: 14px; color: #666; margin-top: 5px; }
+    .status-ok { color: #4CAF50; }
+    .status-warning { color: #ff9800; }
+    .status-error { color: #f44336; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🚀 Toftal Clip - Load Test Results (10,000 VUs)</h1>
+
+    <div class="metric-grid">
+      <div class="metric-card error">
+        <div class="metric-value">4436ms</div>
+        <div class="metric-label">P95 Latency ❌</div>
+      </div>
+
+      <div class="metric-card error">
+        <div class="metric-value">50.2%</div>
+        <div class="metric-label">Error Rate ❌</div>
+      </div>
+
+      <div class="metric-card ">
+        <div class="metric-value">100.0%</div>
+        <div class="metric-label">Auth Success ✅</div>
+      </div>
+
+      <div class="metric-card ">
+        <div class="metric-value">100.0%</div>
+        <div class="metric-label">GraphQL Success ✅</div>
+      </div>
+    </div>
+
+    <h2>Detailed Metrics</h2>
+    <pre>{
+  "http_reqs": {
+    "type": "counter",
+    "contains": "default",
+    "values": {
+      "count": 618601,
+      "rate": 223.8434114392307
+    }
+  },
+  "graphql_errors": {
+    "type": "counter",
+    "contains": "default",
+    "values": {
+      "count": 16,
+      "rate": 0.0057896682724853194
+    }
+  },
+  "vus": {
+    "type": "gauge",
+    "contains": "default",
+    "values": {
+      "value": 1,
+      "min": 0,
+      "max": 10000
+    }
+  },
+  "checks": {
+    "type": "rate",
+    "contains": "default",
+    "values": {
+      "rate": 0.5226401466748153,
+      "passes": 677304,
+      "fails": 618624
+    }
+  },
+  "data_sent": {
+    "type": "counter",
+    "contains": "data",
+    "values": {
+      "count": 140198291,
+      "rate": 50731.349828710256
+    }
+  },
+  "http_req_duration": {
+    "type": "trend",
+    "contains": "time",
+    "values": {
+      "avg": 1037.5764330453883,
+      "min": 0,
+      "med": 0,
+      "max": 50306.6176,
+      "p(90)": 3327.2437,
+      "p(95)": 4436.3323
+    },
+    "thresholds": {
+      "p(95)<1000": {
+        "ok": false
+      },
+      "p(99)<3000": {
+        "ok": false
+      }
+    }
+  },
+  "http_req_connecting": {
+    "contains": "time",
+    "values": {
+      "avg": 0.8774249149290091,
+      "min": 0,
+      "med": 0,
+      "max": 18660.3903,
+      "p(90)": 0,
+      "p(95)": 0
+    },
+    "type": "trend"
+  },
+  "auth_duration": {
+    "type": "trend",
+    "contains": "default",
+    "values": {
+      "min": 3,
+      "med": 21333,
+      "max": 218070,
+      "p(90)": 64955.20000000001,
+      "p(95)": 83955.59999999998,
+      "avg": 31026.918577718818
+    }
+  },
+  "graphql_complex_duration": {
+    "values": {
+      "p(90)": 4170,
+      "p(95)": 5322.199999999997,
+      "avg": 2008.5189275216396,
+      "min": 116,
+      "med": 1538,
+      "max": 63272
+    },
+    "thresholds": {
+      "p(95)<1500": {
+        "ok": false
+      }
+    },
+    "type": "trend",
+    "contains": "default"
+  },
+  "auth_failure_rate": {
+    "type": "rate",
+    "contains": "default",
+    "values": {
+      "rate": 1,
+      "passes": 309290,
+      "fails": 0
+    }
+  },
+  "http_req_receiving": {
+    "type": "trend",
+    "contains": "time",
+    "values": {
+      "p(90)": 36.403,
+      "p(95)": 108.5477,
+      "avg": 25.819009628339,
+      "min": 0,
+      "med": 0,
+      "max": 31834.5485
+    }
+  },
+  "iteration_duration": {
+    "values": {
+      "max": 220099.7628,
+      "p(90)": 67474.65150999998,
+      "p(95)": 86264.35139499999,
+      "avg": 35512.80610791454,
+      "min": 2006.9774,
+      "med": 23757.6624
+    },
+    "type": "trend",
+    "contains": "time"
+  },
+  "http_req_tls_handshaking": {
+    "type": "trend",
+    "contains": "time",
+    "values": {
+      "avg": 0.1791247991839651,
+      "min": 0,
+      "med": 0,
+      "max": 8950.5289,
+      "p(90)": 0,
+      "p(95)": 0
+    }
+  },
+  "graphql_success_rate": {
+    "type": "rate",
+    "contains": "default",
+    "values": {
+      "rate": 1,
+      "passes": 184715,
+      "fails": 0
+    },
+    "thresholds": {
+      "rate>0.85": {
+        "ok": true
+      }
+    }
+  },
+  "http_req_duration{expected_response:true}": {
+    "values": {
+      "avg": 2084.8152580767355,
+      "min": 87.8583,
+      "med": 1640.779,
+      "max": 50306.6176,
+      "p(90)": 4442.42114,
+      "p(95)": 5378.23378
+    },
+    "type": "trend",
+    "contains": "time"
+  },
+  "iterations": {
+    "type": "counter",
+    "contains": "default",
+    "values": {
+      "count": 370678,
+      "rate": 134.1314159942696
+    }
+  },
+  "graphql_failure_rate": {
+    "type": "rate",
+    "contains": "default",
+    "values": {
+      "rate": 1,
+      "passes": 16,
+      "fails": 0
+    }
+  },
+  "http_req_sending": {
+    "values": {
+      "min": 0,
+      "med": 0,
+      "max": 7064.0492,
+      "p(90)": 1.512,
+      "p(95)": 6.4439,
+      "avg": 8.56567406551264
+    },
+    "type": "trend",
+    "contains": "time"
+  },
+  "group_duration": {
+    "type": "trend",
+    "contains": "time",
+    "values": {
+      "max": 218083.8525,
+      "p(90)": 46857.843919999985,
+      "p(95)": 70870.91677,
+      "avg": 19514.339662997976,
+      "min": 4.6641,
+      "med": 21018.6302
+    }
+  },
+  "vus_max": {
+    "type": "gauge",
+    "contains": "default",
+    "values": {
+      "max": 10000,
+      "value": 10000,
+      "min": 2112
+    }
+  },
+  "data_received": {
+    "type": "counter",
+    "contains": "data",
+    "values": {
+      "count": 410661351,
+      "rate": 148599.5621637911
+    }
+  },
+  "auth_errors": {
+    "type": "counter",
+    "contains": "default",
+    "values": {
+      "count": 309290,
+      "rate": 111.91790624981154
+    }
+  },
+  "http_req_blocked": {
+    "values": {
+      "avg": 1.0667426596465244,
+      "min": 0,
+      "med": 0,
+      "max": 23036.59,
+      "p(90)": 0,
+      "p(95)": 0
+    },
+    "type": "trend",
+    "contains": "time"
+  },
+  "http_req_waiting": {
+    "type": "trend",
+    "contains": "time",
+    "values": {
+      "med": 0,
+      "max": 44324.6713,
+      "p(90)": 3240.7168,
+      "p(95)": 4326.4947,
+      "avg": 1003.1917493515188,
+      "min": 0
+    }
+  },
+  "graphql_simple_duration": {
+    "type": "trend",
+    "contains": "default",
+    "values": {
+      "avg": 1929.053412800234,
+      "min": 96,
+      "med": 1463,
+      "max": 44191,
+      "p(90)": 4207.4000000000015,
+      "p(95)": 5223
+    }
+  },
+  "http_req_failed": {
+    "type": "rate",
+    "contains": "default",
+    "values": {
+      "rate": 0.502317325707524,
+      "passes": 310734,
+      "fails": 307867
+    },
+    "thresholds": {
+      "rate<0.10": {
+        "ok": false
+      }
+    }
+  },
+  "auth_success_rate": {
+    "thresholds": {
+      "rate>0.90": {
+        "ok": true
+      }
+    },
+    "type": "rate",
+    "contains": "default",
+    "values": {
+      "rate": 1,
+      "passes": 61577,
+      "fails": 0
+    }
+  }
+}</pre>
+  </div>
+</body>
+</html>
+  

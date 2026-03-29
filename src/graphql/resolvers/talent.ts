@@ -100,7 +100,11 @@ export const talentResolvers = {
     },
   },
   TalentProfile: {
-    user: (parent: any) => prisma.user.findUnique({ where: { id: parent.userId } }),
+    user: (parent: any, _args: any, context: any) => {
+      // ✅ PHASE 2: Utiliser DataLoader
+      if (parent.user !== undefined) return parent.user;
+      return context.loaders.userLoader.load(parent.userId);
+    },
     portfolio: (parent: any) => prisma.portfolioItem.findMany({ where: { talentId: parent.id } }),
     reviews: (parent: any) => prisma.review.findMany({
       where: { talentId: parent.id },

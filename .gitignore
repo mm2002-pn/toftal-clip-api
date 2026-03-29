@@ -50,3 +50,10 @@ firebase-service-account.json
 
 # exclure le dosser jmeter
 jmeter/
+
+# Load test results (fichiers trop gros pour GitHub)
+load-test-*.json
+load-test-*.log
+load-test-results/
+load-test-results.json
+load-test-results-*.json

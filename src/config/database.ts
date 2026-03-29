@@ -8,10 +8,17 @@ declare global {
 // Add connection pooling parameters to DATABASE_URL if not present
 const getDatabaseUrl = () => {
   const url = process.env.DATABASE_URL || '';
-  // Add connection_limit if not already present
+
+  // ✅ Configuration pool de connexions optimisée pour db-f1-micro
+  // db-f1-micro max: 25 connexions | max-instances: 5 | pool: 3 = 15 connexions max
+  const connectionLimit = process.env.DB_CONNECTION_LIMIT || '3';   // RÉDUIT: 3 connexions par instance
+  const poolTimeout = process.env.DB_POOL_TIMEOUT || '20';          // 20s timeout pour obtenir connexion
+  const connectTimeout = '10';  // 10s timeout pour établir connexion initiale
+
+  // Add connection parameters
   if (url && !url.includes('connection_limit')) {
     const separator = url.includes('?') ? '&' : '?';
-    return `${url}${separator}connection_limit=5&pool_timeout=10`;
+    return `${url}${separator}connection_limit=${connectionLimit}&pool_timeout=${poolTimeout}&connect_timeout=${connectTimeout}`;
   }
   return url;
 };
@@ -39,7 +46,11 @@ if (process.env.NODE_ENV === 'production') {
 export const connectDatabase = async (): Promise<void> => {
   try {
     await prisma.$connect();
-    logger.info('Database connected successfully');
+
+    // Log connection pool settings
+    const connectionLimit = process.env.DB_CONNECTION_LIMIT || '3';
+    const poolTimeout = process.env.DB_POOL_TIMEOUT || '20';
+    logger.info(`Database connected successfully (pool: ${connectionLimit} connections, timeout: ${poolTimeout}s)`);
   } catch (error) {
     logger.error('Database connection failed:', error);
     process.exit(1);

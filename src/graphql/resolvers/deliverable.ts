@@ -126,8 +126,17 @@ export const deliverableResolvers = {
   },
   Deliverable: {
     project: (parent: any) => prisma.project.findUnique({ where: { id: parent.projectId } }),
-    assignedTalent: (parent: any) =>
-      parent.assignedTalentId ? prisma.user.findUnique({ where: { id: parent.assignedTalentId } }) : null,
+    assignedTalent: (parent: any, _args: any, context: any) => {
+      // ✅ PHASE 2: Utiliser DataLoader au lieu de requête directe
+      // Si assignedTalent est déjà inclus dans le parent, le retourner directement
+      if (parent.assignedTalent !== undefined) {
+        return parent.assignedTalent;
+      }
+
+      // Sinon, utiliser le DataLoader pour le charger
+      if (!parent.assignedTalentId) return null;
+      return context.loaders.userLoader.load(parent.assignedTalentId);
+    },
     versions: (parent: any) =>
       prisma.version.findMany({
         where: { deliverableId: parent.id },
@@ -162,8 +171,15 @@ export const deliverableResolvers = {
   },
   Version: {
     deliverable: (parent: any) => prisma.deliverable.findUnique({ where: { id: parent.deliverableId } }),
-    uploadedBy: (parent: any) =>
-      parent.uploadedById ? prisma.user.findUnique({ where: { id: parent.uploadedById } }) : null,
+    uploadedBy: (parent: any, _args: any, context: any) => {
+      // ✅ PHASE 2: Utiliser DataLoader
+      if (parent.uploadedBy !== undefined) {
+        return parent.uploadedBy;
+      }
+
+      if (!parent.uploadedById) return null;
+      return context.loaders.userLoader.load(parent.uploadedById);
+    },
     feedbacks: (parent: any) =>
       prisma.feedback.findMany({
         where: { versionId: parent.id },
@@ -191,11 +207,12 @@ export const deliverableResolvers = {
     },
   },
   Feedback: {
-    author: (parent: any) => {
-      // If author is already included, return it. Otherwise fetch by authorId
-      if (parent.author) return parent.author;
+    author: (parent: any, _args: any, context: any) => {
+      // ✅ PHASE 2: Utiliser DataLoader
+      // If author is already included, return it. Otherwise use DataLoader
+      if (parent.author !== undefined) return parent.author;
       if (!parent.authorId) return null;
-      return prisma.user.findUnique({ where: { id: parent.authorId } });
+      return context.loaders.userLoader.load(parent.authorId);
     },
     tasks: (parent: any) => {
       // If tasks are already included, return them. Otherwise fetch by feedbackId
