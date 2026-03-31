@@ -55,7 +55,9 @@ export const deliverableTypeDefs = gql`
 
   type Feedback {
     id: ID!
-    author: User!
+    author: User
+    guestName: String
+    guestEmail: String
     rawText: String!
     structuredText: String
     type: String!

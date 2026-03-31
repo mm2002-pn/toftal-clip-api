@@ -318,7 +318,9 @@ model WorkflowTask {
 model Feedback {
   id             String       @id @default(uuid())
   versionId      String       @map("version_id")
-  authorId       String       @map("author_id")
+  authorId       String?      @map("author_id") // Nullable for guest comments
+  guestName      String?      @map("guest_name") // Guest commenter name
+  guestEmail     String?      @map("guest_email") // Guest commenter email
   rawText        String       @map("raw_text")
   structuredText String?      @map("structured_text")
   type           FeedbackType @default(TEXT)
@@ -327,7 +329,7 @@ model Feedback {
 
   // Relations
   version       Version        @relation(fields: [versionId], references: [id], onDelete: Cascade)
-  author        User           @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  author        User?          @relation(fields: [authorId], references: [id], onDelete: Cascade) // Optional for guests
   revisionTasks RevisionTask[]
   replyingTo    Feedback?      @relation("FeedbackReplies", fields: [replyingToId], references: [id], onDelete: SetNull)
   replies       Feedback[]     @relation("FeedbackReplies")

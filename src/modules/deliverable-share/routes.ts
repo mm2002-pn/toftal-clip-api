@@ -417,4 +417,143 @@ router.get(
   }
 );
 
+/**
+ * POST /api/v1/deliverable-share/:token/feedback
+ * Add feedback/comment via share link (PUBLIC - no auth required for guests)
+ * Supports both authenticated users and guest commenters
+ */
+router.post('/:token/feedback', async (req: Request, res: Response) => {
+  try {
+    const token = String(req.params.token);
+    const { versionId, rawText, structuredText, type, guestName, guestEmail, replyingToId } = req.body;
+
+    console.log('💬 POST /deliverable-share/:token/feedback - Adding feedback');
+    console.log('🔑 Token:', token.substring(0, 10) + '...');
+    console.log('👤 Guest:', guestName, guestEmail);
+
+    // Validate input
+    if (!token || !versionId || !rawText) {
+      return res.status(400).json({ error: 'token, versionId, and rawText are required' });
+    }
+
+    // Verify share link exists and has comment permission
+    const shareLink = await prisma.deliverableShareLink.findUnique({
+      where: { token },
+      include: {
+        deliverable: {
+          include: {
+            project: { select: { id: true, title: true } },
+            assignedTalent: { select: { id: true } },
+          },
+        },
+      },
+    });
+
+    if (!shareLink) {
+      return res.status(404).json({ error: 'Invalid share link' });
+    }
+
+    // Check if link is active
+    if (!shareLink.isActive) {
+      return res.status(403).json({ error: 'This share link has been disabled' });
+    }
+
+    // Check expiration
+    if (shareLink.expiresAt && shareLink.expiresAt < new Date()) {
+      return res.status(403).json({ error: 'This share link has expired' });
+    }
+
+    // Check permission - must be 'comment' or 'download' to comment
+    if (shareLink.permission === 'view') {
+      return res.status(403).json({ error: 'This share link does not allow commenting' });
+    }
+
+    // Verify version belongs to the deliverable
+    const version = await prisma.version.findFirst({
+      where: {
+        id: versionId,
+        deliverableId: shareLink.deliverableId,
+      },
+    });
+
+    if (!version) {
+      return res.status(404).json({ error: 'Version not found or does not belong to this deliverable' });
+    }
+
+    // Check if user is authenticated (from Authorization header)
+    const authHeader = req.headers.authorization;
+    let userId: string | null = null;
+
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      // Try to get user from token (optional)
+      try {
+        const user = (req as any).user;
+        if (user && user.id) {
+          userId = user.id;
+        }
+      } catch (error) {
+        console.log('No authenticated user, treating as guest');
+      }
+    }
+
+    // Validate guest info if not authenticated
+    if (!userId && (!guestName || !guestEmail)) {
+      return res.status(400).json({
+        error: 'guestName and guestEmail are required for non-authenticated users'
+      });
+    }
+
+    // Create feedback - either with userId OR with guest info
+    const feedback = await prisma.feedback.create({
+      data: {
+        versionId,
+        authorId: userId || undefined, // null if guest
+        guestName: !userId ? guestName : undefined,
+        guestEmail: !userId ? guestEmail : undefined,
+        rawText,
+        structuredText: structuredText || rawText,
+        type: type || 'TEXT',
+        replyingToId: replyingToId || undefined,
+      },
+      include: {
+        author: userId ? {
+          select: { id: true, name: true, avatarUrl: true }
+        } : undefined,
+        replyingTo: {
+          select: {
+            id: true,
+            rawText: true,
+            structuredText: true,
+            author: { select: { id: true, name: true } },
+            guestName: true,
+          }
+        }
+      },
+    });
+
+    console.log('✅ Feedback created:', feedback.id, userId ? '(authenticated)' : '(guest)');
+
+    // Return feedback with proper author info
+    const feedbackResponse = {
+      ...feedback,
+      author: feedback.author || {
+        id: null,
+        name: guestName,
+        avatarUrl: null,
+      }
+    };
+
+    res.status(201).json({
+      success: true,
+      data: feedbackResponse,
+      message: 'Feedback added successfully',
+    });
+  } catch (error: any) {
+    console.error('Add feedback via share link error:', error);
+    res.status(500).json({
+      error: error.message || 'Failed to add feedback',
+    });
+  }
+});
+
 export default router;
