@@ -322,4 +322,101 @@ router.get(
   }
 );
 
+/**
+ * POST /api/v1/public-share/:projectToken/deliverable/:deliverableId/token
+ * Create a deliverable share token from a project share context
+ * PUBLIC endpoint - uses project token for authentication
+ */
+router.post('/:projectToken/deliverable/:deliverableId/token', async (req: Request, res: Response) => {
+  try {
+    const projectToken = String(req.params.projectToken);
+    const deliverableId = String(req.params.deliverableId);
+
+    console.log('🎬 POST /public-share/:projectToken/deliverable/:deliverableId/token');
+    console.log('📁 Project Token:', projectToken.substring(0, 10) + '...');
+    console.log('🎥 Deliverable ID:', deliverableId);
+
+    // Validate project share token
+    const projectLink = await prisma.publicShareLink.findUnique({
+      where: { token: projectToken },
+      include: {
+        project: {
+          include: {
+            deliverables: {
+              where: { id: deliverableId },
+            },
+          },
+        },
+      },
+    });
+
+    if (!projectLink) {
+      return res.status(404).json({ error: 'Invalid project share token' });
+    }
+
+    if (!projectLink.isActive) {
+      return res.status(403).json({ error: 'Project share link is disabled' });
+    }
+
+    if (projectLink.expiresAt && projectLink.expiresAt < new Date()) {
+      return res.status(403).json({ error: 'Project share link has expired' });
+    }
+
+    // Check if deliverable exists in project
+    if (!projectLink.project.deliverables || projectLink.project.deliverables.length === 0) {
+      return res.status(404).json({ error: 'Deliverable not found in this project' });
+    }
+
+    // Check if deliverable share link already exists with same permission
+    let deliverableLink = await prisma.deliverableShareLink.findFirst({
+      where: {
+        deliverableId,
+        permission: projectLink.permission,
+        isActive: true,
+        OR: [
+          { expiresAt: null },
+          { expiresAt: { gte: new Date() } },
+        ],
+      },
+    });
+
+    // If not, create one
+    if (!deliverableLink) {
+      const token = crypto.randomBytes(32).toString('hex');
+      const expiresAt = projectLink.expiresAt || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days default
+
+      deliverableLink = await prisma.deliverableShareLink.create({
+        data: {
+          deliverableId,
+          creatorUserId: projectLink.creatorUserId,
+          token,
+          permission: projectLink.permission,
+          expiresAt,
+          isActive: true,
+          usedCount: 0,
+        },
+      });
+
+      console.log('✅ Created new deliverable share link:', deliverableLink.id);
+    } else {
+      console.log('✅ Using existing deliverable share link:', deliverableLink.id);
+    }
+
+    res.json({
+      success: true,
+      data: {
+        token: deliverableLink.token,
+        permission: deliverableLink.permission,
+        expiresAt: deliverableLink.expiresAt,
+        url: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/#/share/video/${deliverableLink.token}`,
+      },
+    });
+  } catch (error: any) {
+    console.error('Create deliverable token error:', error);
+    res.status(500).json({
+      error: error.message || 'Failed to create deliverable share token',
+    });
+  }
+});
+
 export default router;

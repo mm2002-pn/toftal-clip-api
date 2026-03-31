@@ -47,7 +47,7 @@ if ($Migrate -or $Seed) {
         # Run migrations
         if ($Migrate) {
             Write-Host "Execution de prisma db push..." -ForegroundColor Gray
-            npx prisma db push --skip-generate
+            npx prisma db push --accept-data-loss
             Write-Host "Migration terminee!" -ForegroundColor Green
         }
 
