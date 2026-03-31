@@ -57,3 +57,6 @@ load-test-*.log
 load-test-results/
 load-test-results.json
 load-test-results-*.json
+
+*.md
+
