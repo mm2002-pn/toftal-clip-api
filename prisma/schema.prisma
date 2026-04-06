@@ -325,6 +325,11 @@ model Feedback {
   structuredText String?      @map("structured_text")
   type           FeedbackType @default(TEXT)
   replyingToId   String?      @map("replying_to_id")
+
+  // Video annotation fields - position on video where comment was made
+  annotationX    Float?       @map("annotation_x") // X coordinate (0-100%) of annotation point
+  annotationY    Float?       @map("annotation_y") // Y coordinate (0-100%) of annotation point
+
   createdAt      DateTime     @default(now()) @map("created_at")
 
   // Relations
@@ -601,6 +606,7 @@ model ProjectInvitation {
   token         String           @unique
   status        InvitationStatus @default(PENDING)
   message       String?
+  permission    String           @default("view") // "view", "comment", "download"
   expiresAt     DateTime         @map("expires_at")
   acceptedAt    DateTime?        @map("accepted_at")
   refusedAt     DateTime?        @map("refused_at")

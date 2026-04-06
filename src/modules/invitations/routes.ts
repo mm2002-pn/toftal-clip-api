@@ -20,13 +20,14 @@ const permissionService = new PermissionService(prisma);
  */
 router.post('/', authenticate, requireProjectOwner(), async (req: Request, res: Response) => {
   try {
-    const { projectId, email, message } = req.body;
+    const { projectId, email, message, permission } = req.body;
     const userId = req.user!.id;
 
     console.log('🔔 POST /invitations called');
     console.log('📧 Email:', email);
     console.log('📁 ProjectId:', projectId);
     console.log('👤 UserId:', userId);
+    console.log('🔐 Permission:', permission);
 
     // Validate input
     if (!projectId || !email) {
@@ -53,6 +54,7 @@ router.post('/', authenticate, requireProjectOwner(), async (req: Request, res: 
       inviterUserId: userId,
       email,
       message: message || undefined,
+      permission: permission || 'view',
       expiryDays: 7,
     });
 
@@ -339,21 +341,32 @@ router.patch(
     try {
       const projectId = String(req.params.projectId);
       const memberId = String(req.params.memberId);
-      const { role } = req.body;
+      const { role, permissions } = req.body;
       const updatedBy = req.user!.id;
 
-      console.log('🔄 PATCH /project/:projectId/members/:memberId - Updating member role');
+      console.log('🔄 PATCH /project/:projectId/members/:memberId - Updating member');
       console.log('📁 ProjectId:', projectId);
       console.log('👤 MemberId:', memberId);
       console.log('🎭 New Role:', role);
+      console.log('🔐 New Permissions:', permissions);
 
-      // Validate role
-      const validRoles = ['VIEWER', 'COLLABORATOR', 'OWNER'];
-      if (!role || !validRoles.includes(role)) {
+      // Validate that either role or permissions is provided
+      if (!role && !permissions) {
         return res.status(400).json({
           success: false,
-          error: `Invalid role. Must be one of: ${validRoles.join(', ')}`,
+          error: 'Either role or permissions must be provided',
         });
+      }
+
+      // Validate role if provided
+      if (role) {
+        const validRoles = ['VIEWER', 'COLLABORATOR', 'OWNER'];
+        if (!validRoles.includes(role)) {
+          return res.status(400).json({
+            success: false,
+            error: `Invalid role. Must be one of: ${validRoles.join(', ')}`,
+          });
+        }
       }
 
       // Cannot change owner's role
@@ -380,7 +393,12 @@ router.patch(
         });
       }
 
-      // Update the member's role
+      // Prepare update data
+      const updateData: any = {};
+      if (role) updateData.role = role;
+      if (permissions) updateData.permissions = permissions;
+
+      // Update the member
       const updatedMember = await prisma.projectMember.update({
         where: {
           projectId_userId: {
@@ -388,9 +406,7 @@ router.patch(
             userId: memberId,
           },
         },
-        data: {
-          role,
-        },
+        data: updateData,
         include: {
           user: {
             select: {

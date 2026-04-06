@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { prisma } from '../../../config/database';
 import { ApiResponse } from '../../../utils/apiResponse';
-import { NotFoundError, ForbiddenError } from '../../../utils/errors';
+import { NotFoundError, ForbiddenError, BadRequestError } from '../../../utils/errors';
 import { socketService } from '../../../services/socketService';
 import { mapDeliverableTypeToContentType } from '../../../utils/contentTypeMapper';
 import { EmailService } from '../../../services/EmailService';
@@ -186,7 +186,7 @@ export const createProject = async (req: Request, res: Response, next: NextFunct
 export const updateProject = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const id = String(req.params.id);
-    const { title, deadline, brief, talentId } = req.body;
+    const { title, deadline, brief, talentId, status, briefCompletedAt } = req.body;
 
     // Check if project exists and user has access
     const existingProject = await prisma.project.findUnique({ where: { id } });
@@ -209,6 +209,8 @@ export const updateProject = async (req: Request, res: Response, next: NextFunct
         deadline: deadline ? new Date(deadline) : undefined,
         brief,
         talentId,
+        status,
+        briefCompletedAt: briefCompletedAt ? new Date(briefCompletedAt) : undefined,
       },
       include: {
         client: { select: { id: true, name: true, email: true, avatarUrl: true } },
@@ -259,18 +261,85 @@ export const updateProjectStatus = async (req: Request, res: Response, next: Nex
     const id = String(req.params.id);
     const { status } = req.body;
 
-    const project = await prisma.project.update({
+    // Get current project with all needed data
+    const project = await prisma.project.findUnique({
+      where: { id },
+      include: {
+        deliverables: {
+          include: {
+            versions: true,
+          },
+        },
+      },
+    });
+
+    if (!project) {
+      throw new NotFoundError('Project not found');
+    }
+
+    // ✅ 1. Check permissions - only owner/client can change status
+    if (project.clientId !== req.user!.id && project.ownerId !== req.user!.id && req.user!.role !== 'ADMIN') {
+      throw new ForbiddenError('Only the project owner can change status');
+    }
+
+    const currentStatus = project.status;
+
+    // ✅ 2. Validate status transitions
+    const validTransitions: Record<string, string[]> = {
+      'DRAFT': ['IN_PROGRESS', 'PENDING'],
+      'PENDING': ['MATCHING', 'IN_PROGRESS', 'DRAFT'],
+      'MATCHING': ['IN_PROGRESS', 'PENDING'],
+      'IN_PROGRESS': ['REVIEW', 'DRAFT', 'COMPLETED'],
+      'REVIEW': ['IN_PROGRESS', 'COMPLETED', 'DRAFT'],
+      'COMPLETED': ['IN_PROGRESS', 'ARCHIVED'],
+      'ARCHIVED': ['IN_PROGRESS'],
+    };
+
+    if (!validTransitions[currentStatus]?.includes(status)) {
+      throw new BadRequestError(`Cannot transition from ${currentStatus} to ${status}`);
+    }
+
+    // ✅ 3. DRAFT → IN_PROGRESS: Brief must be completed
+    if (currentStatus === 'DRAFT' && status === 'IN_PROGRESS') {
+      if (!project.briefCompletedAt) {
+        throw new BadRequestError('Brief must be completed before activating the project');
+      }
+    }
+
+    // ✅ 4. IN_PROGRESS → DRAFT: Cannot have any uploaded versions
+    if (currentStatus === 'IN_PROGRESS' && status === 'DRAFT') {
+      let hasVersions = false;
+      for (const deliverable of project.deliverables) {
+        if (deliverable.versions && deliverable.versions.length > 0) {
+          hasVersions = true;
+          break;
+        }
+      }
+
+      if (hasVersions) {
+        throw new BadRequestError('Cannot return to draft: project has uploaded versions. Please delete all versions first.');
+      }
+    }
+
+    // ✅ 5. Update project status
+    const updatedProject = await prisma.project.update({
       where: { id },
       data: { status },
+      include: {
+        client: { select: { id: true, name: true, email: true, avatarUrl: true } },
+        talent: { select: { id: true, name: true, email: true, avatarUrl: true } },
+        owner: { select: { id: true, name: true, email: true, avatarUrl: true } },
+      },
     });
 
     // Emit project status change to project room
     socketService.emitToProject(id, 'project:status', {
-      id: project.id,
-      status: project.status,
+      id: updatedProject.id,
+      status: updatedProject.status,
+      previousStatus: currentStatus,
     });
 
-    ApiResponse.success(res, project, 'Project status updated');
+    ApiResponse.success(res, updatedProject, `Project status updated from ${currentStatus} to ${status}`);
   } catch (error) {
     next(error);
   }

@@ -4,6 +4,7 @@ import { ApiResponse } from '../../../utils/apiResponse';
 import { NotFoundError } from '../../../utils/errors';
 import { sendEmail, emailTemplates } from '../../../config/email';
 import { socketService } from '../../../services/socketService';
+import { extractVideoMetadata } from '../../../services/VideoMetadataService';
 
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
 
@@ -423,6 +424,17 @@ export const addVersion = async (req: Request, res: Response, next: NextFunction
 
     const versionNumber = (lastVersion?.versionNumber || 0) + 1;
 
+    // Extract video metadata (duration, resolution, fps, etc)
+    let metadata: any = undefined;
+    try {
+      console.log(`📹 Extracting metadata for video: ${videoUrl}`);
+      metadata = await extractVideoMetadata(videoUrl);
+      console.log(`✅ Metadata extracted:`, metadata);
+    } catch (metadataError) {
+      console.warn(`⚠️ Could not extract metadata for version ${versionNumber}:`, metadataError);
+      // Continue without metadata if extraction fails
+    }
+
     const version = await prisma.version.create({
       data: {
         deliverableId: id,
@@ -430,8 +442,11 @@ export const addVersion = async (req: Request, res: Response, next: NextFunction
         videoUrl,
         description,
         uploadedById: req.user!.id,
+        metadata, // Save extracted metadata
       },
     });
+
+    console.log(`✅ Version created with ID: ${version.id}, Duration: ${metadata?.duration}s`);
 
     // Update deliverable status to VALIDATION with progress 75%
     await prisma.deliverable.update({

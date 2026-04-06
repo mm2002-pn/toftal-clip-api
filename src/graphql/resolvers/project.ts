@@ -202,7 +202,16 @@ export const projectResolvers = {
               include: {
                 author: { select: { id: true, name: true, avatarUrl: true } },
                 revisionTasks: true,
+                replyingTo: {
+                  select: {
+                    id: true,
+                    rawText: true,
+                    structuredText: true,
+                    author: { select: { id: true, name: true } }
+                  }
+                },
               },
+              // Annotation coordinates will be included automatically as scalar fields
             },
           },
           orderBy: { versionNumber: 'desc' as const },

@@ -63,6 +63,9 @@ export const deliverableTypeDefs = gql`
     type: String!
     tasks: [RevisionTask!]!
     replyingTo: Feedback
+    # Video annotation fields
+    annotationX: Float
+    annotationY: Float
     createdAt: DateTime!
   }
 

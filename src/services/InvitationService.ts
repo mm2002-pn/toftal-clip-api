@@ -9,6 +9,7 @@ interface CreateInvitationData {
   inviterUserId: string;
   email: string;
   message?: string;
+  permission?: 'view' | 'comment' | 'download';
   expiryDays?: number;
 }
 
@@ -33,7 +34,7 @@ export class InvitationService {
    * Create an invitation and send email
    */
   async createInvitation(data: CreateInvitationData) {
-    const { projectId, inviterUserId, email, message, expiryDays = 7 } = data;
+    const { projectId, inviterUserId, email, message, permission = 'view', expiryDays = 7 } = data;
 
     // Verify project exists
     const project = await this.prisma.project.findUnique({
@@ -103,6 +104,7 @@ export class InvitationService {
         email,
         token,
         message: message || null,
+        permission,
         expiresAt,
       },
       include: {
@@ -270,45 +272,45 @@ export class InvitationService {
       clientId: project?.clientId,
     });
 
-    // Determine permissions and role based on talent mode and project type
-    const isTalent = user.talentModeEnabled === true;
-    const isClient = user.talentModeEnabled === false || user.talentModeEnabled === undefined;
-    const isClientProject = project?.type === 'CLIENT';
+    // Use the permission specified in the invitation to set permissions JSON
+    const invitedPermission = invitation.permission || 'view';
 
-    // For CLIENT project: Client gets full access as owner
-    // For other projects or TALENT: Full access
-    // For CLIENT in non-CLIENT projects: Read-only
+    // Build permissions JSON based on the invited permission level
     let permissions;
-    let memberRole: ProjectRole = ProjectRole.COLLABORATOR;
+    let memberRole: ProjectRole = ProjectRole.COLLABORATOR; // Role stays as COLLABORATOR for invited users
 
-    if (isClientProject && isClient) {
-      // User without talent mode accepting invitation to a CLIENT project → Full access as collaborator
-      permissions = {
-        view: true,
-        edit: true,
-        comment: true,
-        approve: true,
-      };
-      memberRole = ProjectRole.COLLABORATOR;
-    } else if (isTalent) {
-      // User with talent mode enabled: Full access with approve rights
-      permissions = {
-        view: true,
-        edit: true,
-        comment: true,
-        approve: true,
-      };
-    } else {
-      // Other users in regular projects: Full access for collaboration
-      permissions = {
-        view: true,
-        edit: true,
-        comment: true,
-        approve: true,
-      };
+    switch (invitedPermission) {
+      case 'download':
+        // Éditeur: Full access
+        permissions = {
+          view: true,
+          edit: true,
+          comment: true,
+          approve: true,
+        };
+        break;
+      case 'comment':
+        // Commentateur: View, comment, but no edit or approve
+        permissions = {
+          view: true,
+          edit: false,
+          comment: true,
+          approve: false,
+        };
+        break;
+      case 'view':
+      default:
+        // Lecteur: View only
+        permissions = {
+          view: true,
+          edit: false,
+          comment: false,
+          approve: false,
+        };
+        break;
     }
 
-    console.log(`✅ [ACCEPT_INVITATION] Permissions assigned:`, permissions);
+    console.log(`✅ [ACCEPT_INVITATION] Permissions JSON assigned based on invitation:`, { invitedPermission, permissions, role: memberRole });
 
     // Transaction: update invitation and add project member
     const result = await this.prisma.$transaction(async (tx) => {
@@ -329,8 +331,8 @@ export class InvitationService {
       });
 
       // For CLIENT projects: Set the clientId (but keep talent as owner)
-      if (isClientProject && isClient && project) {
-        console.log(`🔄 [ACCEPT_INVITATION] Setting clientId...`);
+      if (project?.type === 'CLIENT' && project) {
+        console.log(`🔄 [ACCEPT_INVITATION] Setting clientId for CLIENT project...`);
         await tx.project.update({
           where: { id: invitation.projectId },
           data: {
@@ -400,7 +402,7 @@ export class InvitationService {
     console.log(`📡 [ACCEPT_INVITATION] Emitted project:member:added event`);
 
     // Send email to talent/owner that client has accepted and is doing onboarding
-    if (project && project.owner && isClientProject && isClient) {
+    if (project && project.owner && project.type === 'CLIENT') {
       try {
         await this.emailService.sendInvitationAcceptedEmail({
           to: project.owner.email,
