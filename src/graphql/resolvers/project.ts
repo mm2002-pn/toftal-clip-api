@@ -16,6 +16,11 @@ export const projectResolvers = {
               user: true,
             },
           },
+          invitations: {
+            include: {
+              inviter: true,
+            },
+          },
         },
       });
 
@@ -62,6 +67,11 @@ export const projectResolvers = {
             members: {
               include: {
                 user: true,
+              },
+            },
+            invitations: {
+              include: {
+                inviter: true,
               },
             },
           },
@@ -140,6 +150,11 @@ export const projectResolvers = {
             members: {
               include: {
                 user: true,
+              },
+            },
+            invitations: {
+              include: {
+                inviter: true,
               },
             },
           },
