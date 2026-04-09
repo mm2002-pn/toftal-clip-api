@@ -20,6 +20,12 @@ export const deliverableTypeDefs = gql`
     deadline: DateTime
     versions: [Version!]!
     workflow: [WorkflowPhase!]!
+    # Phase 4 Backend Optimizations
+    latestVideoUrl: String
+    lastUploader: User
+    taskProgress: Int
+    totalTasks: Int
+    completedTasks: Int
     createdAt: DateTime!
     updatedAt: DateTime!
   }

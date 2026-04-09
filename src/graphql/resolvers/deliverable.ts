@@ -168,6 +168,83 @@ export const deliverableResolvers = {
         include: { tasks: { orderBy: { orderIndex: 'asc' } } },
       });
     },
+    // Phase 4 Backend Optimizations
+    latestVideoUrl: async (parent: any) => {
+      try {
+        const latestVersion = await prisma.version.findFirst({
+          where: { deliverableId: parent.id },
+          orderBy: { versionNumber: 'desc' },
+          select: { videoUrl: true },
+        });
+        return latestVersion?.videoUrl || null;
+      } catch (err) {
+        console.error(`Error in latestVideoUrl:`, err);
+        return null;
+      }
+    },
+    lastUploader: async (parent: any, _args: any, context: any) => {
+      try {
+        const latestVersion = await prisma.version.findFirst({
+          where: { deliverableId: parent.id },
+          orderBy: { versionNumber: 'desc' },
+          select: { uploadedById: true, uploadedBy: true },
+        });
+
+        if (!latestVersion) return null;
+        if (latestVersion.uploadedBy !== undefined) {
+          return latestVersion.uploadedBy;
+        }
+
+        if (!latestVersion.uploadedById) return null;
+        return context.loaders.userLoader.load(latestVersion.uploadedById);
+      } catch (err) {
+        console.error(`Error in lastUploader:`, err);
+        return null;
+      }
+    },
+    taskProgress: async (parent: any) => {
+      try {
+        const tasks = await prisma.workflowTask.findMany({
+          where: { phase: { deliverableId: parent.id } },
+          select: { completed: true },
+        });
+
+        if (tasks.length === 0) {
+          return 0;
+        }
+        const completed = tasks.filter(t => t.completed).length;
+        const progress = Math.round((completed / tasks.length) * 100);
+        return progress;
+      } catch (err) {
+        console.error(`Error in taskProgress:`, err);
+        return 0;
+      }
+    },
+    totalTasks: async (parent: any) => {
+      try {
+        const count = await prisma.workflowTask.count({
+          where: { phase: { deliverableId: parent.id } },
+        });
+        return count;
+      } catch (err) {
+        console.error(`Error in totalTasks:`, err);
+        return 0;
+      }
+    },
+    completedTasks: async (parent: any) => {
+      try {
+        const count = await prisma.workflowTask.count({
+          where: {
+            phase: { deliverableId: parent.id },
+            completed: true,
+          },
+        });
+        return count;
+      } catch (err) {
+        console.error(`Error in completedTasks:`, err);
+        return 0;
+      }
+    },
   },
   Version: {
     deliverable: (parent: any) => prisma.deliverable.findUnique({ where: { id: parent.deliverableId } }),
