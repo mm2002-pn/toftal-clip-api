@@ -22,7 +22,7 @@ const ALLOWED_DOCUMENT_TYPES = [
 
 // File size limits
 const MAX_IMAGE_SIZE = 10 * 1024 * 1024; // 10MB
-const MAX_VIDEO_SIZE = 5 * 1024 * 1024 * 1024; // 5GB
+const MAX_VIDEO_SIZE = 10 * 1024 * 1024 * 1024; // 10GB
 const MAX_DOCUMENT_SIZE = 100 * 1024 * 1024; // 100MB
 
 // Storage configuration
