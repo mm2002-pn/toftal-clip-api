@@ -30,6 +30,15 @@ export const deliverableTypeDefs = gql`
     updatedAt: DateTime!
   }
 
+  type VideoMetadata {
+    width: Int
+    height: Int
+    duration: Float
+    quality: String
+    fps: Float
+    bitrate: String
+  }
+
   type Version {
     id: ID!
     deliverable: Deliverable!
@@ -39,6 +48,8 @@ export const deliverableTypeDefs = gql`
     status: VersionStatus!
     uploadedBy: User
     aiAnalysis: JSON
+    metadata: VideoMetadata
+    alternativeQualities: JSON
     feedbacks: [Feedback!]!
     createdAt: DateTime!
     uploadedAt: DateTime!
