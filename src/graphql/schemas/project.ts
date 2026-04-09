@@ -88,6 +88,10 @@ export const projectTypeDefs = gql`
     invitations: [ProjectInvitation!]!
     createdAt: DateTime!
     updatedAt: DateTime!
+    # Computed fields for performance optimization
+    totalDeliverablesCount: Int!
+    validatedDeliverablesCount: Int!
+    projectProgress: Int!
   }
 
   type ProjectsConnection {

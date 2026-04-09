@@ -262,5 +262,33 @@ export const projectResolvers = {
         include: includeOptions,
       });
     },
+
+    // Computed field: Total number of deliverables
+    totalDeliverablesCount: async (parent: any) => {
+      return prisma.deliverable.count({
+        where: { projectId: parent.id },
+      });
+    },
+
+    // Computed field: Number of validated deliverables (status = 'VALIDE')
+    validatedDeliverablesCount: async (parent: any) => {
+      return prisma.deliverable.count({
+        where: {
+          projectId: parent.id,
+          status: 'VALIDE',
+        },
+      });
+    },
+
+    // Computed field: Project progress percentage (0-100)
+    projectProgress: async (parent: any) => {
+      const [total, validated] = await Promise.all([
+        prisma.deliverable.count({ where: { projectId: parent.id } }),
+        prisma.deliverable.count({ where: { projectId: parent.id, status: 'VALIDE' } }),
+      ]);
+
+      if (total === 0) return 0;
+      return Math.round((validated / total) * 100);
+    },
   },
 };
