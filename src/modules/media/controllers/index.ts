@@ -123,6 +123,35 @@ export const uploadVideo = async (req: Request, res: Response, next: NextFunctio
 };
 
 /**
+ * Upload audio specifically to Google Cloud Storage (for voice notes)
+ */
+export const uploadAudio = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    if (!req.file) {
+      return ApiResponse.badRequest(res, 'No file uploaded') as any;
+    }
+
+    const gcsResult = await uploadDocumentToGCS(req.file.path, req.file.originalname);
+
+    // Delete local file
+    fs.unlinkSync(req.file.path);
+
+    ApiResponse.success(res, {
+      url: gcsResult.url,
+      fileName: gcsResult.fileName,
+      format: gcsResult.contentType,
+      size: gcsResult.size,
+      provider: 'gcs',
+    }, 'Audio uploaded successfully');
+  } catch (error) {
+    if (req.file?.path && fs.existsSync(req.file.path)) {
+      fs.unlinkSync(req.file.path);
+    }
+    next(error);
+  }
+};
+
+/**
  * Delete media from appropriate provider
  */
 export const deleteMedia = async (req: Request, res: Response, next: NextFunction): Promise<void> => {

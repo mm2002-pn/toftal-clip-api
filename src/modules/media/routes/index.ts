@@ -29,6 +29,7 @@ router.post('/register', validate(registerMediaValidation), mediaController.regi
 // ============================================
 router.post('/upload', uploadLimiter, uploadAny.single('file'), mediaController.uploadFile);
 router.post('/upload/video', uploadLimiter, uploadAny.single('file'), mediaController.uploadVideo);
+router.post('/upload/audio', uploadLimiter, uploadAny.single('file'), mediaController.uploadAudio);
 
 // ============================================
 // Get media

@@ -326,6 +326,10 @@ model Feedback {
   type           FeedbackType @default(TEXT)
   replyingToId   String?      @map("replying_to_id")
 
+  // Voice note fields (WhatsApp-style)
+  audioUrl       String?      @map("audio_url")       // URL of audio file in GCS
+  audioDuration  Float?       @map("audio_duration")  // Duration in seconds
+
   // Video annotation fields - position on video where comment was made
   annotationX    Float?       @map("annotation_x") // X coordinate (0-100%) of annotation point
   annotationY    Float?       @map("annotation_y") // Y coordinate (0-100%) of annotation point

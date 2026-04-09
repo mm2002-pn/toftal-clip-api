@@ -80,6 +80,9 @@ export const deliverableTypeDefs = gql`
     type: String!
     tasks: [RevisionTask!]!
     replyingTo: Feedback
+    # Voice note fields (WhatsApp-style)
+    audioUrl: String
+    audioDuration: Float
     # Video annotation fields
     annotationX: Float
     annotationY: Float
