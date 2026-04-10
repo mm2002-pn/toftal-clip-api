@@ -422,6 +422,114 @@ router.get(
 );
 
 /**
+ * GET /api/v1/deliverable-share/:token/version/:versionId/feedbacks
+ * Get paginated feedbacks for a version via share link (PUBLIC - no auth required)
+ * Supports cursor-based pagination (newest first, load older on scroll up)
+ */
+router.get('/:token/version/:versionId/feedbacks', async (req: Request, res: Response) => {
+  try {
+    const token = String(req.params.token);
+    const versionId = String(req.params.versionId);
+    const limit = Math.min(parseInt(req.query.limit as string) || 30, 100);
+    const before = req.query.before as string | undefined; // cursor for older feedbacks
+
+    // Verify share link
+    const shareLink = await prisma.deliverableShareLink.findUnique({
+      where: { token },
+    });
+
+    if (!shareLink || !shareLink.isActive) {
+      return res.status(404).json({ error: 'Invalid or inactive share link' });
+    }
+
+    // Check expiration
+    if (shareLink.expiresAt && shareLink.expiresAt < new Date()) {
+      return res.status(403).json({ error: 'This share link has expired' });
+    }
+
+    // Verify version belongs to the deliverable
+    const version = await prisma.version.findFirst({
+      where: {
+        id: versionId,
+        deliverableId: shareLink.deliverableId,
+      },
+    });
+
+    if (!version) {
+      return res.status(404).json({ error: 'Version not found' });
+    }
+
+    // Build query for feedbacks
+    const whereClause: any = { versionId };
+
+    if (before) {
+      // Get the createdAt of the cursor feedback
+      const cursorFeedback = await prisma.feedback.findUnique({
+        where: { id: before },
+        select: { createdAt: true },
+      });
+
+      if (cursorFeedback) {
+        whereClause.createdAt = { lt: cursorFeedback.createdAt };
+      }
+    }
+
+    // Get total count
+    const totalCount = await prisma.feedback.count({ where: { versionId } });
+
+    // Fetch feedbacks (newest first for initial load, then older)
+    const feedbacks = await prisma.feedback.findMany({
+      where: whereClause,
+      orderBy: { createdAt: 'desc' },
+      take: limit + 1, // Take one extra to check if there are more
+      include: {
+        author: {
+          select: {
+            id: true,
+            name: true,
+            avatarUrl: true,
+          },
+        },
+        revisionTasks: true,
+        replyingTo: {
+          select: {
+            id: true,
+            rawText: true,
+            structuredText: true,
+            author: { select: { id: true, name: true } },
+            guestName: true,
+          },
+        },
+      },
+    });
+
+    // Check if there are more feedbacks
+    const hasMore = feedbacks.length > limit;
+    const resultFeedbacks = hasMore ? feedbacks.slice(0, limit) : feedbacks;
+
+    // Get cursors
+    const oldestFeedback = resultFeedbacks[resultFeedbacks.length - 1];
+    const newestFeedback = resultFeedbacks[0];
+
+    res.json({
+      success: true,
+      data: {
+        data: resultFeedbacks,
+        pageInfo: {
+          hasMore,
+          totalCount,
+          oldestCursor: oldestFeedback?.id || null,
+          newestCursor: newestFeedback?.id || null,
+        },
+      },
+    });
+  } catch (error: any) {
+    console.error('Get paginated feedbacks error:', error);
+    res.status(500).json({ error: error.message || 'Failed to fetch feedbacks' });
+  }
+});
+
+/**
  * POST /api/v1/deliverable-share/:token/feedback
  * Add feedback/comment via share link (PUBLIC - no auth required for guests)
  * Supports both authenticated users and guest commenters
