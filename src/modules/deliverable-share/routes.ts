@@ -598,6 +598,7 @@ router.post('/:token/feedback', async (req: Request, res: Response) => {
       annotationX,
       annotationY,
       timestamp, // Vimeo-style video timestamp
+      drawings, // Drawing annotations (Timeliner.io style)
     } = req.body;
 
     console.log('💬 POST /deliverable-share/:token/feedback - Adding feedback');
@@ -695,6 +696,8 @@ router.post('/:token/feedback', async (req: Request, res: Response) => {
         annotationY: annotationY !== undefined ? annotationY : undefined,
         // Vimeo-style video timestamp (position in seconds)
         timestamp: timestamp !== undefined ? parseFloat(timestamp) : undefined,
+        // Drawing annotations (Timeliner.io style)
+        drawings: drawings && drawings.length > 0 ? drawings : undefined,
       },
       include: {
         author: userId ? {
@@ -918,6 +921,113 @@ router.post('/:token/upload/file', uploadAny.single('file'), async (req: Request
     console.error('Upload file via share link error:', error);
     res.status(500).json({
       error: error.message || 'Failed to upload file',
+    });
+  }
+});
+
+/**
+ * PATCH /api/v1/deliverable-share/:token/feedback/:feedbackId/resolve
+ * Toggle feedback resolved status via share link (PUBLIC - no auth required)
+ * Requires 'comment' or 'download' permission
+ */
+router.patch('/:token/feedback/:feedbackId/resolve', async (req: Request, res: Response) => {
+  try {
+    const token = String(req.params.token);
+    const feedbackId = String(req.params.feedbackId);
+    const { resolved } = req.body;
+
+    console.log('✅ PATCH /deliverable-share/:token/feedback/:feedbackId/resolve');
+    console.log('🔑 Token:', token.substring(0, 10) + '...');
+    console.log('📝 FeedbackId:', feedbackId);
+    console.log('✓ Resolved:', resolved);
+
+    if (typeof resolved !== 'boolean') {
+      return res.status(400).json({ error: 'resolved must be a boolean' });
+    }
+
+    // Verify share link exists and has comment permission
+    const shareLink = await prisma.deliverableShareLink.findUnique({
+      where: { token },
+      include: {
+        deliverable: {
+          include: {
+            project: { select: { id: true } },
+            versions: {
+              select: { id: true },
+            },
+          },
+        },
+      },
+    });
+
+    if (!shareLink) {
+      return res.status(404).json({ error: 'Invalid share link' });
+    }
+
+    // Check if link is active
+    if (!shareLink.isActive) {
+      return res.status(403).json({ error: 'This share link has been disabled' });
+    }
+
+    // Check expiration
+    if (shareLink.expiresAt && shareLink.expiresAt < new Date()) {
+      return res.status(403).json({ error: 'This share link has expired' });
+    }
+
+    // Check permission - must be 'comment' or 'download' to resolve
+    if (shareLink.permission === 'view') {
+      return res.status(403).json({ error: 'This share link does not allow resolving comments' });
+    }
+
+    // Verify feedback exists and belongs to this deliverable's versions
+    const versionIds = shareLink.deliverable.versions.map(v => v.id);
+    const feedback = await prisma.feedback.findFirst({
+      where: {
+        id: feedbackId,
+        versionId: { in: versionIds },
+      },
+    });
+
+    if (!feedback) {
+      return res.status(404).json({ error: 'Feedback not found or does not belong to this deliverable' });
+    }
+
+    // Update feedback resolved status
+    const updatedFeedback = await prisma.feedback.update({
+      where: { id: feedbackId },
+      data: {
+        resolved,
+        resolvedAt: resolved ? new Date() : null,
+      },
+      include: {
+        author: {
+          select: { id: true, name: true, avatarUrl: true },
+        },
+      },
+    });
+
+    // Emit socket event for real-time updates
+    const projectId = shareLink.deliverable.project.id;
+    socketService.emitToProject(projectId, 'feedback:resolved', {
+      id: feedbackId,
+      resolved: updatedFeedback.resolved,
+      resolvedAt: updatedFeedback.resolvedAt?.toISOString(),
+    });
+
+    console.log('✅ Feedback resolved status updated:', resolved);
+
+    res.json({
+      success: true,
+      data: {
+        id: updatedFeedback.id,
+        resolved: updatedFeedback.resolved,
+        resolvedAt: updatedFeedback.resolvedAt?.toISOString(),
+      },
+    });
+  } catch (error: any) {
+    console.error('Toggle feedback resolved via share link error:', error);
+    res.status(500).json({
+      error: error.message || 'Failed to update feedback resolved status',
     });
   }
 });

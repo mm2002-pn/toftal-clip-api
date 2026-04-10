@@ -344,6 +344,9 @@ model Feedback {
   resolvedAt     DateTime?    @map("resolved_at")      // When the comment was resolved
   resolvedById   String?      @map("resolved_by_id")   // Who resolved the comment
 
+  // Drawing annotations (Timeliner.io style) - array of DrawingShape objects
+  drawings       Json?        @default("[]")           // JSON array of drawing shapes
+
   createdAt      DateTime     @default(now()) @map("created_at")
   editedAt       DateTime?    @map("edited_at") // WhatsApp-style: shows "Modifié" when not null
 

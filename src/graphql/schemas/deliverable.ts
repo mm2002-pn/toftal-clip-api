@@ -100,6 +100,8 @@ export const deliverableTypeDefs = gql`
     resolved: Boolean
     resolvedAt: DateTime
     resolvedBy: User
+    # Drawing annotations (Timeliner.io style)
+    drawings: JSON
     createdAt: DateTime!
     editedAt: DateTime
   }
