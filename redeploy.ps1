@@ -90,6 +90,7 @@ Write-Host "`nDeploiement sur Cloud Run..." -ForegroundColor Yellow
 gcloud run deploy $SERVICE_NAME `
     --image "gcr.io/$PROJECT_ID/$SERVICE_NAME" `
     --region $REGION `
+    --set-env-vars "DB_CONNECTION_LIMIT=10,DB_POOL_TIMEOUT=30" `
     --quiet
 
 if ($LASTEXITCODE -ne 0) {

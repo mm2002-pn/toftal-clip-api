@@ -1,0 +1,178 @@
+# ===========================================
+# Toftal Clip API - CI/CD Pipeline
+# ===========================================
+# Automatic deployment to Google Cloud Run
+# Triggers on push to main (prod) or staging branches
+
+name: Deploy API to Cloud Run
+
+on:
+  push:
+    branches:
+      - main
+      - staging
+  workflow_dispatch:  # Manual trigger button in GitHub UI
+
+env:
+  PROJECT_ID: toftal-clip-api
+  SERVICE_NAME: toftal-clip-api
+  REGION: europe-west1
+
+jobs:
+  # ===========================================
+  # Job 1: Test & Lint
+  # ===========================================
+  test:
+    name: Test & Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma Client
+        run: npx prisma generate
+
+      - name: TypeScript compile check
+        run: npm run build
+
+  # ===========================================
+  # Job 2: Deploy to Cloud Run
+  # ===========================================
+  deploy:
+    name: Deploy to Cloud Run
+    needs: test
+    runs-on: ubuntu-latest
+
+    # Set environment based on branch
+    environment:
+      name: ${{ github.ref == 'refs/heads/main' && 'production' || 'staging' }}
+      url: ${{ steps.deploy.outputs.url }}
+
+    permissions:
+      contents: read
+      id-token: write  # Required for Workload Identity Federation
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Option 1: Workload Identity Federation (Recommended - No keys!)
+      - name: Authenticate to Google Cloud
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+          service_account: ${{ secrets.WIF_SERVICE_ACCOUNT }}
+
+      # Option 2: Service Account Key (Alternative - if WIF not set up)
+      # - name: Authenticate to Google Cloud
+      #   uses: google-github-actions/auth@v2
+      #   with:
+      #     credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ env.PROJECT_ID }}
+
+      - name: Configure Docker for GCR
+        run: gcloud auth configure-docker --quiet
+
+      - name: Build Docker image
+        run: |
+          docker build \
+            -t gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE_NAME }}:${{ github.sha }} \
+            -t gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE_NAME }}:latest \
+            .
+
+      - name: Push Docker image
+        run: |
+          docker push gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE_NAME }}:${{ github.sha }}
+          docker push gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE_NAME }}:latest
+
+      - name: Deploy to Cloud Run
+        id: deploy
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: ${{ env.SERVICE_NAME }}
+          region: ${{ env.REGION }}
+          image: gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE_NAME }}:${{ github.sha }}
+          flags: |
+            --memory=2Gi
+            --cpu=2
+            --timeout=900
+            --max-instances=10
+            --allow-unauthenticated
+          env_vars: |
+            NODE_ENV=production
+            TRUST_PROXY=true
+            CORS_ORIGIN=https://toftalclip.io;https://toftal-clip.netlify.app
+            FRONTEND_URL=https://toftalclip.io
+
+      - name: Health Check
+        run: |
+          echo "Deployed to: ${{ steps.deploy.outputs.url }}"
+          sleep 10
+          curl -f "${{ steps.deploy.outputs.url }}/health" || exit 1
+
+      - name: Deployment Summary
+        run: |
+          echo "## Deployment Successful! :rocket:" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Service:** ${{ env.SERVICE_NAME }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Region:** ${{ env.REGION }}" >> $GITHUB_STEP_SUMMARY
+          echo "**URL:** ${{ steps.deploy.outputs.url }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+
+  # ===========================================
+  # Job 3: Database Migration (Optional)
+  # ===========================================
+  migrate:
+    name: Database Migration
+    needs: deploy
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'  # Only on production
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+          service_account: ${{ secrets.WIF_SERVICE_ACCOUNT }}
+
+      - name: Install Cloud SQL Proxy
+        run: |
+          curl -o cloud-sql-proxy https://storage.googleapis.com/cloud-sql-connectors/cloud-sql-proxy/v2.8.0/cloud-sql-proxy.linux.amd64
+          chmod +x cloud-sql-proxy
+
+      - name: Run Migrations
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          # Start Cloud SQL Proxy in background
+          ./cloud-sql-proxy --gcloud-auth ${{ env.PROJECT_ID }}:${{ env.REGION }}:toftal-clip-db &
+          sleep 5
+
+          # Install deps and run migration
+          npm ci
+          npx prisma db push --accept-data-loss
+
+          echo "## Migration Complete! :white_check_mark:" >> $GITHUB_STEP_SUMMARY

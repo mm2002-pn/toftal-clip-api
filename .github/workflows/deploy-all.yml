@@ -1,0 +1,197 @@
+# ===========================================
+# Toftal Clip - Deploy Everything (One Click!)
+# ===========================================
+# Manual trigger to deploy Backend + Frontend + Migrate
+# Use this for complete deployments
+
+name: Deploy All (One Click)
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy'
+        required: true
+        default: 'production'
+        type: choice
+        options:
+          - production
+          - staging
+      run_migrations:
+        description: 'Run database migrations'
+        required: false
+        default: false
+        type: boolean
+      deploy_backend:
+        description: 'Deploy Backend (Cloud Run)'
+        required: false
+        default: true
+        type: boolean
+      deploy_frontend:
+        description: 'Deploy Frontend (Netlify)'
+        required: false
+        default: true
+        type: boolean
+
+env:
+  PROJECT_ID: toftal-clip-api
+  SERVICE_NAME: toftal-clip-api
+  REGION: europe-west1
+
+jobs:
+  # ===========================================
+  # Job 1: Deploy Backend
+  # ===========================================
+  backend:
+    name: Backend (Cloud Run)
+    if: ${{ inputs.deploy_backend }}
+    runs-on: ubuntu-latest
+    environment:
+      name: ${{ inputs.environment }}
+      url: ${{ steps.deploy.outputs.url }}
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout API repo
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install & Build
+        run: |
+          npm ci
+          npx prisma generate
+          npm run build
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+          service_account: ${{ secrets.WIF_SERVICE_ACCOUNT }}
+
+      - name: Setup Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Build & Push Docker
+        run: |
+          gcloud auth configure-docker --quiet
+          docker build -t gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE_NAME }}:${{ github.sha }} .
+          docker push gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE_NAME }}:${{ github.sha }}
+
+      - name: Deploy to Cloud Run
+        id: deploy
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: ${{ env.SERVICE_NAME }}
+          region: ${{ env.REGION }}
+          image: gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE_NAME }}:${{ github.sha }}
+          flags: --memory=2Gi --cpu=2 --timeout=900 --max-instances=10 --allow-unauthenticated
+
+      - name: Health Check
+        run: |
+          sleep 10
+          curl -f "${{ steps.deploy.outputs.url }}/health"
+          echo "Backend deployed: ${{ steps.deploy.outputs.url }}"
+
+  # ===========================================
+  # Job 2: Database Migration
+  # ===========================================
+  migrate:
+    name: Database Migration
+    needs: backend
+    if: ${{ inputs.run_migrations && inputs.deploy_backend }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+          service_account: ${{ secrets.WIF_SERVICE_ACCOUNT }}
+
+      - name: Run Migrations
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          curl -o cloud-sql-proxy https://storage.googleapis.com/cloud-sql-connectors/cloud-sql-proxy/v2.8.0/cloud-sql-proxy.linux.amd64
+          chmod +x cloud-sql-proxy
+          ./cloud-sql-proxy --gcloud-auth ${{ env.PROJECT_ID }}:${{ env.REGION }}:toftal-clip-db &
+          sleep 5
+          npm ci
+          npx prisma db push --accept-data-loss
+          echo "Migrations complete!"
+
+  # ===========================================
+  # Job 3: Deploy Frontend
+  # ===========================================
+  frontend:
+    name: Frontend (Netlify)
+    if: ${{ inputs.deploy_frontend }}
+    runs-on: ubuntu-latest
+    environment:
+      name: ${{ inputs.environment }}
+
+    steps:
+      - name: Checkout Frontend repo
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/toftal-clip
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Build Frontend
+        env:
+          VITE_API_URL: ${{ inputs.environment == 'production' && 'https://toftal-clip-api-776016345965.europe-west1.run.app' || 'https://toftal-clip-api-staging.europe-west1.run.app' }}
+          VITE_AMPLITUDE_API_KEY: ${{ secrets.AMPLITUDE_API_KEY }}
+        run: |
+          npm ci
+          npm run build
+
+      - name: Deploy to Netlify
+        uses: nwtgck/actions-netlify@v3
+        with:
+          publish-dir: './dist'
+          production-deploy: ${{ inputs.environment == 'production' }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+
+  # ===========================================
+  # Summary
+  # ===========================================
+  summary:
+    name: Deployment Summary
+    needs: [backend, frontend]
+    if: always()
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Create Summary
+        run: |
+          echo "# Deployment Complete! :rocket:" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Component | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Backend | ${{ needs.backend.result || 'skipped' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Frontend | ${{ needs.frontend.result || 'skipped' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Environment:** ${{ inputs.environment }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Migrations:** ${{ inputs.run_migrations }}" >> $GITHUB_STEP_SUMMARY

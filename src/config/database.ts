@@ -9,11 +9,11 @@ declare global {
 const getDatabaseUrl = () => {
   const url = process.env.DATABASE_URL || '';
 
-  // ✅ Configuration pool de connexions optimisée pour db-f1-micro
-  // db-f1-micro max: 25 connexions | max-instances: 5 | pool: 3 = 15 connexions max
-  const connectionLimit = process.env.DB_CONNECTION_LIMIT || '3';   // RÉDUIT: 3 connexions par instance
-  const poolTimeout = process.env.DB_POOL_TIMEOUT || '20';          // 20s timeout pour obtenir connexion
-  const connectTimeout = '10';  // 10s timeout pour établir connexion initiale
+  // ✅ Configuration avec PgBouncer (connection pooling géré par PgBouncer)
+  // PgBouncer gère le pool côté serveur, on peut utiliser plus de connexions côté app
+  const connectionLimit = process.env.DB_CONNECTION_LIMIT || '10';  // Plus de connexions car PgBouncer multiplex
+  const poolTimeout = process.env.DB_POOL_TIMEOUT || '30';          // 30s pour obtenir connexion
+  const connectTimeout = '10';                                       // 10s pour connexion initiale
 
   // Add connection parameters
   if (url && !url.includes('connection_limit')) {
