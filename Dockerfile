@@ -90,7 +90,7 @@ chmod 600 /etc/pgbouncer/userlist.txt\n\
 export DATABASE_URL_ORIGINAL=$DATABASE_URL\n\
 # Extract database name from URL (format: ...@host/dbname?...)\n\
 DB_NAME=$(echo $DATABASE_URL | sed -n "s|.*@[^/]*/\\([^?]*\\).*|\\1|p")\n\
-export DATABASE_URL="postgresql://$DB_USER:$DB_PASS@127.0.0.1:6432/$DB_NAME"\n\
+export DATABASE_URL="postgresql://$DB_USER:$DB_PASS@127.0.0.1:6432/$DB_NAME?pgbouncer=true"\n\
 echo "[startup] PgBouncer URL: $DATABASE_URL"\n\
 \n\
 # Start PgBouncer in background as pgbouncer user\n\
