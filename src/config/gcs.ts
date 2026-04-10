@@ -6,12 +6,12 @@ import { v4 as uuidv4 } from 'uuid';
 const BUCKET_NAME = process.env.GCS_BUCKET_NAME || 'toftal-clip-media';
 const PROJECT_ID = process.env.GCP_PROJECT_ID || 'toftal-clip-api';
 const KEY_FILE = process.env.GCS_KEY_FILE;
-const IS_PRODUCTION = process.env.NODE_ENV === 'production';
+const IS_CLOUD_RUN = process.env.NODE_ENV === 'production' || process.env.NODE_ENV === 'staging';
 
 // Initialize storage
-// In production (Cloud Run), use Application Default Credentials
+// In Cloud Run (production/staging), use Application Default Credentials
 // In development, use service account key file
-const storage = IS_PRODUCTION
+const storage = IS_CLOUD_RUN
   ? new Storage({ projectId: PROJECT_ID })
   : new Storage({ projectId: PROJECT_ID, keyFilename: KEY_FILE || './gcs-key.json' });
 
