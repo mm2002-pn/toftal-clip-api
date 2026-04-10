@@ -159,7 +159,7 @@ export const updateStatus = async (req: Request, res: Response, next: NextFuncti
 export const addFeedback = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const id = String(req.params.id);
-    const { rawText, structuredText, type, tasks, replyingToId, annotationX, annotationY, audioUrl, audioDuration } = req.body;
+    const { rawText, structuredText, type, tasks, replyingToId, annotationX, annotationY, audioUrl, audioDuration, attachments } = req.body;
 
     // Get version with deliverable info for notification
     const version = await prisma.version.findUnique({
@@ -190,6 +190,8 @@ export const addFeedback = async (req: Request, res: Response, next: NextFunctio
         // Voice note fields
         audioUrl: audioUrl || undefined,
         audioDuration: audioDuration !== undefined ? parseFloat(audioDuration) : undefined,
+        // File attachments
+        attachments: attachments && attachments.length > 0 ? attachments : undefined,
         revisionTasks: tasks ? {
           create: tasks.map((t: any) => ({ description: t.description })),
         } : undefined,

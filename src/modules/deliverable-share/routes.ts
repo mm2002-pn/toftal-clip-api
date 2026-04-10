@@ -4,6 +4,7 @@ import { authenticate } from '../../middlewares/auth';
 import { uploadAny } from '../../middlewares/upload';
 import { uploadDocumentToGCS, uploadImageToGCS } from '../../config/gcs';
 import { socketService } from '../../services/socketService';
+import { cacheService, CACHE_KEYS, CACHE_TTL } from '../../services/cacheService';
 import crypto from 'crypto';
 import fs from 'fs';
 
@@ -116,7 +117,17 @@ router.get('/verify/:token', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Token is required' });
     }
 
-    console.log('🔍 Verifying deliverable share token:', token.substring(0, 10) + '...');
+    const cacheKey = `${CACHE_KEYS.SHARE_LINK}verify:${token}`;
+
+    // Try to get from cache
+    const cached = await cacheService.get<any>(cacheKey);
+    if (cached) {
+      // Even with cache, validate expiration and usage
+      if (cached.expiresAt && new Date(cached.expiresAt) < new Date()) {
+        return res.status(403).json({ error: 'This share link has expired' });
+      }
+      return res.json({ success: true, data: cached });
+    }
 
     const shareLink = await prisma.deliverableShareLink.findUnique({
       where: { token },
@@ -132,42 +143,41 @@ router.get('/verify/:token', async (req: Request, res: Response) => {
     });
 
     if (!shareLink) {
-      console.warn('❌ Token not found:', token.substring(0, 10) + '...');
       return res.status(404).json({ error: 'Invalid or expired token' });
     }
 
     // Check if link is active
     if (!shareLink.isActive) {
-      console.warn('❌ Link is disabled');
       return res.status(403).json({ error: 'This share link has been disabled' });
     }
 
     // Check expiration
     if (shareLink.expiresAt && shareLink.expiresAt < new Date()) {
-      console.warn('❌ Link expired');
       return res.status(403).json({ error: 'This share link has expired' });
     }
 
     // Check usage limit
     if (shareLink.maxUses && shareLink.usedCount >= shareLink.maxUses) {
-      console.warn('❌ Max uses exceeded');
       return res.status(403).json({ error: 'This share link has reached its usage limit' });
     }
 
-    console.log('✅ Token verified successfully');
+    const responseData = {
+      id: shareLink.id,
+      deliverableId: shareLink.deliverableId,
+      deliverable: shareLink.deliverable,
+      permission: shareLink.permission,
+      expiresAt: shareLink.expiresAt,
+      isActive: shareLink.isActive,
+      maxUses: shareLink.maxUses,
+      usedCount: shareLink.usedCount,
+    };
+
+    // Cache for 1 minute
+    await cacheService.set(cacheKey, responseData, CACHE_TTL.SHORT);
 
     res.json({
       success: true,
-      data: {
-        id: shareLink.id,
-        deliverableId: shareLink.deliverableId,
-        deliverable: shareLink.deliverable,
-        permission: shareLink.permission,
-        expiresAt: shareLink.expiresAt,
-        isActive: shareLink.isActive,
-        maxUses: shareLink.maxUses,
-        usedCount: shareLink.usedCount,
-      },
+      data: responseData,
     });
   } catch (error: any) {
     console.error('Token verification error:', error);
@@ -189,7 +199,36 @@ router.get('/:token', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Token is required' });
     }
 
-    console.log('🎬 GET /deliverable-share/:token - Fetching deliverable data');
+    const cacheKey = `${CACHE_KEYS.SHARE_LINK}data:${token}`;
+
+    // Try to get deliverable data from cache
+    const cached = await cacheService.get<any>(cacheKey);
+    if (cached) {
+      // Still need to validate the share link status
+      const shareLink = await prisma.deliverableShareLink.findUnique({
+        where: { token },
+        select: { isActive: true, expiresAt: true, maxUses: true, usedCount: true, id: true },
+      });
+
+      if (!shareLink || !shareLink.isActive) {
+        await cacheService.delete(cacheKey);
+        return res.status(403).json({ error: 'This share link has been disabled' });
+      }
+      if (shareLink.expiresAt && shareLink.expiresAt < new Date()) {
+        return res.status(403).json({ error: 'This share link has expired' });
+      }
+      if (shareLink.maxUses && shareLink.usedCount >= shareLink.maxUses) {
+        return res.status(403).json({ error: 'This share link has reached its usage limit' });
+      }
+
+      // Increment usage count (async, don't wait)
+      prisma.deliverableShareLink.update({
+        where: { id: shareLink.id },
+        data: { usedCount: { increment: 1 } },
+      }).catch(() => {});
+
+      return res.json({ success: true, data: cached });
+    }
 
     const shareLink = await prisma.deliverableShareLink.findUnique({
       where: { token },
@@ -271,18 +310,21 @@ router.get('/:token', async (req: Request, res: Response) => {
       data: { usedCount: shareLink.usedCount + 1 },
     });
 
-    console.log('✅ Deliverable data retrieved:', shareLink.deliverable.id);
+    const responseData = {
+      shareLink: {
+        id: shareLink.id,
+        permission: shareLink.permission,
+        expiresAt: shareLink.expiresAt,
+      },
+      deliverable: shareLink.deliverable,
+    };
+
+    // Cache deliverable data for 1 minute (feedbacks change frequently)
+    await cacheService.set(cacheKey, responseData, CACHE_TTL.SHORT);
 
     res.json({
       success: true,
-      data: {
-        shareLink: {
-          id: shareLink.id,
-          permission: shareLink.permission,
-          expiresAt: shareLink.expiresAt,
-        },
-        deliverable: shareLink.deliverable,
-      },
+      data: responseData,
     });
   } catch (error: any) {
     console.error('Get shared deliverable error:', error);
@@ -326,6 +368,10 @@ router.delete('/:id', authenticate, async (req: Request, res: Response) => {
       where: { id: linkId },
       data: { isActive: false },
     });
+
+    // Invalidate cache for this share link
+    await cacheService.delete(`${CACHE_KEYS.SHARE_LINK}verify:${link.token}`);
+    await cacheService.delete(`${CACHE_KEYS.SHARE_LINK}data:${link.token}`);
 
     console.log('✅ Deliverable share link disabled');
 
@@ -664,6 +710,10 @@ router.post('/:token/feedback', async (req: Request, res: Response) => {
     });
 
     console.log('✅ Feedback created:', feedback.id, userId ? '(authenticated)' : '(guest)');
+
+    // Invalidate caches
+    await cacheService.delete(`${CACHE_KEYS.SHARE_LINK}data:${token}`);
+    await cacheService.invalidateFeedbacks(versionId);
 
     // Emit socket event for real-time updates
     const projectId = shareLink.deliverable.project.id;

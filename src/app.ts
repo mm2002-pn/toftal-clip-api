@@ -12,6 +12,7 @@ import { config } from './config';
 import { morganStream } from './utils/logger';
 import { errorHandler, notFoundHandler } from './middlewares/errorHandler';
 import { apiLimiter } from './middlewares/rateLimiter';
+import { cacheService } from './services/cacheService';
 
 // Import routes
 import routes from './routes';
@@ -103,11 +104,16 @@ export const createApp = async (): Promise<Application> => {
   // Health Check
   // ===================
 
-  app.get('/health', (req, res) => {
+  app.get('/health', async (req, res) => {
+    const redisStatus = await cacheService.healthCheck();
     res.status(200).json({
       status: 'ok',
       timestamp: new Date().toISOString(),
       uptime: process.uptime(),
+      cache: {
+        enabled: cacheService.isEnabled(),
+        connected: redisStatus,
+      },
     });
   });
 

@@ -166,7 +166,30 @@ router.get('/:token', async (req: Request, res: Response) => {
           include: {
             deliverables: {
               include: {
-                versions: true,
+                versions: {
+                  include: {
+                    uploadedBy: {
+                      select: {
+                        id: true,
+                        name: true,
+                        avatarUrl: true,
+                      },
+                    },
+                  },
+                  orderBy: { versionNumber: 'desc' },
+                },
+                assignedTalent: {
+                  select: {
+                    id: true,
+                    name: true,
+                    avatarUrl: true,
+                  },
+                },
+                workflowPhases: {
+                  include: {
+                    tasks: true,
+                  },
+                },
               },
             },
           },
@@ -199,7 +222,30 @@ router.get('/:token', async (req: Request, res: Response) => {
       data: { usedCount: publicLink.usedCount + 1 },
     });
 
-    console.log('✅ Project data retrieved:', publicLink.project.id);
+    // Transform deliverables to include computed fields (like GraphQL does)
+    const transformedDeliverables = (publicLink as any).project.deliverables.map((deliverable: any) => {
+      const latestVersion = deliverable.versions?.[0]; // Already sorted by versionNumber desc
+
+      // Calculate tasks from workflowPhases
+      const allTasks = deliverable.workflowPhases?.flatMap((phase: any) => phase.tasks || []) || [];
+      const completedTasks = allTasks.filter((t: any) => t.completed).length;
+      const totalTasks = allTasks.length;
+
+      return {
+        ...deliverable,
+        latestVideoUrl: latestVersion?.videoUrl || null,
+        lastUploader: latestVersion?.uploadedBy ? {
+          id: latestVersion.uploadedBy.id,
+          name: latestVersion.uploadedBy.name,
+          avatarUrl: latestVersion.uploadedBy.avatarUrl,
+        } : null,
+        taskProgress: totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0,
+        totalTasks,
+        completedTasks,
+      };
+    });
+
+    console.log('✅ Project data retrieved:', (publicLink as any).project.id);
 
     res.json({
       success: true,
@@ -209,7 +255,10 @@ router.get('/:token', async (req: Request, res: Response) => {
           permission: publicLink.permission,
           expiresAt: publicLink.expiresAt,
         },
-        project: publicLink.project,
+        project: {
+          ...(publicLink as any).project,
+          deliverables: transformedDeliverables,
+        },
       },
     });
   } catch (error: any) {

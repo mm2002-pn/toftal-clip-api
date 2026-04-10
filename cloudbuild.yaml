@@ -5,6 +5,9 @@ substitutions:
   _SERVICE_NAME: toftal-clip-api
   _REGION: europe-west1
   _INSTANCE_CONNECTION_NAME: ${PROJECT_ID}:${_REGION}:toftal-clip-db
+  # Redis cache (Upstash) - set these via command line or Secret Manager
+  _UPSTASH_REDIS_REST_URL: ''
+  _UPSTASH_REDIS_REST_TOKEN: ''
 
 steps:
   # Build the Docker image
@@ -45,7 +48,7 @@ steps:
       - '--add-cloudsql-instances'
       - '${_INSTANCE_CONNECTION_NAME}'
       - '--set-env-vars'
-      - 'NODE_ENV=production'
+      - 'NODE_ENV=production,UPSTASH_REDIS_REST_URL=${_UPSTASH_REDIS_REST_URL},UPSTASH_REDIS_REST_TOKEN=${_UPSTASH_REDIS_REST_TOKEN}'
       - '--memory'
       - '512Mi'
       - '--cpu'

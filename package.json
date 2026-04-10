@@ -35,6 +35,7 @@
     "@graphql-tools/schema": "^10.0.31",
     "@prisma/client": "^5.22.0",
     "@types/compression": "^1.8.1",
+    "@upstash/redis": "^1.37.0",
     "bcryptjs": "^3.0.3",
     "cloudinary": "^2.9.0",
     "compression": "^1.8.1",
