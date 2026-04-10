@@ -58,7 +58,9 @@ server_lifetime = 1800\n\
 log_connections = 0\n\
 log_disconnections = 0\n\
 admin_users = postgres\n\
-ignore_startup_parameters = extra_float_digits\n' > /etc/pgbouncer/pgbouncer.ini && \
+ignore_startup_parameters = extra_float_digits\n\
+pidfile = /var/run/pgbouncer/pgbouncer.pid\n\
+logfile = /var/log/pgbouncer/pgbouncer.log\n' > /etc/pgbouncer/pgbouncer.ini && \
     chown pgbouncer:pgbouncer /etc/pgbouncer/pgbouncer.ini
 
 # Copy package files and install production dependencies only
