@@ -2,10 +2,17 @@ import { Router, Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { authenticate } from '../../middlewares/auth';
 import { requireProjectAccess } from '../../middlewares/permissions';
+import { cacheService, CACHE_KEYS, CACHE_TTL } from '../../services/cacheService';
 import crypto from 'crypto';
 
 const router = Router();
 const prisma = new PrismaClient();
+
+// Cache key helpers for public share
+const PUBLIC_SHARE_CACHE = {
+  verify: (token: string) => `${CACHE_KEYS.SHARE_LINK}public:verify:${token}`,
+  data: (token: string) => `${CACHE_KEYS.SHARE_LINK}public:data:${token}`,
+};
 
 /**
  * POST /api/v1/public-share
@@ -85,6 +92,7 @@ router.post('/', authenticate, requireProjectAccess('edit'), async (req: Request
 /**
  * GET /api/v1/public-share/verify/:token
  * Verify a public share token (PUBLIC - no auth required)
+ * Cached for 1 minute
  */
 router.get('/verify/:token', async (req: Request, res: Response) => {
   try {
@@ -94,48 +102,57 @@ router.get('/verify/:token', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Token is required' });
     }
 
-    console.log('🔍 Verifying public share token:', token.substring(0, 10) + '...');
+    const cacheKey = PUBLIC_SHARE_CACHE.verify(token);
+
+    // Try to get from cache
+    const cached = await cacheService.get<any>(cacheKey);
+    if (cached) {
+      // Validate expiration even with cache
+      if (cached.expiresAt && new Date(cached.expiresAt) < new Date()) {
+        return res.status(403).json({ error: 'This share link has expired' });
+      }
+      return res.json({ success: true, data: cached });
+    }
 
     const publicLink = await prisma.publicShareLink.findUnique({
       where: { token },
     });
 
     if (!publicLink) {
-      console.warn('❌ Token not found:', token.substring(0, 10) + '...');
       return res.status(404).json({ error: 'Invalid or expired token' });
     }
 
     // Check if link is active
     if (!publicLink.isActive) {
-      console.warn('❌ Link is disabled');
       return res.status(403).json({ error: 'This share link has been disabled' });
     }
 
     // Check expiration
     if (publicLink.expiresAt && publicLink.expiresAt < new Date()) {
-      console.warn('❌ Link expired');
       return res.status(403).json({ error: 'This share link has expired' });
     }
 
     // Check usage limit
     if (publicLink.maxUses && publicLink.usedCount >= publicLink.maxUses) {
-      console.warn('❌ Max uses exceeded');
       return res.status(403).json({ error: 'This share link has reached its usage limit' });
     }
 
-    console.log('✅ Token verified successfully');
+    const responseData = {
+      id: publicLink.id,
+      projectId: publicLink.projectId,
+      permission: publicLink.permission,
+      expiresAt: publicLink.expiresAt,
+      isActive: publicLink.isActive,
+      maxUses: publicLink.maxUses,
+      usedCount: publicLink.usedCount,
+    };
+
+    // Cache for 1 minute
+    await cacheService.set(cacheKey, responseData, CACHE_TTL.SHORT);
 
     res.json({
       success: true,
-      data: {
-        id: publicLink.id,
-        projectId: publicLink.projectId,
-        permission: publicLink.permission,
-        expiresAt: publicLink.expiresAt,
-        isActive: publicLink.isActive,
-        maxUses: publicLink.maxUses,
-        usedCount: publicLink.usedCount,
-      },
+      data: responseData,
     });
   } catch (error: any) {
     console.error('Token verification error:', error);
@@ -148,6 +165,7 @@ router.get('/verify/:token', async (req: Request, res: Response) => {
 /**
  * GET /api/v1/public-share/:token
  * Get project data via public share link (PUBLIC - no auth required)
+ * Cached for 1 minute with validation
  */
 router.get('/:token', async (req: Request, res: Response) => {
   try {
@@ -157,7 +175,36 @@ router.get('/:token', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Token is required' });
     }
 
-    console.log('📂 GET /public-share/:token - Fetching project data');
+    const cacheKey = PUBLIC_SHARE_CACHE.data(token);
+
+    // Try to get from cache
+    const cached = await cacheService.get<any>(cacheKey);
+    if (cached) {
+      // Still validate the share link status
+      const publicLink = await prisma.publicShareLink.findUnique({
+        where: { token },
+        select: { isActive: true, expiresAt: true, maxUses: true, usedCount: true, id: true },
+      });
+
+      if (!publicLink || !publicLink.isActive) {
+        await cacheService.delete(cacheKey);
+        return res.status(403).json({ error: 'This share link has been disabled' });
+      }
+      if (publicLink.expiresAt && publicLink.expiresAt < new Date()) {
+        return res.status(403).json({ error: 'This share link has expired' });
+      }
+      if (publicLink.maxUses && publicLink.usedCount >= publicLink.maxUses) {
+        return res.status(403).json({ error: 'This share link has reached its usage limit' });
+      }
+
+      // Increment usage count (async)
+      prisma.publicShareLink.update({
+        where: { id: publicLink.id },
+        data: { usedCount: { increment: 1 } },
+      }).catch(() => {});
+
+      return res.json({ success: true, data: cached });
+    }
 
     const publicLink = await prisma.publicShareLink.findUnique({
       where: { token },
@@ -245,21 +292,24 @@ router.get('/:token', async (req: Request, res: Response) => {
       };
     });
 
-    console.log('✅ Project data retrieved:', (publicLink as any).project.id);
+    const responseData = {
+      publicLink: {
+        id: publicLink.id,
+        permission: publicLink.permission,
+        expiresAt: publicLink.expiresAt,
+      },
+      project: {
+        ...(publicLink as any).project,
+        deliverables: transformedDeliverables,
+      },
+    };
+
+    // Cache for 1 minute
+    await cacheService.set(cacheKey, responseData, CACHE_TTL.SHORT);
 
     res.json({
       success: true,
-      data: {
-        publicLink: {
-          id: publicLink.id,
-          permission: publicLink.permission,
-          expiresAt: publicLink.expiresAt,
-        },
-        project: {
-          ...(publicLink as any).project,
-          deliverables: transformedDeliverables,
-        },
-      },
+      data: responseData,
     });
   } catch (error: any) {
     console.error('Get public project error:', error);
@@ -303,6 +353,10 @@ router.delete('/:id', authenticate, async (req: Request, res: Response) => {
       where: { id: linkId },
       data: { isActive: false },
     });
+
+    // Invalidate cache for this share link
+    await cacheService.delete(PUBLIC_SHARE_CACHE.verify(link.token));
+    await cacheService.delete(PUBLIC_SHARE_CACHE.data(link.token));
 
     console.log('✅ Public share link disabled');
 

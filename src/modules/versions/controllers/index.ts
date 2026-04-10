@@ -3,6 +3,7 @@ import { prisma } from '../../../config/database';
 import { ApiResponse } from '../../../utils/apiResponse';
 import { NotFoundError, ForbiddenError } from '../../../utils/errors';
 import { socketService } from '../../../services/socketService';
+import { cacheService, CACHE_KEYS } from '../../../services/cacheService';
 
 export const updateVersion = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
@@ -211,6 +212,9 @@ export const addFeedback = async (req: Request, res: Response, next: NextFunctio
         }
       },
     });
+
+    // Invalidate feedbacks cache for this version
+    await cacheService.invalidateFeedbacks(id);
 
     // Update version status
     await prisma.version.update({

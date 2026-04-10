@@ -5,6 +5,7 @@ import { NotFoundError, ForbiddenError, BadRequestError } from '../../../utils/e
 import { socketService } from '../../../services/socketService';
 import { mapDeliverableTypeToContentType } from '../../../utils/contentTypeMapper';
 import { EmailService } from '../../../services/EmailService';
+import { cacheService, CACHE_KEYS, CACHE_TTL } from '../../../services/cacheService';
 
 // Initialize EmailService
 const emailService = new EmailService();
@@ -479,10 +480,18 @@ export const restoreProject = async (req: Request, res: Response, next: NextFunc
   }
 };
 
-// Get project deliverables
+// Get project deliverables (cached for 1 minute)
 export const getProjectDeliverables = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const id = String(req.params.id);
+    const cacheKey = `${CACHE_KEYS.PROJECT_DELIVERABLES}${id}`;
+
+    // Try cache first
+    const cached = await cacheService.get<any[]>(cacheKey);
+    if (cached) {
+      ApiResponse.success(res, cached);
+      return;
+    }
 
     const deliverables = await prisma.deliverable.findMany({
       where: { projectId: id },
@@ -490,6 +499,9 @@ export const getProjectDeliverables = async (req: Request, res: Response, next: 
         assignedTalent: { select: { id: true, name: true, avatarUrl: true } },
       },
     });
+
+    // Cache for 1 minute
+    await cacheService.set(cacheKey, deliverables, CACHE_TTL.SHORT);
 
     ApiResponse.success(res, deliverables);
   } catch (error) {
@@ -716,6 +728,9 @@ export const addDeliverable = async (req: Request, res: Response, next: NextFunc
       },
     });
 
+    // Invalidate project deliverables cache
+    await cacheService.invalidateProjectDeliverables(id);
+
     // Emit deliverable creation event to project room for real-time updates
     const { socketService } = await import('../../../services/socketService');
     const creationPayload = {
@@ -754,14 +769,25 @@ export const addDeliverable = async (req: Request, res: Response, next: NextFunc
   }
 };
 
-// Get project media
+// Get project media (cached for 1 minute)
 export const getProjectMedia = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const id = String(req.params.id);
+    const cacheKey = `${CACHE_KEYS.PROJECT_MEDIA}${id}`;
+
+    // Try cache first
+    const cached = await cacheService.get<any[]>(cacheKey);
+    if (cached) {
+      ApiResponse.success(res, cached);
+      return;
+    }
 
     const media = await prisma.mediaResource.findMany({
       where: { projectId: id, deliverableId: null },
     });
+
+    // Cache for 1 minute
+    await cacheService.set(cacheKey, media, CACHE_TTL.SHORT);
 
     ApiResponse.success(res, media);
   } catch (error) {
@@ -786,16 +812,27 @@ export const addProjectMedia = async (req: Request, res: Response, next: NextFun
       },
     });
 
+    // Invalidate project media cache
+    await cacheService.invalidateProjectMedia(id);
+
     ApiResponse.created(res, media, 'Media added successfully');
   } catch (error) {
     next(error);
   }
 };
 
-// Get project members
+// Get project members (cached for 5 minutes)
 export const getProjectMembers = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const projectId = String(req.params.id);
+    const cacheKey = `${CACHE_KEYS.PROJECT_MEMBERS}${projectId}`;
+
+    // Try cache first
+    const cached = await cacheService.get<any[]>(cacheKey);
+    if (cached) {
+      ApiResponse.success(res, cached, 'Project members fetched successfully');
+      return;
+    }
 
     const members = await prisma.projectMember.findMany({
       where: { projectId },
@@ -811,6 +848,9 @@ export const getProjectMembers = async (req: Request, res: Response, next: NextF
         },
       },
     });
+
+    // Cache for 5 minutes (members change less frequently)
+    await cacheService.set(cacheKey, members, CACHE_TTL.MEDIUM);
 
     ApiResponse.success(res, members, 'Project members fetched successfully');
   } catch (error) {

@@ -6,6 +6,9 @@ export const CACHE_KEYS = {
   FEEDBACKS: 'feedbacks:',
   VERSION: 'version:',
   PROJECT: 'project:',
+  PROJECT_DELIVERABLES: 'project:deliverables:',
+  PROJECT_MEMBERS: 'project:members:',
+  PROJECT_MEDIA: 'project:media:',
   USER: 'user:',
   SHARE_LINK: 'share:',
 } as const;
@@ -185,6 +188,39 @@ class CacheService {
    */
   async invalidateShareLink(token: string): Promise<void> {
     await this.delete(`${CACHE_KEYS.SHARE_LINK}${token}`);
+  }
+
+  /**
+   * Invalidate project deliverables cache
+   */
+  async invalidateProjectDeliverables(projectId: string): Promise<void> {
+    await this.delete(`${CACHE_KEYS.PROJECT_DELIVERABLES}${projectId}`);
+  }
+
+  /**
+   * Invalidate project members cache
+   */
+  async invalidateProjectMembers(projectId: string): Promise<void> {
+    await this.delete(`${CACHE_KEYS.PROJECT_MEMBERS}${projectId}`);
+  }
+
+  /**
+   * Invalidate project media cache
+   */
+  async invalidateProjectMedia(projectId: string): Promise<void> {
+    await this.delete(`${CACHE_KEYS.PROJECT_MEDIA}${projectId}`);
+  }
+
+  /**
+   * Invalidate all project-related caches
+   */
+  async invalidateProject(projectId: string): Promise<void> {
+    await Promise.all([
+      this.delete(`${CACHE_KEYS.PROJECT}${projectId}`),
+      this.delete(`${CACHE_KEYS.PROJECT_DELIVERABLES}${projectId}`),
+      this.delete(`${CACHE_KEYS.PROJECT_MEMBERS}${projectId}`),
+      this.delete(`${CACHE_KEYS.PROJECT_MEDIA}${projectId}`),
+    ]);
   }
 
   /**

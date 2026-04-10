@@ -3,6 +3,7 @@ import { prisma } from '../../../config/database';
 import { ApiResponse } from '../../../utils/apiResponse';
 import { ForbiddenError, NotFoundError } from '../../../utils/errors';
 import { socketService } from '../../../services/socketService';
+import { cacheService } from '../../../services/cacheService';
 
 export const updateFeedback = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
@@ -58,6 +59,9 @@ export const updateFeedback = async (req: Request, res: Response, next: NextFunc
       }
     });
 
+    // Invalidate feedbacks cache
+    await cacheService.invalidateFeedbacks(existingFeedback.versionId);
+
     // Emit real-time update to project room
     const projectId = existingFeedback.version?.deliverable?.project?.id;
     if (projectId) {
@@ -80,7 +84,20 @@ export const updateFeedback = async (req: Request, res: Response, next: NextFunc
 export const deleteFeedback = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const id = String(req.params.id);
+
+    // Get feedback to invalidate cache
+    const feedback = await prisma.feedback.findUnique({
+      where: { id },
+      select: { versionId: true }
+    });
+
     await prisma.feedback.delete({ where: { id } });
+
+    // Invalidate feedbacks cache
+    if (feedback?.versionId) {
+      await cacheService.invalidateFeedbacks(feedback.versionId);
+    }
+
     ApiResponse.success(res, null, 'Feedback deleted');
   } catch (error) {
     next(error);

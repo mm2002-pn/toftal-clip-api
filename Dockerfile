@@ -31,8 +31,10 @@ WORKDIR /app
 # Install OpenSSL, FFmpeg, wget, and PgBouncer for connection pooling
 RUN apt-get update && apt-get install -y openssl ffmpeg wget pgbouncer && rm -rf /var/lib/apt/lists/*
 
-# Create directories for PgBouncer
-RUN mkdir -p /etc/pgbouncer /var/run/pgbouncer /var/log/pgbouncer
+# Create pgbouncer user and directories
+RUN useradd -r -s /bin/false pgbouncer && \
+    mkdir -p /etc/pgbouncer /var/run/pgbouncer /var/log/pgbouncer && \
+    chown -R pgbouncer:pgbouncer /var/run/pgbouncer /var/log/pgbouncer
 
 # Create PgBouncer config (transaction pooling mode)
 RUN echo '[databases]\n\
@@ -56,7 +58,8 @@ server_lifetime = 1800\n\
 log_connections = 0\n\
 log_disconnections = 0\n\
 admin_users = postgres\n\
-ignore_startup_parameters = extra_float_digits\n' > /etc/pgbouncer/pgbouncer.ini
+ignore_startup_parameters = extra_float_digits\n' > /etc/pgbouncer/pgbouncer.ini && \
+    chown pgbouncer:pgbouncer /etc/pgbouncer/pgbouncer.ini
 
 # Copy package files and install production dependencies only
 COPY package*.json ./
@@ -84,9 +87,10 @@ export DATABASE_URL_ORIGINAL=$DATABASE_URL\n\
 export DATABASE_URL=$(echo $DATABASE_URL | sed "s|@.*:|@127.0.0.1:6432|" | sed "s|\\?.*||")\n\
 echo "[startup] PgBouncer URL: $DATABASE_URL"\n\
 \n\
-# Start PgBouncer in background\n\
+# Start PgBouncer in background as pgbouncer user\n\
 echo "[startup] Starting PgBouncer..."\n\
-pgbouncer -d /etc/pgbouncer/pgbouncer.ini\n\
+chown pgbouncer:pgbouncer /etc/pgbouncer/userlist.txt\n\
+su -s /bin/bash pgbouncer -c "pgbouncer -d /etc/pgbouncer/pgbouncer.ini"\n\
 sleep 2\n\
 \n\
 # Start Node.js app\n\
