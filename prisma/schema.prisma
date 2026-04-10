@@ -330,11 +330,15 @@ model Feedback {
   audioUrl       String?      @map("audio_url")       // URL of audio file in GCS
   audioDuration  Float?       @map("audio_duration")  // Duration in seconds
 
+  // File attachments (WhatsApp-style) - array of {name, url, type, size}
+  attachments    Json?        @default("[]")          // JSON array of attachment objects
+
   // Video annotation fields - position on video where comment was made
   annotationX    Float?       @map("annotation_x") // X coordinate (0-100%) of annotation point
   annotationY    Float?       @map("annotation_y") // Y coordinate (0-100%) of annotation point
 
   createdAt      DateTime     @default(now()) @map("created_at")
+  editedAt       DateTime?    @map("edited_at") // WhatsApp-style: shows "Modifié" when not null
 
   // Relations
   version       Version        @relation(fields: [versionId], references: [id], onDelete: Cascade)

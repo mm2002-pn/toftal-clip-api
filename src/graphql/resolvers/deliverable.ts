@@ -105,10 +105,30 @@ export const deliverableResolvers = {
         },
       });
     },
-    versionFeedbacks: async (_: any, { versionId }: { versionId: string }) => {
-      return prisma.feedback.findMany({
-        where: { versionId },
-        orderBy: { createdAt: 'asc' },
+    // Paginated feedbacks for infinite scroll (WhatsApp-style)
+    versionFeedbacks: async (_: any, { versionId, limit = 30, before }: { versionId: string; limit?: number; before?: string }) => {
+      // Get total count
+      const totalCount = await prisma.feedback.count({ where: { versionId } });
+
+      // Build query conditions
+      const whereCondition: any = { versionId };
+
+      // If "before" cursor is provided, get feedbacks older than the cursor
+      if (before) {
+        const cursorFeedback = await prisma.feedback.findUnique({
+          where: { id: before },
+          select: { createdAt: true }
+        });
+        if (cursorFeedback) {
+          whereCondition.createdAt = { lt: cursorFeedback.createdAt };
+        }
+      }
+
+      // Fetch feedbacks - get newest first, then reverse for display order
+      const feedbacks = await prisma.feedback.findMany({
+        where: whereCondition,
+        orderBy: { createdAt: 'desc' }, // Newest first for pagination
+        take: limit + 1, // Take one extra to check if there's more
         include: {
           author: true,
           revisionTasks: true,
@@ -122,6 +142,26 @@ export const deliverableResolvers = {
           }
         },
       });
+
+      // Check if there are more older feedbacks
+      const hasMore = feedbacks.length > limit;
+
+      // Remove the extra item and reverse to get chronological order (oldest to newest)
+      const data = hasMore ? feedbacks.slice(0, limit).reverse() : feedbacks.reverse();
+
+      // Get cursors
+      const oldestCursor = data.length > 0 ? data[0].id : null;
+      const newestCursor = data.length > 0 ? data[data.length - 1].id : null;
+
+      return {
+        data,
+        pageInfo: {
+          hasMore,
+          oldestCursor,
+          newestCursor,
+          totalCount,
+        },
+      };
     },
   },
   Deliverable: {

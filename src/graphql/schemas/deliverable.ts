@@ -70,6 +70,13 @@ export const deliverableTypeDefs = gql`
     assignedTo: String
   }
 
+  type FeedbackAttachment {
+    name: String!
+    url: String!
+    type: String!
+    size: Int
+  }
+
   type Feedback {
     id: ID!
     author: User
@@ -83,16 +90,32 @@ export const deliverableTypeDefs = gql`
     # Voice note fields (WhatsApp-style)
     audioUrl: String
     audioDuration: Float
+    # File attachments (WhatsApp-style)
+    attachments: [FeedbackAttachment!]
     # Video annotation fields
     annotationX: Float
     annotationY: Float
     createdAt: DateTime!
+    editedAt: DateTime
   }
 
   type RevisionTask {
     id: ID!
     description: String!
     completed: Boolean!
+  }
+
+  # Pagination for feedbacks (WhatsApp-style infinite scroll)
+  type FeedbackPageInfo {
+    hasMore: Boolean!
+    oldestCursor: String
+    newestCursor: String
+    totalCount: Int!
+  }
+
+  type FeedbackConnection {
+    data: [Feedback!]!
+    pageInfo: FeedbackPageInfo!
   }
 
   type DeliverablesConnection {
@@ -118,6 +141,11 @@ export const deliverableTypeDefs = gql`
     deliverableWorkflow(deliverableId: ID!): [WorkflowPhase!]!
     workflowPhase(id: ID!): WorkflowPhase
     feedback(id: ID!): Feedback
-    versionFeedbacks(versionId: ID!): [Feedback!]!
+    # Paginated feedbacks for infinite scroll (WhatsApp-style)
+    versionFeedbacks(
+      versionId: ID!
+      limit: Int = 30
+      before: String
+    ): FeedbackConnection!
   }
 `;

@@ -1,7 +1,11 @@
 import { Router, Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { authenticate } from '../../middlewares/auth';
+import { uploadAny } from '../../middlewares/upload';
+import { uploadDocumentToGCS, uploadImageToGCS } from '../../config/gcs';
+import { socketService } from '../../services/socketService';
 import crypto from 'crypto';
+import fs from 'fs';
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -421,15 +425,30 @@ router.get(
  * POST /api/v1/deliverable-share/:token/feedback
  * Add feedback/comment via share link (PUBLIC - no auth required for guests)
  * Supports both authenticated users and guest commenters
+ * Supports text, audio (voice notes), and attachments
  */
 router.post('/:token/feedback', async (req: Request, res: Response) => {
   try {
     const token = String(req.params.token);
-    const { versionId, rawText, structuredText, type, guestName, guestEmail, replyingToId } = req.body;
+    const {
+      versionId,
+      rawText,
+      structuredText,
+      type,
+      guestName,
+      guestEmail,
+      replyingToId,
+      audioUrl,
+      audioDuration,
+      attachments,
+      annotationX,
+      annotationY,
+    } = req.body;
 
     console.log('💬 POST /deliverable-share/:token/feedback - Adding feedback');
     console.log('🔑 Token:', token.substring(0, 10) + '...');
     console.log('👤 Guest:', guestName, guestEmail);
+    console.log('🎤 Audio:', audioUrl ? 'yes' : 'no', '| Attachments:', attachments?.length || 0);
 
     // Validate input
     if (!token || !versionId || !rawText) {
@@ -514,6 +533,11 @@ router.post('/:token/feedback', async (req: Request, res: Response) => {
         structuredText: structuredText || rawText,
         type: type || 'TEXT',
         replyingToId: replyingToId || undefined,
+        audioUrl: audioUrl || undefined,
+        audioDuration: audioDuration || undefined,
+        attachments: attachments || undefined,
+        annotationX: annotationX !== undefined ? annotationX : undefined,
+        annotationY: annotationY !== undefined ? annotationY : undefined,
       },
       include: {
         author: userId ? {
@@ -532,6 +556,17 @@ router.post('/:token/feedback', async (req: Request, res: Response) => {
     });
 
     console.log('✅ Feedback created:', feedback.id, userId ? '(authenticated)' : '(guest)');
+
+    // Emit socket event for real-time updates
+    const projectId = shareLink.deliverable.project.id;
+    socketService.emitToProject(projectId, 'feedback:new', {
+      id: feedback.id,
+      versionId,
+      authorId: userId || null,
+      authorName: userId ? (feedback.author as any)?.name : guestName,
+      type: type || 'TEXT',
+      projectId,
+    });
 
     // Return feedback with proper author info
     const feedbackResponse = {
@@ -552,6 +587,176 @@ router.post('/:token/feedback', async (req: Request, res: Response) => {
     console.error('Add feedback via share link error:', error);
     res.status(500).json({
       error: error.message || 'Failed to add feedback',
+    });
+  }
+});
+
+/**
+ * POST /api/v1/deliverable-share/:token/upload/audio
+ * Upload audio (voice note) via share link (PUBLIC - no auth required for guests)
+ * Requires 'comment' or 'download' permission
+ */
+router.post('/:token/upload/audio', uploadAny.single('file'), async (req: Request, res: Response) => {
+  try {
+    const token = String(req.params.token);
+
+    console.log('🎤 POST /deliverable-share/:token/upload/audio - Uploading voice note');
+
+    if (!req.file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+
+    // Verify share link exists and has comment permission
+    const shareLink = await prisma.deliverableShareLink.findUnique({
+      where: { token },
+    });
+
+    if (!shareLink) {
+      // Clean up uploaded file
+      if (req.file?.path && fs.existsSync(req.file.path)) {
+        fs.unlinkSync(req.file.path);
+      }
+      return res.status(404).json({ error: 'Invalid share link' });
+    }
+
+    // Check if link is active
+    if (!shareLink.isActive) {
+      if (req.file?.path && fs.existsSync(req.file.path)) {
+        fs.unlinkSync(req.file.path);
+      }
+      return res.status(403).json({ error: 'This share link has been disabled' });
+    }
+
+    // Check expiration
+    if (shareLink.expiresAt && shareLink.expiresAt < new Date()) {
+      if (req.file?.path && fs.existsSync(req.file.path)) {
+        fs.unlinkSync(req.file.path);
+      }
+      return res.status(403).json({ error: 'This share link has expired' });
+    }
+
+    // Check permission - must be 'comment' or 'download' to upload
+    if (shareLink.permission === 'view') {
+      if (req.file?.path && fs.existsSync(req.file.path)) {
+        fs.unlinkSync(req.file.path);
+      }
+      return res.status(403).json({ error: 'This share link does not allow uploading files' });
+    }
+
+    // Upload to GCS
+    const gcsResult = await uploadDocumentToGCS(req.file.path, req.file.originalname);
+
+    // Delete local file
+    fs.unlinkSync(req.file.path);
+
+    console.log('✅ Voice note uploaded:', gcsResult.url);
+
+    res.status(200).json({
+      success: true,
+      data: {
+        url: gcsResult.url,
+        fileName: gcsResult.fileName,
+        format: gcsResult.contentType,
+        size: gcsResult.size,
+      },
+      message: 'Audio uploaded successfully',
+    });
+  } catch (error: any) {
+    // Clean up local file on error
+    if (req.file?.path && fs.existsSync(req.file.path)) {
+      fs.unlinkSync(req.file.path);
+    }
+    console.error('Upload audio via share link error:', error);
+    res.status(500).json({
+      error: error.message || 'Failed to upload audio',
+    });
+  }
+});
+
+/**
+ * POST /api/v1/deliverable-share/:token/upload/file
+ * Upload file (attachment) via share link (PUBLIC - no auth required for guests)
+ * Requires 'comment' or 'download' permission
+ */
+router.post('/:token/upload/file', uploadAny.single('file'), async (req: Request, res: Response) => {
+  try {
+    const token = String(req.params.token);
+
+    console.log('📎 POST /deliverable-share/:token/upload/file - Uploading attachment');
+
+    if (!req.file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+
+    // Verify share link exists and has comment permission
+    const shareLink = await prisma.deliverableShareLink.findUnique({
+      where: { token },
+    });
+
+    if (!shareLink) {
+      if (req.file?.path && fs.existsSync(req.file.path)) {
+        fs.unlinkSync(req.file.path);
+      }
+      return res.status(404).json({ error: 'Invalid share link' });
+    }
+
+    // Check if link is active
+    if (!shareLink.isActive) {
+      if (req.file?.path && fs.existsSync(req.file.path)) {
+        fs.unlinkSync(req.file.path);
+      }
+      return res.status(403).json({ error: 'This share link has been disabled' });
+    }
+
+    // Check expiration
+    if (shareLink.expiresAt && shareLink.expiresAt < new Date()) {
+      if (req.file?.path && fs.existsSync(req.file.path)) {
+        fs.unlinkSync(req.file.path);
+      }
+      return res.status(403).json({ error: 'This share link has expired' });
+    }
+
+    // Check permission - must be 'comment' or 'download' to upload
+    if (shareLink.permission === 'view') {
+      if (req.file?.path && fs.existsSync(req.file.path)) {
+        fs.unlinkSync(req.file.path);
+      }
+      return res.status(403).json({ error: 'This share link does not allow uploading files' });
+    }
+
+    const mimeType = req.file.mimetype;
+    let gcsResult;
+
+    // Upload based on file type
+    if (mimeType.startsWith('image/')) {
+      gcsResult = await uploadImageToGCS(req.file.path, req.file.originalname);
+    } else {
+      gcsResult = await uploadDocumentToGCS(req.file.path, req.file.originalname);
+    }
+
+    // Delete local file
+    fs.unlinkSync(req.file.path);
+
+    console.log('✅ File uploaded:', gcsResult.url);
+
+    res.status(200).json({
+      success: true,
+      data: {
+        url: gcsResult.url,
+        name: req.file.originalname,
+        type: mimeType,
+        size: req.file.size,
+      },
+      message: 'File uploaded successfully',
+    });
+  } catch (error: any) {
+    // Clean up local file on error
+    if (req.file?.path && fs.existsSync(req.file.path)) {
+      fs.unlinkSync(req.file.path);
+    }
+    console.error('Upload file via share link error:', error);
+    res.status(500).json({
+      error: error.message || 'Failed to upload file',
     });
   }
 });
