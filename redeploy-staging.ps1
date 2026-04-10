@@ -17,7 +17,7 @@ $PROJECT_ID = "toftal-clip-api"
 $REGION = "europe-west1"
 $SERVICE_NAME = "toftal-clip-api-staging"  # Service STAGING separe de PROD
 $DB_INSTANCE = "toftal-clip-api:europe-west1:toftal-clip-db"
-$DB_URL = "postgresql://postgres:root@localhost:5432/toftal_staging_studio_db?schema=public"  # Base STAGING
+$DB_URL = "postgresql://toftal_user:ToftalClip2024SecureDB!@localhost:5433/toftal_staging_studio_db?schema=public"  # Base STAGING
 
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host "  Toftal Clip API - Redeploy STAGING" -ForegroundColor Cyan
