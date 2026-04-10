@@ -12,6 +12,9 @@ router.use(authenticate);
 router.put('/:id', validate(updateFeedbackValidation), feedbackController.updateFeedback);
 router.delete('/:id', feedbackController.deleteFeedback);
 
+// Vimeo-style video review - Toggle resolved status
+router.patch('/:id/resolve', feedbackController.toggleFeedbackResolved);
+
 // Revision Tasks
 router.post('/:id/tasks', validate(addRevisionTaskValidation), feedbackController.addRevisionTask);
 router.patch('/:id/tasks/:taskId/toggle', feedbackController.toggleRevisionTask);

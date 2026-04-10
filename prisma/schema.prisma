@@ -179,6 +179,7 @@ model User {
   assignedDeliverables    Deliverable[]
   uploadedVersions        Version[]
   feedbacks               Feedback[]
+  resolvedFeedbacks       Feedback[]             @relation("ResolvedFeedbacks")
   reviews                 Review[]               @relation("ReviewAuthor")
   talentProfile           TalentProfile?
   opportunities           Opportunity[]
@@ -337,12 +338,19 @@ model Feedback {
   annotationX    Float?       @map("annotation_x") // X coordinate (0-100%) of annotation point
   annotationY    Float?       @map("annotation_y") // Y coordinate (0-100%) of annotation point
 
+  // Vimeo-style video review features
+  timestamp      Float?       @map("timestamp")        // Video position in seconds when comment was made
+  resolved       Boolean      @default(false)          // Comment resolved status
+  resolvedAt     DateTime?    @map("resolved_at")      // When the comment was resolved
+  resolvedById   String?      @map("resolved_by_id")   // Who resolved the comment
+
   createdAt      DateTime     @default(now()) @map("created_at")
   editedAt       DateTime?    @map("edited_at") // WhatsApp-style: shows "Modifié" when not null
 
   // Relations
   version       Version        @relation(fields: [versionId], references: [id], onDelete: Cascade)
   author        User?          @relation(fields: [authorId], references: [id], onDelete: Cascade) // Optional for guests
+  resolvedBy    User?          @relation("ResolvedFeedbacks", fields: [resolvedById], references: [id], onDelete: SetNull)
   revisionTasks RevisionTask[]
   replyingTo    Feedback?      @relation("FeedbackReplies", fields: [replyingToId], references: [id], onDelete: SetNull)
   replies       Feedback[]     @relation("FeedbackReplies")

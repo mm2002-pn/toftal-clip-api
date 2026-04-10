@@ -145,3 +145,85 @@ export const deleteRevisionTask = async (req: Request, res: Response, next: Next
     next(error);
   }
 };
+
+/**
+ * Toggle feedback resolved status (Vimeo-style video review feature)
+ * PATCH /api/v1/feedback/:id/resolve
+ */
+export const toggleFeedbackResolved = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const id = String(req.params.id);
+    const { resolved } = req.body;
+
+    // Get existing feedback to check permissions and get project context
+    const existingFeedback = await prisma.feedback.findUnique({
+      where: { id },
+      include: {
+        version: {
+          include: {
+            deliverable: {
+              include: {
+                project: { select: { id: true, clientId: true, ownerId: true } }
+              }
+            }
+          }
+        }
+      }
+    });
+
+    if (!existingFeedback) {
+      throw new NotFoundError('Feedback not found');
+    }
+
+    const project = existingFeedback.version?.deliverable?.project;
+    const userId = req.user!.id;
+
+    // Check permissions: author, project owner, or project client can resolve
+    const canResolve =
+      existingFeedback.authorId === userId ||
+      project?.ownerId === userId ||
+      project?.clientId === userId;
+
+    if (!canResolve) {
+      throw new ForbiddenError('You do not have permission to resolve this comment');
+    }
+
+    // Update feedback resolved status
+    const feedback = await prisma.feedback.update({
+      where: { id },
+      data: {
+        resolved: resolved === true,
+        resolvedAt: resolved === true ? new Date() : null,
+        resolvedById: resolved === true ? userId : null
+      },
+      include: {
+        author: {
+          select: { id: true, name: true, avatarUrl: true }
+        },
+        resolvedBy: {
+          select: { id: true, name: true, avatarUrl: true }
+        },
+        revisionTasks: true
+      }
+    });
+
+    // Invalidate feedbacks cache
+    await cacheService.invalidateFeedbacks(existingFeedback.versionId);
+
+    // Emit real-time update to project room
+    if (project?.id) {
+      socketService.emitToProject(project.id, 'feedback:resolved', {
+        id: feedback.id,
+        versionId: existingFeedback.versionId,
+        resolved: feedback.resolved,
+        resolvedAt: feedback.resolvedAt?.toISOString(),
+        resolvedById: feedback.resolvedById,
+        projectId: project.id,
+      });
+    }
+
+    ApiResponse.success(res, feedback, resolved ? 'Feedback marked as resolved' : 'Feedback marked as unresolved');
+  } catch (error) {
+    next(error);
+  }
+};

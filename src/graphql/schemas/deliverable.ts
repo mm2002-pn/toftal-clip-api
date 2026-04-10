@@ -95,6 +95,11 @@ export const deliverableTypeDefs = gql`
     # Video annotation fields
     annotationX: Float
     annotationY: Float
+    # Vimeo-style video review features
+    timestamp: Float
+    resolved: Boolean
+    resolvedAt: DateTime
+    resolvedBy: User
     createdAt: DateTime!
     editedAt: DateTime
   }

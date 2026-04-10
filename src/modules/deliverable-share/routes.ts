@@ -597,6 +597,7 @@ router.post('/:token/feedback', async (req: Request, res: Response) => {
       attachments,
       annotationX,
       annotationY,
+      timestamp, // Vimeo-style video timestamp
     } = req.body;
 
     console.log('💬 POST /deliverable-share/:token/feedback - Adding feedback');
@@ -692,6 +693,8 @@ router.post('/:token/feedback', async (req: Request, res: Response) => {
         attachments: attachments || undefined,
         annotationX: annotationX !== undefined ? annotationX : undefined,
         annotationY: annotationY !== undefined ? annotationY : undefined,
+        // Vimeo-style video timestamp (position in seconds)
+        timestamp: timestamp !== undefined ? parseFloat(timestamp) : undefined,
       },
       include: {
         author: userId ? {

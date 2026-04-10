@@ -331,6 +331,12 @@ export const deliverableResolvers = {
       if (!parent.authorId) return null;
       return context.loaders.userLoader.load(parent.authorId);
     },
+    resolvedBy: (parent: any, _args: any, context: any) => {
+      // Vimeo-style video review - resolver for resolvedBy field
+      if (parent.resolvedBy !== undefined) return parent.resolvedBy;
+      if (!parent.resolvedById) return null;
+      return context.loaders.userLoader.load(parent.resolvedById);
+    },
     tasks: (parent: any) => {
       // If tasks are already included, return them. Otherwise fetch by feedbackId
       if (parent.tasks) return parent.tasks;
