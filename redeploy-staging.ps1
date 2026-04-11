@@ -97,7 +97,7 @@ gcloud run deploy $SERVICE_NAME `
     --set-secrets "DATABASE_URL=DATABASE_URL_STAGING:latest,JWT_SECRET=JWT_SECRET:latest,JWT_REFRESH_SECRET=JWT_REFRESH_SECRET:latest,EMAIL_PASSWORD=EMAIL_PASSWORD:latest,GROQ_API_KEY=GROQ_API_KEY:latest,UPSTASH_REDIS_REST_TOKEN=UPSTASH_REDIS_REST_TOKEN:latest" `
     --set-cloudsql-instances=toftal-clip-api:europe-west1:toftal-clip-db `
     --min-instances=2 `
-    --max-instances=10 `
+    --max-instances=20 `
     --memory=1Gi `
     --cpu=1 `
     --timeout=3600 `
