@@ -90,8 +90,11 @@ Write-Host "`nDeploiement sur Cloud Run..." -ForegroundColor Yellow
 gcloud run deploy $SERVICE_NAME `
     --image "gcr.io/$PROJECT_ID/$SERVICE_NAME" `
     --region $REGION `
-    --set-env-vars "DB_CONNECTION_LIMIT=10,DB_POOL_TIMEOUT=30,UPSTASH_REDIS_REST_URL=https://mint-polecat-37123.upstash.io" `
-    --set-secrets "UPSTASH_REDIS_REST_TOKEN=UPSTASH_REDIS_REST_TOKEN:latest" `
+    --set-env-vars "TRUST_PROXY=true,CORS_ORIGIN=https://toftalclip.io;https://www.toftalclip.io;https://app.toftalclip.io,NODE_ENV=production,FRONTEND_URL=https://toftalclip.io,EMAIL_SERVICE=gmail,EMAIL_USER=toftalpodium@gmail.com,EMAIL_FROM=Toftal Clip toftalpodium@gmail.com,RATE_LIMIT_MAX=1000,DB_CONNECTION_LIMIT=10,DB_POOL_TIMEOUT=30,GCS_BUCKET_NAME=toftal-clip-media,GCP_PROJECT_ID=toftal-clip-api,UPSTASH_REDIS_REST_URL=https://mint-polecat-37123.upstash.io" `
+    --set-secrets "DATABASE_URL=DATABASE_URL:latest,JWT_SECRET=JWT_SECRET:latest,JWT_REFRESH_SECRET=JWT_REFRESH_SECRET:latest,EMAIL_PASSWORD=EMAIL_PASSWORD:latest,GROQ_API_KEY=GROQ_API_KEY:latest,UPSTASH_REDIS_REST_TOKEN=UPSTASH_REDIS_REST_TOKEN:latest" `
+    --set-cloudsql-instances=toftal-clip-api:europe-west1:toftal-clip-db `
+    --min-instances=2 `
+    --max-instances=20 `
     --quiet
 
 if ($LASTEXITCODE -ne 0) {
