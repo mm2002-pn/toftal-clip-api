@@ -1,132 +1,130 @@
 {
   "root_group": {
-    "checks": [],
-    "name": "",
     "path": "",
     "id": "d41d8cd98f00b204e9800998ecf8427e",
     "groups": [
-        {
-          "name": "Authentication",
-          "path": "::Authentication",
-          "id": "e27c07c74d84fc697478e1503d425296",
-          "groups": [],
-          "checks": [
-              {
-                "name": "Login status is 200",
-                "path": "::Authentication::Login status is 200",
-                "id": "060da00957eedf19f856cff8e3352163",
-                "passes": 61577,
-                "fails": 309291
-              },
-              {
-                "name": "Login response has token",
-                "path": "::Authentication::Login response has token",
-                "id": "4c41a4ffbda46625e9ad47277e3e911d",
-                "passes": 61577,
-                "fails": 309290
-              }
-            ]
-        },
-        {
-          "groups": [],
-          "checks": [
-              {
-                "path": "::Get Current User::Get me status is 200",
-                "id": "c060ab264d329d8a11436a0118f43054",
-                "passes": 61575,
-                "fails": 2,
-                "name": "Get me status is 200"
-              },
-              {
-                "path": "::Get Current User::Get me has user data",
-                "id": "35147c1db8229dac72048d529adef9c5",
-                "passes": 61575,
-                "fails": 2,
-                "name": "Get me has user data"
-              }
-            ],
-          "name": "Get Current User",
-          "path": "::Get Current User",
-          "id": "43f9d1cf2eb5e5578a335614b1a78ceb"
-        },
-        {
-          "path": "::GraphQL - List Projects",
-          "id": "4475278e3f0e9a1787d5f43441dd25e9",
-          "groups": [],
-          "checks": [
-              {
-                "name": "List projects status is 200",
-                "path": "::GraphQL - List Projects::List projects status is 200",
-                "id": "9bcb962c87070bab495de0a21733ee4c",
-                "passes": 61573,
-                "fails": 4
-              },
-              {
-                "fails": 4,
-                "name": "List projects has data",
-                "path": "::GraphQL - List Projects::List projects has data",
-                "id": "facc5e18158baaff01f8978ecc5dffd2",
-                "passes": 61573
-              }
-            ],
-          "name": "GraphQL - List Projects"
-        },
-        {
-          "id": "510fa4a52b205da27b20279f5b332536",
-          "groups": [],
-          "checks": [
-              {
-                "name": "List talents status is 200",
-                "path": "::GraphQL - List Talents::List talents status is 200",
-                "id": "cd53e82ceb512713b9276412b43af51f",
-                "passes": 61572,
-                "fails": 5
-              },
-              {
-                "passes": 61572,
-                "fails": 5,
-                "name": "List talents has data",
-                "path": "::GraphQL - List Talents::List talents has data",
-                "id": "45a9e6ea3c61a82f27e2dad40407c7cd"
-              }
-            ],
-          "name": "GraphQL - List Talents",
-          "path": "::GraphQL - List Talents"
-        },
-        {
-          "name": "GraphQL - Projects with Deliverables",
-          "path": "::GraphQL - Projects with Deliverables",
-          "id": "a6daa4ea8a2b172ccaf44f0b48d80198",
-          "groups": [],
-          "checks": [
-              {
-                "name": "Projects with deliverables status is 200",
-                "path": "::GraphQL - Projects with Deliverables::Projects with deliverables status is 200",
-                "id": "1366076bb61e3f8f377580ed5f2727be",
-                "passes": 61570,
-                "fails": 7
-              },
-              {
-                "name": "Has deliverables data",
-                "path": "::GraphQL - Projects with Deliverables::Has deliverables data",
-                "id": "60fbbcb00538bc4ba48f790285a8290a",
-                "passes": 61570,
-                "fails": 7
-              },
-              {
-                "name": "DataLoader working (no errors)",
-                "path": "::GraphQL - Projects with Deliverables::DataLoader working (no errors)",
-                "id": "14436b703a1f337ff3f395501450fc0c",
-                "passes": 61570,
-                "fails": 7
-              }
-            ]
-        }
-      ]
+      {
+        "id": "e27c07c74d84fc697478e1503d425296",
+        "groups": [],
+        "checks": [
+            {
+              "id": "060da00957eedf19f856cff8e3352163",
+              "passes": 1837,
+              "fails": 671,
+              "name": "Login status is 200",
+              "path": "::Authentication::Login status is 200"
+            },
+            {
+              "id": "4c41a4ffbda46625e9ad47277e3e911d",
+              "passes": 1837,
+              "fails": 671,
+              "name": "Login response has token",
+              "path": "::Authentication::Login response has token"
+            }
+          ],
+        "name": "Authentication",
+        "path": "::Authentication"
+      },
+      {
+        "groups": [],
+        "checks": [
+            {
+              "name": "Get me status is 200",
+              "path": "::Get Current User::Get me status is 200",
+              "id": "c060ab264d329d8a11436a0118f43054",
+              "passes": 1530,
+              "fails": 261
+            },
+            {
+              "name": "Get me has user data",
+              "path": "::Get Current User::Get me has user data",
+              "id": "35147c1db8229dac72048d529adef9c5",
+              "passes": 1530,
+              "fails": 261
+            }
+          ],
+        "name": "Get Current User",
+        "path": "::Get Current User",
+        "id": "43f9d1cf2eb5e5578a335614b1a78ceb"
+      },
+      {
+        "groups": [],
+        "checks": [
+            {
+              "name": "List projects status is 200",
+              "path": "::GraphQL - List Projects::List projects status is 200",
+              "id": "9bcb962c87070bab495de0a21733ee4c",
+              "passes": 1457,
+              "fails": 286
+            },
+            {
+              "passes": 1457,
+              "fails": 286,
+              "name": "List projects has data",
+              "path": "::GraphQL - List Projects::List projects has data",
+              "id": "facc5e18158baaff01f8978ecc5dffd2"
+            }
+          ],
+        "name": "GraphQL - List Projects",
+        "path": "::GraphQL - List Projects",
+        "id": "4475278e3f0e9a1787d5f43441dd25e9"
+      },
+      {
+        "name": "GraphQL - List Talents",
+        "path": "::GraphQL - List Talents",
+        "id": "510fa4a52b205da27b20279f5b332536",
+        "groups": [],
+        "checks": [
+            {
+              "name": "List talents status is 200",
+              "path": "::GraphQL - List Talents::List talents status is 200",
+              "id": "cd53e82ceb512713b9276412b43af51f",
+              "passes": 1420,
+              "fails": 281
+            },
+            {
+              "name": "List talents has data",
+              "path": "::GraphQL - List Talents::List talents has data",
+              "id": "45a9e6ea3c61a82f27e2dad40407c7cd",
+              "passes": 1420,
+              "fails": 281
+            }
+          ]
+      },
+      {
+        "id": "a6daa4ea8a2b172ccaf44f0b48d80198",
+        "groups": [],
+        "checks": [
+            {
+              "passes": 1287,
+              "fails": 317,
+              "name": "Projects with deliverables status is 200",
+              "path": "::GraphQL - Projects with Deliverables::Projects with deliverables status is 200",
+              "id": "1366076bb61e3f8f377580ed5f2727be"
+            },
+            {
+              "name": "Has deliverables data",
+              "path": "::GraphQL - Projects with Deliverables::Has deliverables data",
+              "id": "60fbbcb00538bc4ba48f790285a8290a",
+              "passes": 1287,
+              "fails": 317
+            },
+            {
+              "path": "::GraphQL - Projects with Deliverables::DataLoader working (no errors)",
+              "id": "14436b703a1f337ff3f395501450fc0c",
+              "passes": 1287,
+              "fails": 317,
+              "name": "DataLoader working (no errors)"
+            }
+          ],
+        "name": "GraphQL - Projects with Deliverables",
+        "path": "::GraphQL - Projects with Deliverables"
+      }
+    ],
+    "checks": [],
+    "name": ""
   },
   "options": {
-    "summaryTimeUnit": "",
-    "noColor": false,
     "summaryTrendStats": [
       "avg",
       "min",
@@ -134,172 +132,112 @@
       "max",
       "p(90)",
       "p(95)"
-    ]
+    ],
+    "summaryTimeUnit": "",
+    "noColor": false
   },
   "state": {
     "isStdOutTTY": false,
     "isStdErrTTY": false,
-    "testRunDurationMs": 2763543.479
+    "testRunDurationMs": 295009.5591
   },
   "metrics": {
-    "http_req_tls_handshaking": {
+    "graphql_failure_rate": {
+      "type": "rate",
+      "contains": "default",
       "values": {
-        "avg": 0.1791247991839651,
+        "passes": 884,
+        "fails": 0,
+        "rate": 1
+      }
+    },
+    "rate_limit_errors": {
+      "type": "counter",
+      "contains": "default",
+      "values": {
+        "count": 137,
+        "rate": 0.46439173163728176
+      }
+    },
+    "http_reqs": {
+      "type": "counter",
+      "contains": "default",
+      "values": {
+        "count": 9347,
+        "rate": 31.6837190920706
+      }
+    },
+    "graphql_errors": {
+      "type": "counter",
+      "contains": "default",
+      "values": {
+        "count": 884,
+        "rate": 2.996513071294577
+      }
+    },
+    "graphql_complex_duration": {
+      "type": "trend",
+      "contains": "default",
+      "values": {
+        "med": 2829,
+        "max": 51722,
+        "p(90)": 33761.1,
+        "p(95)": 40746.35,
+        "avg": 11227.050498753117,
+        "min": 72
+      },
+      "thresholds": {
+        "p(95)<1500": {
+          "ok": false
+        }
+      }
+    },
+    "http_req_connecting": {
+      "type": "trend",
+      "contains": "time",
+      "values": {
+        "p(90)": 0,
+        "p(95)": 0,
+        "avg": 12.24156030812025,
         "min": 0,
         "med": 0,
-        "max": 8950.5289,
-        "p(90)": 0,
-        "p(95)": 0
+        "max": 15118.7928
+      }
+    },
+    "iteration_duration": {
+      "values": {
+        "avg": 36178.30866152484,
+        "min": 2073.2301,
+        "med": 23042.8983,
+        "max": 153086.6601,
+        "p(90)": 88751.81945,
+        "p(95)": 105122.11197499999
       },
       "type": "trend",
       "contains": "time"
     },
-    "graphql_success_rate": {
+    "auth_failure_rate": {
       "type": "rate",
       "contains": "default",
       "values": {
+        "fails": 0,
         "rate": 1,
-        "passes": 184715,
-        "fails": 0
-      },
-      "thresholds": {
-        "rate>0.85": {
-          "ok": true
-        }
+        "passes": 671
       }
     },
-    "http_req_duration{expected_response:true}": {
-      "type": "trend",
-      "contains": "time",
-      "values": {
-        "avg": 2084.8152580767355,
-        "min": 87.8583,
-        "med": 1640.779,
-        "max": 50306.6176,
-        "p(90)": 4442.42114,
-        "p(95)": 5378.23378
-      }
-    },
-    "iterations": {
-      "values": {
-        "count": 370678,
-        "rate": 134.1314159942696
-      },
-      "type": "counter",
-      "contains": "default"
-    },
-    "graphql_failure_rate": {
-      "contains": "default",
-      "values": {
-        "rate": 1,
-        "passes": 16,
-        "fails": 0
-      },
-      "type": "rate"
-    },
-    "http_req_sending": {
-      "type": "trend",
-      "contains": "time",
-      "values": {
-        "p(90)": 1.512,
-        "p(95)": 6.4439,
-        "avg": 8.56567406551264,
-        "min": 0,
-        "med": 0,
-        "max": 7064.0492
-      }
-    },
-    "group_duration": {
-      "type": "trend",
-      "contains": "time",
-      "values": {
-        "med": 21018.6302,
-        "max": 218083.8525,
-        "p(90)": 46857.843919999985,
-        "p(95)": 70870.91677,
-        "avg": 19514.339662997976,
-        "min": 4.6641
-      }
-    },
-    "vus_max": {
+    "vus": {
       "type": "gauge",
       "contains": "default",
       "values": {
-        "value": 10000,
-        "min": 2112,
-        "max": 10000
+        "value": 2,
+        "min": 2,
+        "max": 500
       }
-    },
-    "data_received": {
-      "type": "counter",
-      "contains": "data",
-      "values": {
-        "count": 410661351,
-        "rate": 148599.5621637911
-      }
-    },
-    "auth_errors": {
-      "type": "counter",
-      "contains": "default",
-      "values": {
-        "count": 309290,
-        "rate": 111.91790624981154
-      }
-    },
-    "http_req_blocked": {
-      "type": "trend",
-      "contains": "time",
-      "values": {
-        "p(95)": 0,
-        "avg": 1.0667426596465244,
-        "min": 0,
-        "med": 0,
-        "max": 23036.59,
-        "p(90)": 0
-      }
-    },
-    "http_req_waiting": {
-      "type": "trend",
-      "contains": "time",
-      "values": {
-        "med": 0,
-        "max": 44324.6713,
-        "p(90)": 3240.7168,
-        "p(95)": 4326.4947,
-        "avg": 1003.1917493515188,
-        "min": 0
-      }
-    },
-    "graphql_simple_duration": {
-      "type": "trend",
-      "contains": "default",
-      "values": {
-        "max": 44191,
-        "p(90)": 4207.4000000000015,
-        "p(95)": 5223,
-        "avg": 1929.053412800234,
-        "min": 96,
-        "med": 1463
-      }
-    },
-    "http_req_failed": {
-      "contains": "default",
-      "values": {
-        "passes": 310734,
-        "fails": 307867,
-        "rate": 0.502317325707524
-      },
-      "thresholds": {
-        "rate<0.10": {
-          "ok": false
-        }
-      },
-      "type": "rate"
     },
     "auth_success_rate": {
       "values": {
         "rate": 1,
-        "passes": 61577,
+        "passes": 1837,
         "fails": 0
       },
       "thresholds": {
@@ -310,57 +248,157 @@
       "type": "rate",
       "contains": "default"
     },
-    "http_reqs": {
-      "type": "counter",
-      "contains": "default",
+    "http_req_sending": {
+      "type": "trend",
+      "contains": "time",
       "values": {
-        "count": 618601,
-        "rate": 223.8434114392307
-      }
-    },
-    "graphql_errors": {
-      "type": "counter",
-      "contains": "default",
-      "values": {
-        "count": 16,
-        "rate": 0.0057896682724853194
-      }
-    },
-    "vus": {
-      "type": "gauge",
-      "contains": "default",
-      "values": {
-        "value": 1,
+        "avg": 0.6225040012838359,
         "min": 0,
-        "max": 10000
-      }
-    },
-    "checks": {
-      "type": "rate",
-      "contains": "default",
-      "values": {
-        "fails": 618624,
-        "rate": 0.5226401466748153,
-        "passes": 677304
+        "med": 0.4285,
+        "max": 362.9399,
+        "p(90)": 1.03752,
+        "p(95)": 1.5731799999999996
       }
     },
     "data_sent": {
       "type": "counter",
       "contains": "data",
       "values": {
-        "count": 140198291,
-        "rate": 50731.349828710256
+        "count": 4877864,
+        "rate": 16534.59642081137
+      }
+    },
+    "http_req_waiting": {
+      "type": "trend",
+      "contains": "time",
+      "values": {
+        "med": 2630.1942,
+        "max": 51720.6074,
+        "p(90)": 27413.236199999996,
+        "p(95)": 32004.188969999996,
+        "avg": 8273.23324249491,
+        "min": 0
+      }
+    },
+    "iterations": {
+      "type": "counter",
+      "contains": "default",
+      "values": {
+        "rate": 7.647209829005165,
+        "count": 2256
+      }
+    },
+    "auth_errors": {
+      "type": "counter",
+      "contains": "default",
+      "values": {
+        "count": 671,
+        "rate": 2.274502568822015
+      }
+    },
+    "graphql_success_rate": {
+      "type": "rate",
+      "contains": "default",
+      "values": {
+        "passes": 4164,
+        "fails": 0,
+        "rate": 1
+      },
+      "thresholds": {
+        "rate>0.85": {
+          "ok": true
+        }
+      }
+    },
+    "data_received": {
+      "values": {
+        "count": 12975330,
+        "rate": 43982.744286607085
+      },
+      "type": "counter",
+      "contains": "data"
+    },
+    "http_req_tls_handshaking": {
+      "type": "trend",
+      "contains": "time",
+      "values": {
+        "med": 0,
+        "max": 616.616,
+        "p(90)": 0,
+        "p(95)": 0,
+        "avg": 4.806085524767303,
+        "min": 0
+      }
+    },
+    "http_req_receiving": {
+      "type": "trend",
+      "contains": "time",
+      "values": {
+        "max": 209.6824,
+        "p(90)": 2.32858,
+        "p(95)": 3.978409999999994,
+        "avg": 1.0098638279661916,
+        "min": 0,
+        "med": 0.5074
+      }
+    },
+    "auth_duration": {
+      "type": "trend",
+      "contains": "default",
+      "values": {
+        "avg": 9046.889154704944,
+        "min": 72,
+        "med": 5801,
+        "max": 46304,
+        "p(90)": 21057.3,
+        "p(95)": 27615.3
+      }
+    },
+    "checks": {
+      "type": "rate",
+      "contains": "default",
+      "values": {
+        "rate": 0.8054488126909055,
+        "passes": 16349,
+        "fails": 3949
+      }
+    },
+    "http_req_failed": {
+      "thresholds": {
+        "rate<0.10": {
+          "ok": false
+        }
+      },
+      "type": "rate",
+      "contains": "default",
+      "values": {
+        "rate": 0.19428693698512892,
+        "passes": 1816,
+        "fails": 7531
+      }
+    },
+    "http_req_duration{expected_response:true}": {
+      "type": "trend",
+      "contains": "time",
+      "values": {
+        "med": 3617.5292,
+        "max": 51721.6008,
+        "p(90)": 29012.002,
+        "p(95)": 33350.74175,
+        "avg": 9407.591715495935,
+        "min": 86.1411
       }
     },
     "http_req_duration": {
+      "type": "trend",
       "contains": "time",
       "values": {
-        "p(90)": 3327.2437,
-        "p(95)": 4436.3323,
-        "avg": 1037.5764330453883,
+        "p(90)": 27418.64344,
+        "p(95)": 32005.308659999995,
+        "avg": 8274.865610324168,
         "min": 0,
-        "med": 0,
-        "max": 50306.6176
+        "med": 2634.0476,
+        "max": 51721.6008
       },
       "thresholds": {
         "p(95)<1000": {
@@ -369,81 +407,51 @@
         "p(99)<3000": {
           "ok": false
         }
-      },
-      "type": "trend"
+      }
     },
-    "http_req_connecting": {
+    "http_req_blocked": {
       "type": "trend",
       "contains": "time",
       "values": {
-        "avg": 0.8774249149290091,
-        "min": 0,
-        "med": 0,
-        "max": 18660.3903,
+        "max": 15338.3673,
         "p(90)": 0,
-        "p(95)": 0
-      }
-    },
-    "auth_duration": {
-      "type": "trend",
-      "contains": "default",
-      "values": {
-        "min": 3,
-        "med": 21333,
-        "max": 218070,
-        "p(90)": 64955.20000000001,
-        "p(95)": 83955.59999999998,
-        "avg": 31026.918577718818
-      }
-    },
-    "graphql_complex_duration": {
-      "type": "trend",
-      "contains": "default",
-      "values": {
-        "p(95)": 5322.199999999997,
-        "avg": 2008.5189275216396,
-        "min": 116,
-        "med": 1538,
-        "max": 63272,
-        "p(90)": 4170
-      },
-      "thresholds": {
-        "p(95)<1500": {
-          "ok": false
-        }
-      }
-    },
-    "auth_failure_rate": {
-      "type": "rate",
-      "contains": "default",
-      "values": {
-        "rate": 1,
-        "passes": 309290,
-        "fails": 0
-      }
-    },
-    "http_req_receiving": {
-      "type": "trend",
-      "contains": "time",
-      "values": {
-        "p(95)": 108.5477,
-        "avg": 25.819009628339,
+        "p(95)": 0,
+        "avg": 17.11664693484541,
         "min": 0,
-        "med": 0,
-        "max": 31834.5485,
-        "p(90)": 36.403
+        "med": 0
       }
     },
-    "iteration_duration": {
+    "graphql_simple_duration": {
+      "type": "trend",
+      "contains": "default",
+      "values": {
+        "avg": 6814.9965576592085,
+        "min": 70,
+        "med": 2368,
+        "max": 36256,
+        "p(90)": 20162.8,
+        "p(95)": 27976.199999999975
+      }
+    },
+    "vus_max": {
+      "contains": "default",
+      "values": {
+        "value": 500,
+        "min": 500,
+        "max": 500
+      },
+      "type": "gauge"
+    },
+    "group_duration": {
       "type": "trend",
       "contains": "time",
       "values": {
-        "min": 2006.9774,
-        "med": 23757.6624,
-        "max": 220099.7628,
-        "p(90)": 67474.65150999998,
-        "p(95)": 86264.35139499999,
-        "avg": 35512.80610791454
+        "avg": 8890.058513811908,
+        "min": 69.4643,
+        "med": 3209.3741,
+        "max": 51722.2556,
+        "p(90)": 27418.84668,
+        "p(95)": 32026.890689999993
       }
     }
   }

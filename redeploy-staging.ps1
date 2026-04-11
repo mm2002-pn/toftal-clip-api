@@ -96,8 +96,9 @@ gcloud run deploy $SERVICE_NAME `
     --set-env-vars "TRUST_PROXY=true,CORS_ORIGIN=https://toftalclip.io;https://staging.toftalclip.io;https://toftal-clip.netlify.app;https://toftal-clip-test.netlify.app,NODE_ENV=staging,FRONTEND_URL=https://toftalclip.io,EMAIL_SERVICE=gmail,EMAIL_USER=toftalpodium@gmail.com,EMAIL_FROM=Toftal Clip toftalpodium@gmail.com,RATE_LIMIT_MAX=1000,DB_CONNECTION_LIMIT=10,DB_POOL_TIMEOUT=30,GCS_BUCKET_NAME=toftal-clip-media,GCP_PROJECT_ID=toftal-clip-api,UPSTASH_REDIS_REST_URL=https://mint-polecat-37123.upstash.io" `
     --set-secrets "DATABASE_URL=DATABASE_URL_STAGING:latest,JWT_SECRET=JWT_SECRET:latest,JWT_REFRESH_SECRET=JWT_REFRESH_SECRET:latest,EMAIL_PASSWORD=EMAIL_PASSWORD:latest,GROQ_API_KEY=GROQ_API_KEY:latest,UPSTASH_REDIS_REST_TOKEN=UPSTASH_REDIS_REST_TOKEN:latest" `
     --set-cloudsql-instances=toftal-clip-api:europe-west1:toftal-clip-db `
-    --max-instances=5 `
-    --memory=512Mi `
+    --min-instances=2 `
+    --max-instances=10 `
+    --memory=1Gi `
     --cpu=1 `
     --timeout=3600 `
     --quiet

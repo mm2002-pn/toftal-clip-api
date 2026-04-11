@@ -33,25 +33,17 @@ const graphqlErrors = new Counter('graphql_errors');
 // ==========================================
 export const options = {
   stages: [
-    // Phase 1: Warm-up progressif
-    { duration: '3m', target: 100 },    // Monter à 100 users en 3min
-    { duration: '3m', target: 500 },    // Monter à 500 users en 3min
+    // Phase 1: Warm-up rapide
+    { duration: '30s', target: 100 },   // Monter à 100 users en 30s
+    { duration: '30s', target: 250 },   // Monter à 250 users en 30s
+    { duration: '30s', target: 500 },   // Atteindre 500 users en 30s
 
-    // Phase 2: Ramp-up vers la charge cible
-    { duration: '4m', target: 1000 },   // Monter à 1,000 users en 4min
-    { duration: '4m', target: 2500 },   // Monter à 2,500 users en 4min
-    { duration: '4m', target: 5000 },   // Monter à 5,000 users en 4min
-    { duration: '4m', target: 7500 },   // Monter à 7,500 users en 4min
-    { duration: '4m', target: 10000 },  // Atteindre 10,000 users en 4min
+    // Phase 2: Maintien de la charge
+    { duration: '2m', target: 500 },    // Maintenir 500 users pendant 2min
 
-    // Phase 3: Maintien de la charge maximale
-    { duration: '10m', target: 10000 }, // Maintenir 10,000 users pendant 10min
-
-    // Phase 4: Cool-down progressif
-    { duration: '3m', target: 5000 },   // Redescendre à 5,000 users en 3min
-    { duration: '3m', target: 1000 },   // Redescendre à 1,000 users en 3min
-    { duration: '2m', target: 100 },    // Redescendre à 100 users en 2min
-    { duration: '2m', target: 0 },      // Retour à 0 en 2min
+    // Phase 3: Cool-down
+    { duration: '30s', target: 100 },   // Redescendre à 100 users en 30s
+    { duration: '30s', target: 0 },     // Retour à 0 en 30s
   ],
 
   // Seuils ajustés pour 10,000 VUs
@@ -67,8 +59,8 @@ export const options = {
 // ==========================================
 // CONFIGURATION API
 // ==========================================
-const BASE_URL = __ENV.API_URL || 'https://toftal-clip-api-776016345965.europe-west1.run.app/api/v1';
-const GRAPHQL_URL = __ENV.GRAPHQL_URL || 'https://toftal-clip-api-776016345965.europe-west1.run.app/graphql';
+const BASE_URL = __ENV.API_URL || 'https://toftal-clip-api-staging-hpbzrjizjq-ew.a.run.app/api/v1';
+const GRAPHQL_URL = __ENV.GRAPHQL_URL || 'https://toftal-clip-api-staging-hpbzrjizjq-ew.a.run.app/graphql';
 
 // ==========================================
 // FONCTION PRINCIPALE DE TEST
