@@ -203,6 +203,7 @@ model Project {
   type                ProjectType   @default(PERSONAL)
   ownerId             String?       @map("owner_id")
   status              ProjectStatus @default(DRAFT)
+  startDate           DateTime?     @map("start_date")
   deadline            DateTime?
   brief               Json?
   briefCompletedAt    DateTime?     @map("brief_completed_at") // When client completed onboarding

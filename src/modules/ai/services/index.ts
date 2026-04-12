@@ -56,26 +56,54 @@ export const optimizeBrief = async (brief: any): Promise<BriefOptimization> => {
   console.log('Calling REAL Groq API...');
 
   try {
-    const result = await chatCompletionJSON<BriefOptimization>([
-      {
-        role: 'system',
-        content: `Tu es un directeur de création expert spécialisé dans le contenu vidéo pour les réseaux sociaux.
-Tu dois analyser des briefs créatifs et générer des recommandations stratégiques en français.
+    // Determine if we're reformulating existing text or generating from scratch
+    const hasExistingBrief = brief.aiSummary && brief.aiSummary.trim().length > 10;
+
+    const systemPrompt = hasExistingBrief
+      ? `Tu es un directeur de création expert spécialisé dans le contenu vidéo.
+Tu reformules et améliores des briefs créatifs pour les rendre plus professionnels, clairs et actionnables.
+Garde l'intention originale mais améliore la clarté, la structure et le professionnalisme.
 Réponds UNIQUEMENT en JSON valide.`
-      },
-      {
-        role: 'user',
-        content: `Tu es un directeur de création expert.
-Analyse les détails du projet suivant et génère un brief créatif structuré en français.
+      : `Tu es un directeur de création expert spécialisé dans le contenu vidéo pour les réseaux sociaux.
+Tu dois analyser des briefs créatifs et générer des recommandations stratégiques en français.
+Réponds UNIQUEMENT en JSON valide.`;
+
+    const userPrompt = hasExistingBrief
+      ? `Reformule et améliore ce brief créatif pour le projet "${brief.objective || 'Projet vidéo'}".
+
+Brief original à reformuler:
+"${brief.aiSummary}"
+
+Instructions:
+- Garde l'intention et les idées principales du brief original
+- Reformule de manière plus professionnelle et structurée
+- Ajoute des précisions si le brief est vague
+- Le résultat doit être actionnable pour un vidéaste
+
+Retourne un objet JSON avec:
+- aiSummary (string): Le brief reformulé (2-4 phrases professionnelles)
+- aiStructure (array of strings): Structure narrative suggérée (3-5 phases)
+- aiHook (string): Une accroche suggérée basée sur le brief
+- aiKeyPoints (array of strings): 3-5 points clés à respecter
+
+Retourne:
+{
+  "aiSummary": "Brief reformulé professionnel",
+  "aiStructure": ["Phase 1", "Phase 2", "Phase 3"],
+  "aiHook": "Accroche percutante",
+  "aiKeyPoints": ["Point 1", "Point 2", "Point 3"]
+}`
+      : `Tu es un directeur de création expert.
+Génère un brief créatif structuré pour ce projet vidéo.
 
 Contexte:
+Projet: ${brief.objective || 'Non spécifié'}
 Type: ${brief.contentType || 'Non spécifié'}
-Objectif: ${brief.objective || 'Non spécifié'}
 Audience: ${brief.targetAudience || 'Non spécifié'}
 Ton: ${brief.tone || 'Non spécifié'}
 
 Retourne un objet JSON avec (tout en français) :
-- aiSummary (string): Un résumé stratégique.
+- aiSummary (string): Un résumé stratégique concis.
 - aiStructure (array of strings): Structure narrative recommandée.
 - aiHook (string): Une accroche (hook) suggérée pour arrêter le scroll.
 - aiKeyPoints (array of strings): 3-5 points créatifs clés à respecter.
@@ -86,8 +114,11 @@ Retourne:
   "aiStructure": ["Phase 1", "Phase 2", "Phase 3"],
   "aiHook": "Une accroche percutante pour arrêter le scroll",
   "aiKeyPoints": ["Point 1", "Point 2", "Point 3"]
-}`
-      }
+}`;
+
+    const result = await chatCompletionJSON<BriefOptimization>([
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userPrompt }
     ], { model: config.groq.models.powerful });
 
     return result;

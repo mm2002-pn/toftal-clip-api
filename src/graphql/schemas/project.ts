@@ -75,6 +75,7 @@ export const projectTypeDefs = gql`
     ownerId: ID
     owner: User
     status: ProjectStatus!
+    startDate: DateTime
     deadline: DateTime
     brief: Brief
     briefCompletedAt: DateTime

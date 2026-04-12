@@ -13,7 +13,7 @@ const emailService = new EmailService();
 // Create project (now supports V2 with type and ownerId)
 export const createProject = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const { title, deadline, brief, talentId, type = 'PERSONAL', deliverables, collaboratorIds = [], collaborators = [], status = 'DRAFT' } = req.body;
+    const { title, startDate, deadline, brief, talentId, type = 'PERSONAL', deliverables, collaboratorIds = [], collaborators = [], status = 'DRAFT' } = req.body;
     const userId = req.user!.id;
     const userRole = req.user!.role;
 
@@ -25,6 +25,7 @@ export const createProject = async (req: Request, res: Response, next: NextFunct
         ownerId: userId, // Set owner as current user
         type: type || 'PERSONAL',
         status: status as any, // DRAFT or IN_PROGRESS
+        startDate: startDate ? new Date(startDate) : null,
         deadline: deadline ? new Date(deadline) : null,
         brief,
       },
@@ -187,7 +188,7 @@ export const createProject = async (req: Request, res: Response, next: NextFunct
 export const updateProject = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const id = String(req.params.id);
-    const { title, deadline, brief, talentId, status, briefCompletedAt } = req.body;
+    const { title, startDate, deadline, brief, talentId, status, briefCompletedAt } = req.body;
 
     // Check if project exists and user has access
     const existingProject = await prisma.project.findUnique({ where: { id } });
@@ -207,6 +208,7 @@ export const updateProject = async (req: Request, res: Response, next: NextFunct
       where: { id },
       data: {
         title,
+        startDate: startDate ? new Date(startDate) : undefined,
         deadline: deadline ? new Date(deadline) : undefined,
         brief,
         talentId,
