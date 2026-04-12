@@ -67,7 +67,7 @@ export class AccessRequestService {
             type: 'ACCESS_REQUEST',
             title: 'Demande d\'accès reçue',
             message: `${request.user.name} a demandé accès au projet "${request.project.title}"`,
-            link: `/#/workspace/${projectId}`,
+            link: `/#/workspace/${projectId}?share=true`,
           },
         });
 
