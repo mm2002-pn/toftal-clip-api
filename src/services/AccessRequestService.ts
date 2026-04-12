@@ -47,7 +47,7 @@ export class AccessRequestService {
     // Send email to project owner
     if (request.project.owner) {
       const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
-      const projectUrl = `${frontendUrl}/#/workspace/${projectId}`;
+      const projectUrl = `${frontendUrl}/workspace/${projectId}`;
 
       await this.emailService.sendAccessRequestEmail({
         to: request.project.owner.email,
@@ -67,7 +67,7 @@ export class AccessRequestService {
             type: 'ACCESS_REQUEST',
             title: 'Demande d\'accès reçue',
             message: `${request.user.name} a demandé accès au projet "${request.project.title}"`,
-            link: `/#/workspace/${projectId}?share=true`,
+            link: `/workspace/${projectId}?share=true`,
           },
         });
 
@@ -147,7 +147,7 @@ export class AccessRequestService {
         type: 'ACCESS_APPROVED',
         title: 'Accès approuvé',
         message: `Votre demande d'accès pour "${request.project.title}" a été approuvée`,
-        link: `/#/workspace/${projectId}`,
+        link: `/workspace/${projectId}`,
       },
     });
 
@@ -204,7 +204,7 @@ export class AccessRequestService {
         type: 'ACCESS_REJECTED',
         title: 'Accès refusé',
         message: `Votre demande d'accès pour "${request.project.title}" a été refusée`,
-        link: `/#/workspace/${request.project.id}`,
+        link: `/workspace/${request.project.id}`,
       },
     });
 
