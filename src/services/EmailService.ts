@@ -361,4 +361,97 @@ export class EmailService {
     );
     await sendEmail(to, emailTemplate);
   }
+
+  /**
+   * Send video share invitation email
+   */
+  async sendVideoShareInvitationEmail(data: {
+    to: string;
+    inviterName: string;
+    videoTitle: string;
+    shareUrl: string;
+    permission: 'view' | 'comment' | 'download';
+    message?: string;
+  }): Promise<void> {
+    const { to, inviterName, videoTitle, shareUrl, permission, message } = data;
+    const emailTemplate = emailTemplates.videoShareInvitation(
+      to,
+      inviterName,
+      videoTitle,
+      shareUrl,
+      permission,
+      message
+    );
+    await sendEmail(to, emailTemplate);
+  }
+
+  /**
+   * Send ownership transfer request email
+   */
+  async sendOwnershipTransferRequestEmail(data: {
+    to: string;
+    recipientName: string;
+    senderName: string;
+    projectTitle: string;
+    projectId: string;
+    token: string;
+    expiresAt: Date;
+  }): Promise<void> {
+    const { to, recipientName, senderName, projectTitle, projectId, token, expiresAt } = data;
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+    const acceptUrl = `${frontendUrl}/#/accept-transfer/${token}`;
+
+    const emailTemplate = emailTemplates.ownershipTransferRequest(
+      recipientName,
+      senderName,
+      projectTitle,
+      acceptUrl,
+      expiresAt
+    );
+    await sendEmail(to, emailTemplate);
+  }
+
+  /**
+   * Send ownership transfer accepted email
+   */
+  async sendOwnershipTransferAcceptedEmail(data: {
+    to: string;
+    oldOwnerName: string;
+    newOwnerName: string;
+    projectTitle: string;
+    projectId: string;
+  }): Promise<void> {
+    const { to, oldOwnerName, newOwnerName, projectTitle, projectId } = data;
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+    const workspaceUrl = `${frontendUrl}/#/workspace/${projectId}`;
+
+    const emailTemplate = emailTemplates.ownershipTransferAccepted(
+      oldOwnerName,
+      newOwnerName,
+      projectTitle,
+      workspaceUrl
+    );
+    await sendEmail(to, emailTemplate);
+  }
+
+  /**
+   * Send ownership transfer rejected email
+   */
+  async sendOwnershipTransferRejectedEmail(data: {
+    to: string;
+    oldOwnerName: string;
+    newOwnerName: string;
+    projectTitle: string;
+    reason?: string;
+  }): Promise<void> {
+    const { to, oldOwnerName, newOwnerName, projectTitle, reason } = data;
+
+    const emailTemplate = emailTemplates.ownershipTransferRejected(
+      oldOwnerName,
+      newOwnerName,
+      projectTitle,
+      reason
+    );
+    await sendEmail(to, emailTemplate);
+  }
 }

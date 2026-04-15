@@ -191,6 +191,8 @@ model User {
   accessRequests          AccessRequest[]        @relation("AccessRequests")
   createdPublicLinks      PublicShareLink[]      @relation("PublicShareLinks")
   createdDeliverableLinks DeliverableShareLink[] @relation("DeliverableShareLinks")
+  transferRequestsFrom    OwnershipTransferRequest[] @relation("TransferRequestsFrom")
+  transferRequestsTo      OwnershipTransferRequest[] @relation("TransferRequestsTo")
 
   @@map("users")
 }
@@ -223,8 +225,9 @@ model Project {
   mediaResources MediaResource[]
   members        ProjectMember[]
   invitations    ProjectInvitation[]
-  accessRequests AccessRequest[]     @relation("AccessRequests")
-  publicLinks    PublicShareLink[]
+  accessRequests   AccessRequest[]     @relation("AccessRequests")
+  publicLinks      PublicShareLink[]
+  transferRequests OwnershipTransferRequest[]
 
   @@map("projects")
 }
@@ -711,6 +714,32 @@ model DeliverableShareLink {
   @@index([token])
   @@index([isActive])
   @@map("deliverable_share_links")
+}
+
+// ==================== OWNERSHIP TRANSFER REQUEST MODEL ====================
+
+model OwnershipTransferRequest {
+  id              String    @id @default(uuid())
+  projectId       String    @map("project_id")
+  fromUserId      String    @map("from_user_id")
+  toUserId        String    @map("to_user_id")
+  token           String    @unique
+  status          String    @default("PENDING") // PENDING, ACCEPTED, REJECTED, EXPIRED, CANCELLED
+  message         String?   @db.Text
+  expiresAt       DateTime  @map("expires_at")
+  respondedAt     DateTime? @map("responded_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  // Relations
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  fromUser  User    @relation("TransferRequestsFrom", fields: [fromUserId], references: [id], onDelete: Cascade)
+  toUser    User    @relation("TransferRequestsTo", fields: [toUserId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@index([token])
+  @@index([status])
+  @@map("ownership_transfer_requests")
 }
 
 // ==================== BETA SIGNUP MODEL ====================

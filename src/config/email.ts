@@ -1062,6 +1062,105 @@ L'équipe Toftal Clip
   };
   },
 
+  // Video share invitation - sent when sharing a specific video by email
+  videoShareInvitation: (
+    email: string,
+    inviterName: string,
+    videoTitle: string,
+    shareUrl: string,
+    permission: 'view' | 'comment' | 'download',
+    message?: string
+  ) => {
+    const getPermissionText = (perm: string) => {
+      switch (perm) {
+        case 'download': return 'visualiser, commenter et télécharger';
+        case 'comment': return 'visualiser et commenter';
+        default: return 'visualiser';
+      }
+    };
+
+    return {
+      subject: `${inviterName} vous a partagé une vidéo sur Toftal Clip`,
+      html: emailWrapper(`
+        <h2 style="color: #FAFAFA; margin: 0 0 16px 0; font-size: 24px;">Bonjour !</h2>
+        <p style="color: #A1A1AA; font-size: 16px; line-height: 1.6; margin: 0 0 24px 0;">
+          <strong style="color: #FAFAFA;">${inviterName}</strong> vous a partagé une vidéo sur Toftal Clip.
+        </p>
+
+        <!-- Video Details -->
+        <div style="background-color: #18181B; border-radius: 12px; padding: 24px; margin-bottom: 24px; border: 1px solid #27272A;">
+          <table width="100%" cellpadding="0" cellspacing="0">
+            <tr>
+              <td style="padding: 8px 0;">
+                <span style="color: #71717A; font-size: 12px; text-transform: uppercase;">Vidéo</span>
+                <p style="color: #FAFAFA; font-size: 20px; font-weight: 600; margin: 4px 0 0 0;">🎬 ${videoTitle}</p>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding: 16px 0; border-top: 1px solid #27272A;">
+                <span style="color: #71717A; font-size: 12px; text-transform: uppercase;">Vos permissions</span>
+                <p style="color: #E91E63; font-size: 14px; margin: 4px 0 0 0;">Vous pouvez ${getPermissionText(permission)}</p>
+              </td>
+            </tr>
+            ${message ? `
+            <tr>
+              <td style="padding: 16px 0; border-top: 1px solid #27272A;">
+                <span style="color: #71717A; font-size: 12px; text-transform: uppercase;">Message</span>
+                <p style="color: #A1A1AA; font-size: 14px; margin: 4px 0 0 0; font-style: italic;">"${message}"</p>
+              </td>
+            </tr>
+            ` : ''}
+          </table>
+        </div>
+
+        <p style="color: #A1A1AA; font-size: 14px; line-height: 1.6; margin: 0 0 24px 0;">
+          Cliquez sur le bouton ci-dessous pour accéder à la vidéo. Aucun compte n'est requis.
+        </p>
+
+        <!-- Button -->
+        <table width="100%" cellpadding="0" cellspacing="0">
+          <tr>
+            <td align="center" style="padding: 24px 0;">
+              <a href="${shareUrl}" style="display: inline-block; background: linear-gradient(135deg, #E91E63 0%, #C2185B 100%); color: white; text-decoration: none; padding: 16px 48px; border-radius: 8px; font-weight: 600; font-size: 16px;">
+                Voir la Vidéo
+              </a>
+            </td>
+          </tr>
+        </table>
+
+        <p style="color: #71717A; font-size: 12px; line-height: 1.6; margin: 24px 0 0 0;">
+          Ce lien expire dans <strong style="color: #A1A1AA;">7 jours</strong>.
+        </p>
+
+        <!-- Link fallback -->
+        <div style="margin-top: 32px; padding: 16px; background-color: #18181B; border-radius: 8px; border: 1px solid #27272A;">
+          <p style="color: #71717A; font-size: 12px; margin: 0 0 8px 0;">
+            Si le bouton ne fonctionne pas, copiez ce lien :
+          </p>
+          <p style="color: #E91E63; font-size: 12px; word-break: break-all; margin: 0;">
+            ${shareUrl}
+          </p>
+        </div>
+      `, 'Vidéo Partagée', '🎬'),
+      text: `
+        Bonjour !
+
+        ${inviterName} vous a partagé une vidéo sur Toftal Clip.
+
+        Vidéo: ${videoTitle}
+        Permissions: Vous pouvez ${getPermissionText(permission)}
+        ${message ? `Message: "${message}"` : ''}
+
+        Cliquez sur le lien ci-dessous pour accéder à la vidéo :
+        ${shareUrl}
+
+        Ce lien expire dans 7 jours.
+
+        - L'équipe Toftal Clip
+      `,
+    };
+  },
+
   // Member role updated - sent to member when their role changes
   memberRoleUpdated: (
     memberName: string,
@@ -1142,6 +1241,230 @@ L'équipe Toftal Clip
       `,
     };
   },
+
+  // Ownership transfer request - sent to recipient to confirm transfer
+  ownershipTransferRequest: (
+    recipientName: string,
+    senderName: string,
+    projectTitle: string,
+    acceptUrl: string,
+    expiresAt: Date
+  ) => {
+    const expiryDate = new Intl.DateTimeFormat('fr-FR', {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    }).format(expiresAt);
+
+    return {
+      subject: `${senderName} souhaite vous transférer la propriété d'un projet`,
+      html: emailWrapper(`
+        <h2 style="color: #FAFAFA; margin: 0 0 16px 0; font-size: 24px;">Bonjour ${recipientName} !</h2>
+        <p style="color: #A1A1AA; font-size: 16px; line-height: 1.6; margin: 0 0 24px 0;">
+          <strong style="color: #FAFAFA;">${senderName}</strong> souhaite vous transférer la propriété du projet suivant :
+        </p>
+
+        <!-- Project Details -->
+        <div style="background-color: #18181B; border-radius: 12px; padding: 24px; margin-bottom: 24px; border: 1px solid #27272A;">
+          <table width="100%" cellpadding="0" cellspacing="0">
+            <tr>
+              <td style="padding: 8px 0;">
+                <span style="color: #71717A; font-size: 12px; text-transform: uppercase;">Projet</span>
+                <p style="color: #FAFAFA; font-size: 20px; font-weight: 600; margin: 4px 0 0 0;">📁 ${projectTitle}</p>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding: 16px 0; border-top: 1px solid #27272A;">
+                <span style="color: #71717A; font-size: 12px; text-transform: uppercase;">Propriétaire actuel</span>
+                <p style="color: #A1A1AA; font-size: 14px; margin: 4px 0 0 0;">${senderName}</p>
+              </td>
+            </tr>
+          </table>
+        </div>
+
+        <div style="background-color: rgba(233, 30, 99, 0.1); border-radius: 12px; padding: 16px; margin-bottom: 24px; border: 1px solid rgba(233, 30, 99, 0.2);">
+          <p style="color: #E91E63; font-size: 14px; margin: 0;">
+            <strong>Important :</strong> En acceptant ce transfert, vous deviendrez le propriétaire du projet et aurez tous les droits d'administration.
+          </p>
+        </div>
+
+        <p style="color: #A1A1AA; font-size: 14px; line-height: 1.6; margin: 0 0 24px 0;">
+          Cliquez sur le bouton ci-dessous pour accepter ou refuser le transfert de propriété.
+        </p>
+
+        <!-- Button -->
+        <table width="100%" cellpadding="0" cellspacing="0">
+          <tr>
+            <td align="center" style="padding: 24px 0;">
+              <a href="${acceptUrl}" style="display: inline-block; background: linear-gradient(135deg, #E91E63 0%, #C2185B 100%); color: white; text-decoration: none; padding: 16px 48px; border-radius: 8px; font-weight: 600; font-size: 16px;">
+                Répondre à la demande
+              </a>
+            </td>
+          </tr>
+        </table>
+
+        <p style="color: #71717A; font-size: 12px; line-height: 1.6; margin: 24px 0 0 0;">
+          Cette demande expire le <strong style="color: #A1A1AA;">${expiryDate}</strong>.
+        </p>
+
+        <!-- Link fallback -->
+        <div style="margin-top: 32px; padding: 16px; background-color: #18181B; border-radius: 8px; border: 1px solid #27272A;">
+          <p style="color: #71717A; font-size: 12px; margin: 0 0 8px 0;">
+            Si le bouton ne fonctionne pas, copiez ce lien :
+          </p>
+          <p style="color: #E91E63; font-size: 12px; word-break: break-all; margin: 0;">
+            ${acceptUrl}
+          </p>
+        </div>
+      `, 'Transfert de Propriété', '👑'),
+      text: `
+Bonjour ${recipientName} !
+
+${senderName} souhaite vous transférer la propriété du projet "${projectTitle}".
+
+IMPORTANT: En acceptant ce transfert, vous deviendrez le propriétaire du projet et aurez tous les droits d'administration.
+
+Cliquez sur le lien ci-dessous pour répondre à cette demande :
+${acceptUrl}
+
+Cette demande expire le ${expiryDate}.
+
+- L'équipe Toftal Clip
+      `,
+    };
+  },
+
+  // Ownership transfer accepted - sent to old owner when transfer is accepted
+  ownershipTransferAccepted: (
+    oldOwnerName: string,
+    newOwnerName: string,
+    projectTitle: string,
+    workspaceUrl: string
+  ) => ({
+    subject: `Transfert de propriété accepté - ${projectTitle}`,
+    html: emailWrapper(`
+      <h2 style="color: #FAFAFA; margin: 0 0 16px 0; font-size: 24px;">Bonjour ${oldOwnerName} !</h2>
+      <p style="color: #A1A1AA; font-size: 16px; line-height: 1.6; margin: 0 0 24px 0;">
+        <strong style="color: #FAFAFA;">${newOwnerName}</strong> a accepté le transfert de propriété du projet.
+      </p>
+
+      <!-- Project Details -->
+      <div style="background-color: #18181B; border-radius: 12px; padding: 24px; margin-bottom: 24px; border: 1px solid #27272A;">
+        <table width="100%" cellpadding="0" cellspacing="0">
+          <tr>
+            <td style="padding: 8px 0;">
+              <span style="color: #71717A; font-size: 12px; text-transform: uppercase;">Projet</span>
+              <p style="color: #FAFAFA; font-size: 20px; font-weight: 600; margin: 4px 0 0 0;">📁 ${projectTitle}</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 16px 0; border-top: 1px solid #27272A;">
+              <span style="color: #71717A; font-size: 12px; text-transform: uppercase;">Nouveau propriétaire</span>
+              <p style="color: #10B981; font-size: 14px; margin: 4px 0 0 0;">👑 ${newOwnerName}</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 16px 0; border-top: 1px solid #27272A;">
+              <span style="color: #71717A; font-size: 12px; text-transform: uppercase;">Votre nouveau rôle</span>
+              <p style="color: #A1A1AA; font-size: 14px; margin: 4px 0 0 0;">Collaborateur</p>
+            </td>
+          </tr>
+        </table>
+      </div>
+
+      <p style="color: #A1A1AA; font-size: 14px; line-height: 1.6; margin: 0 0 24px 0;">
+        Vous conservez l'accès au projet en tant que collaborateur.
+      </p>
+
+      <!-- Button -->
+      <table width="100%" cellpadding="0" cellspacing="0">
+        <tr>
+          <td align="center" style="padding: 24px 0;">
+            <a href="${workspaceUrl}" style="display: inline-block; background: linear-gradient(135deg, #E91E63 0%, #C2185B 100%); color: white; text-decoration: none; padding: 16px 48px; border-radius: 8px; font-weight: 600; font-size: 16px;">
+              Accéder au Projet
+            </a>
+          </td>
+        </tr>
+      </table>
+
+      <p style="color: #A1A1AA; font-size: 14px; line-height: 1.6; margin: 24px 0 0 0;">
+        Bonne collaboration ! 🚀<br>
+        <span style="color: #71717A;">L'équipe Toftal Clip</span>
+      </p>
+    `, 'Transfert Accepté', '✅'),
+    text: `
+Bonjour ${oldOwnerName} !
+
+${newOwnerName} a accepté le transfert de propriété du projet "${projectTitle}".
+
+NOUVEAU PROPRIÉTAIRE: ${newOwnerName}
+VOTRE NOUVEAU RÔLE: Collaborateur
+
+Vous conservez l'accès au projet en tant que collaborateur.
+
+Accéder au projet: ${workspaceUrl}
+
+Bonne collaboration !
+L'équipe Toftal Clip
+    `,
+  }),
+
+  // Ownership transfer rejected - sent to old owner when transfer is rejected
+  ownershipTransferRejected: (
+    oldOwnerName: string,
+    newOwnerName: string,
+    projectTitle: string,
+    reason?: string
+  ) => ({
+    subject: `Transfert de propriété refusé - ${projectTitle}`,
+    html: emailWrapper(`
+      <h2 style="color: #FAFAFA; margin: 0 0 16px 0; font-size: 24px;">Bonjour ${oldOwnerName} !</h2>
+      <p style="color: #A1A1AA; font-size: 16px; line-height: 1.6; margin: 0 0 24px 0;">
+        <strong style="color: #FAFAFA;">${newOwnerName}</strong> a refusé le transfert de propriété du projet.
+      </p>
+
+      <!-- Project Details -->
+      <div style="background-color: #18181B; border-radius: 12px; padding: 24px; margin-bottom: 24px; border: 1px solid #27272A;">
+        <table width="100%" cellpadding="0" cellspacing="0">
+          <tr>
+            <td style="padding: 8px 0;">
+              <span style="color: #71717A; font-size: 12px; text-transform: uppercase;">Projet</span>
+              <p style="color: #FAFAFA; font-size: 20px; font-weight: 600; margin: 4px 0 0 0;">📁 ${projectTitle}</p>
+            </td>
+          </tr>
+          ${reason ? `
+          <tr>
+            <td style="padding: 16px 0; border-top: 1px solid #27272A;">
+              <span style="color: #71717A; font-size: 12px; text-transform: uppercase;">Raison</span>
+              <p style="color: #A1A1AA; font-size: 14px; margin: 4px 0 0 0; font-style: italic;">"${reason}"</p>
+            </td>
+          </tr>
+          ` : ''}
+        </table>
+      </div>
+
+      <p style="color: #A1A1AA; font-size: 14px; line-height: 1.6; margin: 0 0 24px 0;">
+        Vous restez propriétaire du projet. Aucun changement n'a été effectué.
+      </p>
+
+      <p style="color: #A1A1AA; font-size: 14px; line-height: 1.6; margin: 24px 0 0 0;">
+        <span style="color: #71717A;">L'équipe Toftal Clip</span>
+      </p>
+    `, 'Transfert Refusé', '❌'),
+    text: `
+Bonjour ${oldOwnerName} !
+
+${newOwnerName} a refusé le transfert de propriété du projet "${projectTitle}".
+
+${reason ? `Raison: "${reason}"` : ''}
+
+Vous restez propriétaire du projet. Aucun changement n'a été effectué.
+
+- L'équipe Toftal Clip
+    `,
+  }),
 };
 
 // Send email function

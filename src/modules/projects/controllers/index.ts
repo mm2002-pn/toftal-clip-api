@@ -860,6 +860,495 @@ export const getProjectMembers = async (req: Request, res: Response, next: NextF
   }
 };
 
+// Initiate ownership transfer request (sends confirmation email to new owner)
+export const transferOwnership = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const projectId = String(req.params.id);
+    const { newOwnerId } = req.body;
+    const currentUserId = req.user!.id;
+
+    console.log('👑 POST /projects/:id/transfer-ownership (Request)');
+    console.log('📁 Project ID:', projectId);
+    console.log('👤 New Owner ID:', newOwnerId);
+    console.log('👤 Current User ID:', currentUserId);
+
+    if (!newOwnerId) {
+      throw new BadRequestError('newOwnerId is required');
+    }
+
+    // Get the project
+    const project = await prisma.project.findUnique({
+      where: { id: projectId },
+      include: {
+        owner: { select: { id: true, name: true, email: true } },
+      },
+    });
+
+    if (!project) {
+      throw new NotFoundError('Project not found');
+    }
+
+    // Check if current user is the owner
+    if (project.ownerId !== currentUserId) {
+      throw new ForbiddenError('Only the project owner can transfer ownership');
+    }
+
+    // Check if new owner is a member of the project
+    const newOwnerMembership = await prisma.projectMember.findFirst({
+      where: {
+        projectId,
+        userId: newOwnerId,
+      },
+      include: {
+        user: { select: { id: true, name: true, email: true } },
+      },
+    });
+
+    if (!newOwnerMembership) {
+      throw new BadRequestError('New owner must be a member of the project');
+    }
+
+    // Cannot transfer to yourself
+    if (newOwnerId === currentUserId) {
+      throw new BadRequestError('Cannot transfer ownership to yourself');
+    }
+
+    // Check if there's already a pending transfer request
+    const existingRequest = await prisma.ownershipTransferRequest.findFirst({
+      where: {
+        projectId,
+        status: 'PENDING',
+      },
+    });
+
+    if (existingRequest) {
+      throw new BadRequestError('Il y a déjà une demande de transfert en attente pour ce projet');
+    }
+
+    // Generate unique token
+    const crypto = await import('crypto');
+    const token = crypto.randomBytes(32).toString('hex');
+
+    // Create transfer request (expires in 7 days)
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + 7);
+
+    const transferRequest = await prisma.ownershipTransferRequest.create({
+      data: {
+        projectId,
+        fromUserId: currentUserId,
+        toUserId: newOwnerId,
+        token,
+        status: 'PENDING',
+        expiresAt,
+      },
+      include: {
+        fromUser: { select: { id: true, name: true, email: true } },
+        toUser: { select: { id: true, name: true, email: true } },
+        project: { select: { id: true, title: true } },
+      },
+    });
+
+    // Send notification to new owner
+    const notification = await prisma.notification.create({
+      data: {
+        userId: newOwnerId,
+        type: 'OWNERSHIP_TRANSFER_REQUEST',
+        title: 'Demande de transfert de propriété',
+        message: `${project.owner?.name || 'Le propriétaire'} souhaite vous transférer la propriété du projet "${project.title}"`,
+        link: `/accept-transfer/${token}`,
+      },
+    });
+
+    // Emit real-time notification
+    socketService.emitToUser(newOwnerId, 'notification:new', notification);
+
+    // Send email to new owner with confirmation link
+    if (newOwnerMembership.user?.email) {
+      try {
+        await emailService.sendOwnershipTransferRequestEmail({
+          to: newOwnerMembership.user.email,
+          recipientName: newOwnerMembership.user.name,
+          senderName: project.owner?.name || 'Le propriétaire actuel',
+          projectTitle: project.title,
+          projectId,
+          token,
+          expiresAt,
+        });
+        console.log(`📧 Ownership transfer request email sent to ${newOwnerMembership.user.email}`);
+      } catch (emailError) {
+        console.error('Failed to send ownership transfer request email:', emailError);
+      }
+    }
+
+    console.log('✅ Ownership transfer request created:', transferRequest.id);
+
+    ApiResponse.success(res, {
+      id: transferRequest.id,
+      status: 'PENDING',
+      toUser: transferRequest.toUser,
+      expiresAt: transferRequest.expiresAt,
+    }, 'Demande de transfert envoyée. En attente de confirmation.');
+  } catch (error) {
+    next(error);
+  }
+};
+
+// Verify ownership transfer request (for UI display)
+export const verifyTransferOwnership = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const token = String(req.params.token);
+
+    console.log('🔍 GET /projects/transfer/verify/:token');
+
+    // Find the transfer request
+    const transferRequest = await prisma.ownershipTransferRequest.findUnique({
+      where: { token },
+      include: {
+        project: { select: { id: true, title: true } },
+        fromUser: { select: { id: true, name: true, email: true } },
+        toUser: { select: { id: true, name: true, email: true } },
+      },
+    });
+
+    if (!transferRequest) {
+      throw new NotFoundError('Demande de transfert non trouvée');
+    }
+
+    // Check if request is still pending
+    if (transferRequest.status !== 'PENDING') {
+      throw new BadRequestError(`Cette demande a déjà été ${transferRequest.status === 'ACCEPTED' ? 'acceptée' : transferRequest.status === 'REJECTED' ? 'refusée' : 'traitée'}`);
+    }
+
+    // Check if request has expired
+    if (new Date() > transferRequest.expiresAt) {
+      await prisma.ownershipTransferRequest.update({
+        where: { id: transferRequest.id },
+        data: { status: 'EXPIRED' },
+      });
+      throw new BadRequestError('Cette demande de transfert a expiré');
+    }
+
+    ApiResponse.success(res, {
+      id: transferRequest.id,
+      projectId: transferRequest.projectId,
+      project: transferRequest.project,
+      fromUser: transferRequest.fromUser,
+      toUser: transferRequest.toUser,
+      status: transferRequest.status,
+      expiresAt: transferRequest.expiresAt,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// Accept ownership transfer request
+export const acceptTransferOwnership = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const token = String(req.params.token);
+    const currentUserId = req.user!.id;
+
+    console.log('✅ POST /projects/transfer/accept/:token');
+    console.log('🔑 Token:', token.substring(0, 20) + '...');
+    console.log('👤 Current User ID:', currentUserId);
+
+    // Find the transfer request
+    const transferRequest = await prisma.ownershipTransferRequest.findUnique({
+      where: { token },
+      include: {
+        project: { select: { id: true, title: true, ownerId: true } },
+        fromUser: { select: { id: true, name: true, email: true } },
+        toUser: { select: { id: true, name: true, email: true } },
+      },
+    });
+
+    if (!transferRequest) {
+      throw new NotFoundError('Demande de transfert non trouvée');
+    }
+
+    // Check if the current user is the intended recipient
+    if (transferRequest.toUserId !== currentUserId) {
+      throw new ForbiddenError('Vous n\'êtes pas autorisé à accepter cette demande');
+    }
+
+    // Check if request is still pending
+    if (transferRequest.status !== 'PENDING') {
+      throw new BadRequestError(`Cette demande a déjà été ${transferRequest.status === 'ACCEPTED' ? 'acceptée' : transferRequest.status === 'REJECTED' ? 'refusée' : 'traitée'}`);
+    }
+
+    // Check if request has expired
+    if (new Date() > transferRequest.expiresAt) {
+      await prisma.ownershipTransferRequest.update({
+        where: { id: transferRequest.id },
+        data: { status: 'EXPIRED' },
+      });
+      throw new BadRequestError('Cette demande de transfert a expiré');
+    }
+
+    const projectId = transferRequest.projectId;
+    const newOwnerId = transferRequest.toUserId;
+    const oldOwnerId = transferRequest.fromUserId;
+
+    // Get memberships
+    const newOwnerMembership = await prisma.projectMember.findFirst({
+      where: { projectId, userId: newOwnerId },
+    });
+
+    const oldOwnerMembership = await prisma.projectMember.findFirst({
+      where: { projectId, userId: oldOwnerId },
+    });
+
+    if (!newOwnerMembership) {
+      throw new BadRequestError('Vous devez être membre du projet pour en devenir propriétaire');
+    }
+
+    // Transaction: Update project owner + update member roles + update request status
+    await prisma.$transaction(async (tx) => {
+      // 1. Update transfer request status
+      await tx.ownershipTransferRequest.update({
+        where: { id: transferRequest.id },
+        data: {
+          status: 'ACCEPTED',
+          respondedAt: new Date(),
+        },
+      });
+
+      // 2. Update project owner
+      await tx.project.update({
+        where: { id: projectId },
+        data: {
+          ownerId: newOwnerId,
+          clientId: newOwnerId,
+        },
+      });
+
+      // 3. Update new owner's role to OWNER
+      await tx.projectMember.update({
+        where: { id: newOwnerMembership.id },
+        data: {
+          role: 'OWNER',
+          permissions: {
+            view: true,
+            edit: true,
+            comment: true,
+            approve: true,
+          },
+        },
+      });
+
+      // 4. Update old owner's role to COLLABORATOR
+      if (oldOwnerMembership) {
+        await tx.projectMember.update({
+          where: { id: oldOwnerMembership.id },
+          data: {
+            role: 'COLLABORATOR',
+            permissions: {
+              view: true,
+              edit: true,
+              comment: true,
+              approve: false,
+            },
+          },
+        });
+      }
+    });
+
+    // Invalidate cache
+    await cacheService.delete(`${CACHE_KEYS.PROJECT_MEMBERS}${projectId}`);
+
+    // Notify old owner that transfer was accepted
+    const notification = await prisma.notification.create({
+      data: {
+        userId: oldOwnerId,
+        type: 'OWNERSHIP_TRANSFER_ACCEPTED',
+        title: 'Transfert de propriété accepté',
+        message: `${transferRequest.toUser.name} a accepté le transfert de propriété du projet "${transferRequest.project.title}"`,
+        link: `/workspace/${projectId}`,
+      },
+    });
+
+    socketService.emitToUser(oldOwnerId, 'notification:new', notification);
+
+    // Emit project update to room
+    socketService.emitToProject(projectId, 'project:updated', {
+      id: projectId,
+      ownerId: newOwnerId,
+      previousOwnerId: oldOwnerId,
+      ownershipTransferred: true,
+    });
+
+    // Send email to old owner
+    if (transferRequest.fromUser?.email) {
+      try {
+        await emailService.sendOwnershipTransferAcceptedEmail({
+          to: transferRequest.fromUser.email,
+          oldOwnerName: transferRequest.fromUser.name,
+          newOwnerName: transferRequest.toUser.name,
+          projectTitle: transferRequest.project.title,
+          projectId,
+        });
+      } catch (emailError) {
+        console.error('Failed to send transfer accepted email:', emailError);
+      }
+    }
+
+    console.log('✅ Ownership transferred from', oldOwnerId, 'to', newOwnerId);
+
+    ApiResponse.success(res, {
+      projectId,
+      newOwnerId,
+      projectTitle: transferRequest.project.title,
+    }, 'Vous êtes maintenant propriétaire du projet');
+  } catch (error) {
+    next(error);
+  }
+};
+
+// Reject ownership transfer request
+export const rejectTransferOwnership = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const token = String(req.params.token);
+    const { reason } = req.body;
+    const currentUserId = req.user!.id;
+
+    console.log('❌ POST /projects/transfer/reject/:token');
+
+    // Find the transfer request
+    const transferRequest = await prisma.ownershipTransferRequest.findUnique({
+      where: { token },
+      include: {
+        project: { select: { id: true, title: true } },
+        fromUser: { select: { id: true, name: true, email: true } },
+        toUser: { select: { id: true, name: true, email: true } },
+      },
+    });
+
+    if (!transferRequest) {
+      throw new NotFoundError('Demande de transfert non trouvée');
+    }
+
+    // Check if the current user is the intended recipient
+    if (transferRequest.toUserId !== currentUserId) {
+      throw new ForbiddenError('Vous n\'êtes pas autorisé à refuser cette demande');
+    }
+
+    // Check if request is still pending
+    if (transferRequest.status !== 'PENDING') {
+      throw new BadRequestError('Cette demande a déjà été traitée');
+    }
+
+    // Update request status
+    await prisma.ownershipTransferRequest.update({
+      where: { id: transferRequest.id },
+      data: {
+        status: 'REJECTED',
+        message: reason || null,
+        respondedAt: new Date(),
+      },
+    });
+
+    // Notify old owner that transfer was rejected
+    const rejectMessage = reason
+      ? `${transferRequest.toUser.name} a refusé le transfert de propriété du projet "${transferRequest.project.title}". Motif : ${reason}`
+      : `${transferRequest.toUser.name} a refusé le transfert de propriété du projet "${transferRequest.project.title}"`;
+
+    const notification = await prisma.notification.create({
+      data: {
+        userId: transferRequest.fromUserId,
+        type: 'OWNERSHIP_TRANSFER_REJECTED',
+        title: 'Transfert de propriété refusé',
+        message: rejectMessage,
+        link: `/workspace/${transferRequest.projectId}`,
+      },
+    });
+
+    socketService.emitToUser(transferRequest.fromUserId, 'notification:new', notification);
+
+    // Send email to old owner
+    if (transferRequest.fromUser?.email) {
+      try {
+        await emailService.sendOwnershipTransferRejectedEmail({
+          to: transferRequest.fromUser.email,
+          oldOwnerName: transferRequest.fromUser.name,
+          newOwnerName: transferRequest.toUser.name,
+          projectTitle: transferRequest.project.title,
+          reason: reason || undefined,
+        });
+      } catch (emailError) {
+        console.error('Failed to send transfer rejected email:', emailError);
+      }
+    }
+
+    console.log('❌ Ownership transfer rejected by', currentUserId);
+
+    ApiResponse.success(res, { status: 'REJECTED' }, 'Demande de transfert refusée');
+  } catch (error) {
+    next(error);
+  }
+};
+
+// Cancel ownership transfer request (by the initiator)
+export const cancelTransferOwnership = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const token = String(req.params.token);
+    const currentUserId = req.user!.id;
+
+    console.log('🚫 DELETE /projects/transfer/:token');
+
+    // Find the transfer request
+    const transferRequest = await prisma.ownershipTransferRequest.findUnique({
+      where: { token },
+      include: {
+        project: { select: { id: true, title: true } },
+        toUser: { select: { id: true, name: true, email: true } },
+      },
+    });
+
+    if (!transferRequest) {
+      throw new NotFoundError('Demande de transfert non trouvée');
+    }
+
+    // Check if the current user is the initiator
+    if (transferRequest.fromUserId !== currentUserId) {
+      throw new ForbiddenError('Seul l\'initiateur peut annuler cette demande');
+    }
+
+    // Check if request is still pending
+    if (transferRequest.status !== 'PENDING') {
+      throw new BadRequestError('Cette demande a déjà été traitée');
+    }
+
+    // Update request status
+    await prisma.ownershipTransferRequest.update({
+      where: { id: transferRequest.id },
+      data: {
+        status: 'CANCELLED',
+        respondedAt: new Date(),
+      },
+    });
+
+    // Notify the recipient that the request was cancelled
+    const notification = await prisma.notification.create({
+      data: {
+        userId: transferRequest.toUserId,
+        type: 'OWNERSHIP_TRANSFER_CANCELLED',
+        title: 'Demande de transfert annulée',
+        message: `La demande de transfert de propriété du projet "${transferRequest.project.title}" a été annulée`,
+        link: `/workspace/${transferRequest.projectId}`,
+      },
+    });
+
+    socketService.emitToUser(transferRequest.toUserId, 'notification:new', notification);
+
+    console.log('🚫 Ownership transfer cancelled by', currentUserId);
+
+    ApiResponse.success(res, { status: 'CANCELLED' }, 'Demande de transfert annulée');
+  } catch (error) {
+    next(error);
+  }
+};
+
 // Complete brief (mark onboarding as done for CLIENT projects)
 export const completeBrief = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
