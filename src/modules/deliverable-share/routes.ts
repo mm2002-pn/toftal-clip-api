@@ -5,8 +5,11 @@ import { uploadAny } from '../../middlewares/upload';
 import { uploadDocumentToGCS, uploadImageToGCS } from '../../config/gcs';
 import { socketService } from '../../services/socketService';
 import { cacheService, CACHE_KEYS, CACHE_TTL } from '../../services/cacheService';
+import { EmailService } from '../../services/EmailService';
 import crypto from 'crypto';
 import fs from 'fs';
+
+const emailService = new EmailService();
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -101,6 +104,136 @@ router.post('/', authenticate, async (req: Request, res: Response) => {
     console.error('Deliverable share creation error:', error);
     res.status(500).json({
       error: error.message || 'Failed to create deliverable share link',
+    });
+  }
+});
+
+/**
+ * POST /api/v1/deliverable-share/invite
+ * Send an email invitation to share a deliverable (video)
+ * Requires: deliverableId, email, permission
+ * Optional: message
+ */
+router.post('/invite', authenticate, async (req: Request, res: Response) => {
+  try {
+    const { deliverableId, email, permission = 'view', message } = req.body;
+    const userId = req.user!.id;
+
+    console.log('📧 POST /deliverable-share/invite called');
+    console.log('📁 DeliverableId:', deliverableId);
+    console.log('📬 Email:', email);
+    console.log('🔐 Permission:', permission);
+
+    // Validate input
+    if (!deliverableId) {
+      return res.status(400).json({ error: 'deliverableId is required' });
+    }
+
+    if (!email) {
+      return res.status(400).json({ error: 'email is required' });
+    }
+
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      return res.status(400).json({ error: 'Invalid email format' });
+    }
+
+    if (!['view', 'comment', 'download'].includes(permission)) {
+      return res.status(400).json({
+        error: "Permission must be one of: 'view', 'comment', 'download'",
+      });
+    }
+
+    // Verify deliverable exists and get project info
+    const deliverable = await prisma.deliverable.findUnique({
+      where: { id: deliverableId },
+      include: {
+        project: {
+          include: {
+            members: {
+              where: { userId },
+            },
+          },
+        },
+      },
+    });
+
+    if (!deliverable) {
+      return res.status(404).json({ error: 'Deliverable not found' });
+    }
+
+    // Check if user has access to the project (owner, talent, or member)
+    const project = deliverable.project;
+    const isOwner = project.ownerId === userId || project.clientId === userId;
+    const isTalent = project.talentId === userId || deliverable.assignedTalentId === userId;
+    const isMember = project.members.length > 0;
+
+    if (!isOwner && !isTalent && !isMember) {
+      return res.status(403).json({ error: 'You do not have access to this deliverable' });
+    }
+
+    // Get current user's name for the invitation email
+    const currentUser = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { name: true, email: true },
+    });
+
+    const inviterName = currentUser?.name || currentUser?.email || 'Un utilisateur';
+
+    // Generate secure token
+    const token = crypto.randomBytes(32).toString('hex');
+
+    // Calculate expiry date (7 days)
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+
+    // Create deliverable share link
+    const shareLink = await prisma.deliverableShareLink.create({
+      data: {
+        deliverableId,
+        creatorUserId: userId,
+        token,
+        permission,
+        expiresAt,
+        isActive: true,
+        usedCount: 0,
+      },
+    });
+
+    // Generate share URL
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+    const shareUrl = `${frontendUrl}/#/share/video/${token}`;
+
+    // Send email invitation
+    try {
+      await emailService.sendVideoShareInvitationEmail({
+        to: email,
+        inviterName,
+        videoTitle: deliverable.title,
+        shareUrl,
+        permission,
+        message,
+      });
+      console.log('✅ Video share invitation email sent to:', email);
+    } catch (emailError) {
+      console.error('❌ Failed to send video share invitation email:', emailError);
+      // Don't fail the request if email fails, link is still created
+    }
+
+    res.status(201).json({
+      success: true,
+      data: {
+        token: shareLink.token,
+        shareUrl,
+        permission: shareLink.permission,
+        expiresAt: shareLink.expiresAt,
+      },
+      message: `Invitation envoyée à ${email}`,
+    });
+  } catch (error: any) {
+    console.error('Deliverable share invite error:', error);
+    res.status(500).json({
+      error: error.message || 'Failed to send invitation',
     });
   }
 });

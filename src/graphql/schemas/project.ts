@@ -13,6 +13,8 @@ export const projectTypeDefs = gql`
     aiStructure: [String]
     aiHook: String
     aiKeyPoints: [String]
+    briefFileUrl: String
+    briefFileName: String
   }
 
   enum ProjectType {
