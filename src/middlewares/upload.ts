@@ -6,7 +6,17 @@ import { BadRequestError } from '../utils/errors';
 // Allowed file types
 const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/svg+xml'];
 const ALLOWED_VIDEO_TYPES = ['video/mp4', 'video/quicktime', 'video/x-msvideo', 'video/webm'];
-const ALLOWED_AUDIO_TYPES = ['audio/mpeg', 'audio/wav', 'audio/ogg', 'audio/webm', 'audio/mp3'];
+const ALLOWED_AUDIO_TYPES = [
+  'audio/mpeg',
+  'audio/wav',
+  'audio/ogg',
+  'audio/webm',
+  'audio/mp3',
+  'audio/mp4',      // iOS Safari
+  'audio/aac',      // iOS Safari
+  'audio/m4a',      // iOS Safari
+  'audio/x-m4a',    // iOS Safari alternative
+];
 const ALLOWED_DOCUMENT_TYPES = [
   'application/pdf',
   'application/msword',
