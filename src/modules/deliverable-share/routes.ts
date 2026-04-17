@@ -8,6 +8,37 @@ import { cacheService, CACHE_KEYS, CACHE_TTL } from '../../services/cacheService
 import { EmailService } from '../../services/EmailService';
 import crypto from 'crypto';
 import fs from 'fs';
+import path from 'path';
+import ffmpeg from 'fluent-ffmpeg';
+
+/**
+ * Transcode audio to MP4/AAC format for cross-browser compatibility
+ * WebM/Opus is not supported on iOS Safari
+ */
+const transcodeToMp4 = (inputPath: string, outputPath: string): Promise<void> => {
+  return new Promise((resolve, reject) => {
+    console.log('[Audio Transcode] Starting:', { inputPath, outputPath });
+
+    ffmpeg(inputPath)
+      .audioCodec('aac')
+      .audioBitrate('128k')
+      .audioChannels(2)
+      .audioFrequency(44100)
+      .format('mp4')
+      .on('start', (cmd) => {
+        console.log('[Audio Transcode] Command:', cmd);
+      })
+      .on('end', () => {
+        console.log('[Audio Transcode] Completed successfully');
+        resolve();
+      })
+      .on('error', (err) => {
+        console.error('[Audio Transcode] Error:', err.message);
+        reject(err);
+      })
+      .save(outputPath);
+  });
+};
 
 const emailService = new EmailService();
 
@@ -940,21 +971,61 @@ router.post('/:token/upload/audio', uploadAny.single('file'), async (req: Reques
       return res.status(403).json({ error: 'This share link does not allow uploading files' });
     }
 
+    const mimeType = req.file.mimetype;
+    const originalName = req.file.originalname;
+    let filePath = req.file.path;
+    let finalName = originalName;
+    let finalMimeType = mimeType;
+    let transcodedPath: string | null = null;
+
+    console.log('[Guest Audio Upload] Received:', { originalName, mimeType, size: req.file.size });
+
+    // Check if transcoding is needed (WebM, Opus, OGG formats not supported on iOS Safari)
+    const needsTranscode = mimeType.includes('webm') ||
+                           mimeType.includes('ogg') ||
+                           mimeType.includes('opus') ||
+                           originalName.endsWith('.webm') ||
+                           originalName.endsWith('.ogg');
+
+    if (needsTranscode) {
+      console.log('[Guest Audio Upload] Transcoding to MP4/AAC for iOS compatibility');
+
+      const baseName = path.basename(originalName, path.extname(originalName));
+      transcodedPath = path.join(path.dirname(filePath), `${baseName}_transcoded.mp4`);
+
+      try {
+        await transcodeToMp4(filePath, transcodedPath);
+        filePath = transcodedPath;
+        finalName = `${baseName}.mp4`;
+        finalMimeType = 'audio/mp4';
+        console.log('[Guest Audio Upload] Transcoding successful');
+      } catch (transcodeError: any) {
+        console.error('[Guest Audio Upload] Transcoding failed:', transcodeError.message);
+        // Continue with original file
+      }
+    }
+
     // Upload to GCS
-    const gcsResult = await uploadDocumentToGCS(req.file.path, req.file.originalname);
+    const gcsResult = await uploadDocumentToGCS(filePath, finalName);
 
-    // Delete local file
-    fs.unlinkSync(req.file.path);
+    // Delete local files
+    if (fs.existsSync(req.file.path)) {
+      fs.unlinkSync(req.file.path);
+    }
+    if (transcodedPath && fs.existsSync(transcodedPath)) {
+      fs.unlinkSync(transcodedPath);
+    }
 
-    console.log('✅ Voice note uploaded:', gcsResult.url);
+    console.log('✅ Voice note uploaded:', gcsResult.url, '| Transcoded:', needsTranscode);
 
     res.status(200).json({
       success: true,
       data: {
         url: gcsResult.url,
         fileName: gcsResult.fileName,
-        format: gcsResult.contentType,
+        format: finalMimeType,
         size: gcsResult.size,
+        transcoded: needsTranscode,
       },
       message: 'Audio uploaded successfully',
     });

@@ -17,6 +17,40 @@ import {
   getUploadSignedUrl
 } from '../../../config/gcs';
 import fs from 'fs';
+import path from 'path';
+import ffmpeg from 'fluent-ffmpeg';
+
+/**
+ * Transcode audio to MP4/AAC format for cross-browser compatibility
+ * WebM/Opus is not supported on iOS Safari
+ */
+const transcodeToMp4 = (inputPath: string, outputPath: string): Promise<void> => {
+  return new Promise((resolve, reject) => {
+    console.log('[Audio Transcode] Starting:', { inputPath, outputPath });
+
+    ffmpeg(inputPath)
+      .audioCodec('aac')
+      .audioBitrate('128k')
+      .audioChannels(2)
+      .audioFrequency(44100)
+      .format('mp4')
+      .on('start', (cmd) => {
+        console.log('[Audio Transcode] Command:', cmd);
+      })
+      .on('progress', (progress) => {
+        console.log('[Audio Transcode] Progress:', progress.percent?.toFixed(1) + '%');
+      })
+      .on('end', () => {
+        console.log('[Audio Transcode] Completed successfully');
+        resolve();
+      })
+      .on('error', (err) => {
+        console.error('[Audio Transcode] Error:', err.message);
+        reject(err);
+      })
+      .save(outputPath);
+  });
+};
 
 /**
  * Upload file - All files go to Google Cloud Storage
@@ -124,28 +158,87 @@ export const uploadVideo = async (req: Request, res: Response, next: NextFunctio
 
 /**
  * Upload audio specifically to Google Cloud Storage (for voice notes)
+ * Automatically transcodes WebM/Opus to MP4/AAC for iOS Safari compatibility
  */
 export const uploadAudio = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  let transcodedPath: string | null = null;
+
   try {
     if (!req.file) {
       return ApiResponse.badRequest(res, 'No file uploaded') as any;
     }
 
-    const gcsResult = await uploadDocumentToGCS(req.file.path, req.file.originalname);
+    const mimeType = req.file.mimetype;
+    const originalName = req.file.originalname;
+    let filePath = req.file.path;
+    let finalName = originalName;
+    let finalMimeType = mimeType;
 
-    // Delete local file
-    fs.unlinkSync(req.file.path);
+    console.log('[uploadAudio] Received:', {
+      originalName,
+      mimeType,
+      size: req.file.size,
+      path: filePath
+    });
+
+    // Check if transcoding is needed (WebM, Opus, OGG formats not supported on iOS Safari)
+    const needsTranscode = mimeType.includes('webm') ||
+                           mimeType.includes('ogg') ||
+                           mimeType.includes('opus') ||
+                           originalName.endsWith('.webm') ||
+                           originalName.endsWith('.ogg');
+
+    if (needsTranscode) {
+      console.log('[uploadAudio] Transcoding to MP4/AAC for iOS compatibility');
+
+      // Create output path for transcoded file
+      const baseName = path.basename(originalName, path.extname(originalName));
+      transcodedPath = path.join(path.dirname(filePath), `${baseName}_transcoded.mp4`);
+
+      try {
+        await transcodeToMp4(filePath, transcodedPath);
+
+        // Use transcoded file
+        filePath = transcodedPath;
+        finalName = `${baseName}.mp4`;
+        finalMimeType = 'audio/mp4';
+
+        console.log('[uploadAudio] Transcoding successful:', {
+          newPath: transcodedPath,
+          newName: finalName
+        });
+      } catch (transcodeError: any) {
+        console.error('[uploadAudio] Transcoding failed, uploading original:', transcodeError.message);
+        // Continue with original file if transcoding fails
+      }
+    }
+
+    // Upload to GCS
+    const gcsResult = await uploadDocumentToGCS(filePath, finalName);
+
+    // Delete local files
+    if (fs.existsSync(req.file.path)) {
+      fs.unlinkSync(req.file.path);
+    }
+    if (transcodedPath && fs.existsSync(transcodedPath)) {
+      fs.unlinkSync(transcodedPath);
+    }
 
     ApiResponse.success(res, {
       url: gcsResult.url,
       fileName: gcsResult.fileName,
-      format: gcsResult.contentType,
+      format: finalMimeType,
       size: gcsResult.size,
       provider: 'gcs',
+      transcoded: needsTranscode,
     }, 'Audio uploaded successfully');
   } catch (error) {
+    // Clean up local files on error
     if (req.file?.path && fs.existsSync(req.file.path)) {
       fs.unlinkSync(req.file.path);
+    }
+    if (transcodedPath && fs.existsSync(transcodedPath)) {
+      fs.unlinkSync(transcodedPath);
     }
     next(error);
   }
