@@ -60,7 +60,7 @@ steps:
     secretEnv: ['DB_PASSWORD']
 
   # Run WebM to MP4 migration (one-time, can be removed after)
-  - name: 'node:20'
+  - name: 'gcr.io/${PROJECT_ID}/${_SERVICE_NAME}:${COMMIT_SHA}'
     id: 'migrate-webm-to-mp4'
     entrypoint: bash
     args:
@@ -78,14 +78,7 @@ steps:
         # Set DATABASE_URL for Prisma (STAGING database)
         export DATABASE_URL="postgresql://toftal_user:$${DB_PASSWORD}@127.0.0.1:5432/${_DB_NAME}?schema=public"
 
-        # Install dependencies
-        npm ci
-        npx prisma generate
-
-        # Install ffmpeg
-        apt-get update && apt-get install -y ffmpeg
-
-        # Run migration script
+        # Run migration script (ffmpeg already installed in Dockerfile)
         echo "Running WebM to MP4 migration..."
         npx ts-node scripts/transcode-webm-to-mp4.ts || echo "Migration completed or no files to migrate"
 
