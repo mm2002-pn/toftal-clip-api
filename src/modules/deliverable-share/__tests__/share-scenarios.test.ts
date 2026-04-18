@@ -16,7 +16,7 @@
 
 interface UserPermission {
   hasAccess: boolean;
-  role?: 'OWNER' | 'COLLABORATOR' | 'VIEWER';
+  role?: string;
   permissions?: {
     view: boolean;
     edit: boolean;

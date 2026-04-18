@@ -30,6 +30,7 @@ interface Project {
 
 interface Deliverable {
   id: string;
+  title: string;
   assignedTalentId: string | null;
   project: Project;
 }
@@ -91,6 +92,7 @@ describe('Deliverable Share Permissions', () => {
 
   const baseDeliverable: Deliverable = {
     id: deliverableId,
+    title: 'Test Video',
     assignedTalentId: null,
     project: baseProject,
   };
@@ -289,6 +291,7 @@ describe('Permission priority', () => {
     };
     const deliverable: Deliverable = {
       id: deliverableId,
+      title: 'Test Video',
       assignedTalentId: null,
       project,
     };
@@ -314,6 +317,7 @@ describe('Permission priority', () => {
     };
     const deliverable: Deliverable = {
       id: deliverableId,
+      title: 'Test Video',
       assignedTalentId: null,
       project,
     };

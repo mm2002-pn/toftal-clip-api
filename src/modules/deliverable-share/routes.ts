@@ -1250,4 +1250,117 @@ router.patch('/:token/feedback/:feedbackId/resolve', async (req: Request, res: R
   }
 });
 
+/**
+ * POST /api/v1/deliverable-share/:token/version/:versionId/downscale
+ * Downscale video via share link (PUBLIC - no auth required)
+ * Requires 'download' permission
+ */
+router.post('/:token/version/:versionId/downscale', async (req: Request, res: Response) => {
+  try {
+    const token = String(req.params.token);
+    const versionId = String(req.params.versionId);
+    const { quality } = req.body;
+
+    console.log('🎬 POST /deliverable-share/:token/version/:versionId/downscale');
+    console.log('🔑 Token:', token.substring(0, 10) + '...');
+    console.log('📹 VersionId:', versionId);
+    console.log('🎯 Quality:', quality);
+
+    if (!quality) {
+      return res.status(400).json({ error: 'Target quality is required' });
+    }
+
+    // Verify share link exists and has download permission
+    const shareLink = await prisma.deliverableShareLink.findUnique({
+      where: { token },
+      include: {
+        deliverable: {
+          include: {
+            versions: {
+              where: { id: versionId },
+            },
+          },
+        },
+      },
+    });
+
+    if (!shareLink) {
+      return res.status(404).json({ error: 'Invalid share link' });
+    }
+
+    // Check if link is active
+    if (!shareLink.isActive) {
+      return res.status(403).json({ error: 'This share link has been disabled' });
+    }
+
+    // Check expiration
+    if (shareLink.expiresAt && shareLink.expiresAt < new Date()) {
+      return res.status(403).json({ error: 'This share link has expired' });
+    }
+
+    // Check permission - must be 'download' to downscale
+    if (shareLink.permission !== 'download') {
+      return res.status(403).json({ error: 'This share link does not allow downloading' });
+    }
+
+    // Verify version belongs to the deliverable
+    if (!shareLink.deliverable.versions || shareLink.deliverable.versions.length === 0) {
+      return res.status(404).json({ error: 'Version not found or does not belong to this deliverable' });
+    }
+
+    const version = shareLink.deliverable.versions[0];
+
+    // Check if version has metadata
+    const metadata = version.metadata as any;
+    if (!metadata || !metadata.width || !metadata.height) {
+      return res.status(400).json({ error: 'Video metadata not available' });
+    }
+
+    // Check if already cached
+    const alternativeQualities = version.alternativeQualities as any;
+    if (alternativeQualities && alternativeQualities[quality]) {
+      console.log(`✅ Returning cached version for quality ${quality}`);
+      return res.json({
+        success: true,
+        data: {
+          quality,
+          url: alternativeQualities[quality],
+          source: 'cached',
+        },
+      });
+    }
+
+    // Downscale video
+    const { downscaleAndUploadVideo } = require('../../services/VideoMetadataService');
+
+    console.log(`🎬 Downscaling version ${versionId} to ${quality}...`);
+    const downscaledUrl = await downscaleAndUploadVideo(version.videoUrl, quality, metadata);
+
+    // Save to database
+    const updatedAlternatives = alternativeQualities || {};
+    updatedAlternatives[quality] = downscaledUrl;
+
+    await prisma.version.update({
+      where: { id: versionId },
+      data: { alternativeQualities: updatedAlternatives },
+    });
+
+    console.log(`✅ Version downscaled to ${quality}: ${downscaledUrl}`);
+
+    res.json({
+      success: true,
+      data: {
+        quality,
+        url: downscaledUrl,
+        source: 'generated',
+      },
+    });
+  } catch (error: any) {
+    console.error('Downscale via share link error:', error);
+    res.status(500).json({
+      error: error.message || 'Failed to downscale video',
+    });
+  }
+});
+
 export default router;
