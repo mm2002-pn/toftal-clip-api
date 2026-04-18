@@ -6,6 +6,7 @@ import { uploadDocumentToGCS, uploadImageToGCS } from '../../config/gcs';
 import { socketService } from '../../services/socketService';
 import { cacheService, CACHE_KEYS, CACHE_TTL } from '../../services/cacheService';
 import { EmailService } from '../../services/EmailService';
+import { PermissionService } from '../../services/PermissionService';
 import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
@@ -44,6 +45,7 @@ const emailService = new EmailService();
 
 const router = Router();
 const prisma = new PrismaClient();
+const permissionService = new PermissionService(prisma);
 
 /**
  * POST /api/v1/deliverable-share
@@ -89,14 +91,20 @@ router.post('/', authenticate, async (req: Request, res: Response) => {
       return res.status(404).json({ error: 'Deliverable not found' });
     }
 
-    // Check if user has access to the project (owner, talent, or member)
+    // Check if user has edit permission to share the deliverable
     const project = deliverable.project;
     const isOwner = project.ownerId === userId || project.clientId === userId;
     const isTalent = project.talentId === userId || deliverable.assignedTalentId === userId;
-    const isMember = project.members.length > 0;
 
-    if (!isOwner && !isTalent && !isMember) {
-      return res.status(403).json({ error: 'You do not have access to this deliverable' });
+    // Get user's permissions via PermissionService
+    const userPermission = await permissionService.canAccessProject(project.id, userId);
+    const hasEditPermission = userPermission.permissions?.edit === true;
+
+    // Can share if: owner, talent, OR collaborator with edit permission
+    const canShare = isOwner || isTalent || hasEditPermission;
+
+    if (!canShare) {
+      return res.status(403).json({ error: 'You do not have permission to share this deliverable. Edit permission is required.' });
     }
 
     // Generate secure token
@@ -194,14 +202,20 @@ router.post('/invite', authenticate, async (req: Request, res: Response) => {
       return res.status(404).json({ error: 'Deliverable not found' });
     }
 
-    // Check if user has access to the project (owner, talent, or member)
+    // Check if user has edit permission to share/invite for the deliverable
     const project = deliverable.project;
     const isOwner = project.ownerId === userId || project.clientId === userId;
     const isTalent = project.talentId === userId || deliverable.assignedTalentId === userId;
-    const isMember = project.members.length > 0;
 
-    if (!isOwner && !isTalent && !isMember) {
-      return res.status(403).json({ error: 'You do not have access to this deliverable' });
+    // Get user's permissions via PermissionService
+    const userPermission = await permissionService.canAccessProject(project.id, userId);
+    const hasEditPermission = userPermission.permissions?.edit === true;
+
+    // Can share if: owner, talent, OR collaborator with edit permission
+    const canShare = isOwner || isTalent || hasEditPermission;
+
+    if (!canShare) {
+      return res.status(403).json({ error: 'You do not have permission to share this deliverable. Edit permission is required.' });
     }
 
     // Get current user's name for the invitation email
