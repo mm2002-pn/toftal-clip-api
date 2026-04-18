@@ -74,8 +74,21 @@ export const createApp = async (): Promise<Application> => {
   // Parsing Middlewares
   // ===================
 
-  app.use(express.json({ limit: '50mb' }));
-  app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+  // Skip body parsing for TUS uploads (TUS handles its own body parsing)
+  app.use((req, res, next) => {
+    if (req.path.startsWith('/api/v1/tus') && req.method !== 'GET') {
+      return next();
+    }
+    express.json({ limit: '50mb' })(req, res, next);
+  });
+
+  app.use((req, res, next) => {
+    if (req.path.startsWith('/api/v1/tus') && req.method !== 'GET') {
+      return next();
+    }
+    express.urlencoded({ extended: true, limit: '50mb' })(req, res, next);
+  });
+
   app.use(cookieParser());
 
   // ===================
