@@ -752,7 +752,7 @@ export const rejectAssignment = async (req: Request, res: Response, next: NextFu
 export const extractVersionMetadata = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { id: deliverableId, versionId } = req.params;
-    const { metadata } = req.body; // Metadata can come from frontend OR be extracted from URL
+    const metadata = req.body?.metadata; // Metadata can come from frontend OR be extracted from URL
     const versionIdStr = String(versionId);
 
     // Get version

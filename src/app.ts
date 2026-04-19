@@ -34,8 +34,35 @@ interface MyContext {
 const corsOptions = {
   origin: config.corsOrigin,
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'HEAD'],
+  allowedHeaders: [
+    'Content-Type',
+    'Authorization',
+    'X-Requested-With',
+    // TUS protocol headers
+    'Tus-Resumable',
+    'Upload-Length',
+    'Upload-Offset',
+    'Upload-Metadata',
+    'Upload-Concat',
+    'Upload-Defer-Length',
+    'X-HTTP-Method-Override',
+    'X-Tus-Token',
+  ],
+  exposedHeaders: [
+    // TUS protocol response headers
+    'Upload-Offset',
+    'Upload-Length',
+    'Tus-Version',
+    'Tus-Resumable',
+    'Tus-Max-Size',
+    'Tus-Extension',
+    'Upload-Metadata',
+    'Location',
+    'X-Final-Url',
+    'X-Version-Id',
+    'X-Video-Url',
+  ],
 };
 
 export const createApp = async (): Promise<Application> => {
@@ -67,8 +94,13 @@ export const createApp = async (): Promise<Application> => {
   // CORS for REST API
   app.use(cors(corsOptions));
 
-  // Rate limiting for REST API only
-  app.use('/api', apiLimiter);
+  // Rate limiting for REST API only (skip TUS - many requests are normal)
+  app.use('/api', (req, res, next) => {
+    if (req.path.startsWith('/v1/tus')) {
+      return next();
+    }
+    apiLimiter(req, res, next);
+  });
 
   // ===================
   // Parsing Middlewares
@@ -95,7 +127,13 @@ export const createApp = async (): Promise<Application> => {
   // Compression
   // ===================
 
-  app.use(compression());
+  // Skip compression for TUS uploads (binary data)
+  app.use((req, res, next) => {
+    if (req.path.startsWith('/api/v1/tus')) {
+      return next();
+    }
+    compression()(req, res, next);
+  });
 
   // ===================
   // Logging

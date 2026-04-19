@@ -13,7 +13,7 @@
  */
 
 import { Router, Request, Response, NextFunction } from 'express';
-import { createTusServer, getUploadProgress, TUS_CONFIG } from '../../config/tus';
+import { createTusServer, getUploadProgress, TUS_CONFIG, getGcsTransferProgress, clearGcsTransferProgress, canResumeUpload } from '../../config/tus';
 import { authenticate } from '../../middlewares/auth';
 import jwt from 'jsonwebtoken';
 import { config } from '../../config';
@@ -88,6 +88,54 @@ router.get('/progress/:id', authenticate, async (req: Request, res: Response) =>
 });
 
 /**
+ * Custom endpoint: Check if upload can be resumed
+ * GET /api/v1/tus/can-resume/:id
+ */
+router.get('/can-resume/:id', async (req: Request, res: Response) => {
+  try {
+    const uploadId = String(req.params.id);
+    const result = await canResumeUpload(uploadId);
+
+    res.json({
+      success: true,
+      data: result,
+    });
+  } catch (error: any) {
+    console.error('Can resume check error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Failed to check resume status',
+    });
+  }
+});
+
+/**
+ * Custom endpoint: Get GCS transfer progress (for polling)
+ * GET /api/v1/tus/transfer/:id
+ */
+router.get('/transfer/:id', async (req: Request, res: Response) => {
+  const uploadId = String(req.params.id);
+  const progress = await getGcsTransferProgress(uploadId);
+
+  if (!progress) {
+    return res.status(404).json({
+      success: false,
+      error: 'Transfer not found',
+    });
+  }
+
+  // Clear progress data if completed or error (cleanup after 30s)
+  if (progress.status === 'completed' || progress.status === 'error') {
+    setTimeout(() => clearGcsTransferProgress(uploadId).catch(console.error), 30000);
+  }
+
+  res.json({
+    success: true,
+    data: progress,
+  });
+});
+
+/**
  * Custom endpoint: Get TUS configuration
  * GET /api/v1/tus/config
  */
@@ -109,8 +157,9 @@ router.get('/config', (req: Request, res: Response) => {
 /**
  * TUS Protocol Handler
  * Handles: POST, HEAD, PATCH, DELETE, OPTIONS
+ * Note: Using regex pattern for compatibility with path-to-regexp v8+
  */
-router.all('*', tusAuthMiddleware, (req: Request, res: Response) => {
+router.all(/.*/, tusAuthMiddleware, (req: Request, res: Response) => {
   // Set CORS headers for TUS
   const origin = Array.isArray(req.headers.origin) ? req.headers.origin[0] : req.headers.origin;
   res.setHeader('Access-Control-Allow-Origin', origin || '*');
@@ -141,6 +190,7 @@ router.all('*', tusAuthMiddleware, (req: Request, res: Response) => {
     'X-Final-Url',
     'X-Version-Id',
     'X-Video-Url',
+    'X-Upload-Id',
   ].join(', '));
   res.setHeader('Access-Control-Max-Age', '86400');
 
@@ -154,7 +204,25 @@ router.all('*', tusAuthMiddleware, (req: Request, res: Response) => {
   }
 
   // Handle TUS request
-  tusServer.handle(req, res);
+  // Use originalUrl which contains the full path (not stripped by Router)
+  const routerUrl = req.url;
+  req.url = req.originalUrl;
+  console.log(`🔄 TUS ${req.method} ${req.url} (router saw: ${routerUrl})`);
+
+  // Handle TUS request with error handling
+  try {
+    tusServer.handle(req, res).catch((error: any) => {
+      console.error('❌ TUS handler error:', error);
+      if (!res.headersSent) {
+        res.status(500).json({ error: 'TUS upload failed', message: error.message });
+      }
+    });
+  } catch (error: any) {
+    console.error('❌ TUS handler sync error:', error);
+    if (!res.headersSent) {
+      res.status(500).json({ error: 'TUS upload failed', message: error.message });
+    }
+  }
 });
 
 export default router;
