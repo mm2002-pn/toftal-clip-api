@@ -122,6 +122,7 @@ steps:
       - '1'
       - '--timeout'
       - '3600'
+      - '--session-affinity'
 
 images:
   - 'gcr.io/${PROJECT_ID}/${_SERVICE_NAME}:${COMMIT_SHA}'
