@@ -102,8 +102,15 @@ export const deliverableTypeDefs = gql`
     resolvedBy: User
     # Drawing annotations (Timeliner.io style)
     drawings: JSON
+    # WhatsApp-style read receipts (group)
+    reads: [FeedbackRead!]
     createdAt: DateTime!
     editedAt: DateTime
+  }
+
+  type FeedbackRead {
+    userId: ID!
+    readAt: DateTime!
   }
 
   type RevisionTask {

@@ -193,6 +193,7 @@ model User {
   createdDeliverableLinks DeliverableShareLink[] @relation("DeliverableShareLinks")
   transferRequestsFrom    OwnershipTransferRequest[] @relation("TransferRequestsFrom")
   transferRequestsTo      OwnershipTransferRequest[] @relation("TransferRequestsTo")
+  feedbackReads           FeedbackRead[]
 
   @@map("users")
 }
@@ -361,11 +362,28 @@ model Feedback {
   revisionTasks RevisionTask[]
   replyingTo    Feedback?      @relation("FeedbackReplies", fields: [replyingToId], references: [id], onDelete: SetNull)
   replies       Feedback[]     @relation("FeedbackReplies")
+  reads         FeedbackRead[]
 
   // ✅ PHASE 2: Index pour optimiser les queries
   @@index([versionId])
   @@index([authorId])
   @@map("feedbacks")
+}
+
+// WhatsApp-style group read receipts (2 blue checkmarks when read by all recipients)
+model FeedbackRead {
+  id         String   @id @default(uuid())
+  feedbackId String   @map("feedback_id")
+  userId     String   @map("user_id")
+  readAt     DateTime @default(now()) @map("read_at")
+
+  feedback Feedback @relation(fields: [feedbackId], references: [id], onDelete: Cascade)
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([feedbackId, userId])
+  @@index([feedbackId])
+  @@index([userId])
+  @@map("feedback_reads")
 }
 
 model RevisionTask {

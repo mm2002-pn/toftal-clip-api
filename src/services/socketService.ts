@@ -32,7 +32,10 @@ export type SocketEvent =
   | 'media:added'
   | 'access-request:new'
   | 'access-request:approved'
-  | 'access-request:rejected';
+  | 'access-request:rejected'
+  | 'typing:user'
+  | 'typing:stopped'
+  | 'feedback:read';
 
 // Payload types for each event
 export interface NotificationPayload {
@@ -253,6 +256,46 @@ class SocketService {
         logger.debug(`Socket ${socket.id} left project:${projectId}`);
       });
 
+      // Handle joining deliverable rooms (for typing indicators, etc.)
+      socket.on('join:deliverable', (deliverableId: string) => {
+        socket.join(`deliverable:${deliverableId}`);
+        logger.debug(`Socket ${socket.id} joined deliverable:${deliverableId}`);
+      });
+
+      // Handle leaving deliverable rooms
+      socket.on('leave:deliverable', (deliverableId: string) => {
+        socket.leave(`deliverable:${deliverableId}`);
+        // Notify others that this user stopped typing (cleanup)
+        socket.to(`deliverable:${deliverableId}`).emit('typing:stopped', {
+          userId,
+          deliverableId,
+        });
+        logger.debug(`Socket ${socket.id} left deliverable:${deliverableId}`);
+      });
+
+      // Typing indicator - user started typing
+      socket.on(
+        'typing:start',
+        (payload: { deliverableId: string; userName: string; avatarUrl?: string }) => {
+          if (!payload?.deliverableId || !payload?.userName) return;
+          socket.to(`deliverable:${payload.deliverableId}`).emit('typing:user', {
+            userId,
+            userName: payload.userName,
+            avatarUrl: payload.avatarUrl,
+            deliverableId: payload.deliverableId,
+          });
+        }
+      );
+
+      // Typing indicator - user stopped typing
+      socket.on('typing:stop', (payload: { deliverableId: string }) => {
+        if (!payload?.deliverableId) return;
+        socket.to(`deliverable:${payload.deliverableId}`).emit('typing:stopped', {
+          userId,
+          deliverableId: payload.deliverableId,
+        });
+      });
+
       // Handle disconnection
       socket.on('disconnect', () => {
         logger.info(`Socket disconnected: ${socket.id}`);
@@ -303,6 +346,15 @@ class SocketService {
     userIds.forEach((userId) => {
       this.emitToUser(userId, event, data);
     });
+  }
+
+  // Emit to all users in a deliverable room (used for typing, read receipts)
+  emitToDeliverable<T>(deliverableId: string, event: SocketEvent, data: T): void {
+    if (!this.io) {
+      logger.warn('Socket.io not initialized');
+      return;
+    }
+    this.io.to(`deliverable:${deliverableId}`).emit(event, data);
   }
 
   // Check if a user is connected

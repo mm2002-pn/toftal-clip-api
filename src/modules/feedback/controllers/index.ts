@@ -136,6 +136,84 @@ export const addRevisionTask = async (req: Request, res: Response, next: NextFun
   }
 };
 
+/**
+ * Mark one or more feedbacks as read by the current user.
+ * Idempotent via FeedbackRead unique constraint (feedbackId, userId).
+ * Broadcasts 'feedback:read' to the deliverable room so senders update their
+ * WhatsApp-style double-check indicator in real time.
+ */
+export const bulkMarkFeedbacksAsRead = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const userId = req.user!.id;
+    const { feedbackIds } = req.body as { feedbackIds?: unknown };
+
+    if (!Array.isArray(feedbackIds) || feedbackIds.length === 0) {
+      ApiResponse.badRequest(res, 'feedbackIds must be a non-empty array');
+      return;
+    }
+    if (feedbackIds.length > 200) {
+      ApiResponse.badRequest(res, 'feedbackIds length exceeds 200');
+      return;
+    }
+    const ids = feedbackIds.filter((v): v is string => typeof v === 'string');
+    if (ids.length === 0) {
+      ApiResponse.badRequest(res, 'feedbackIds must contain strings');
+      return;
+    }
+
+    // Fetch feedbacks to derive deliverable IDs and skip own feedbacks
+    const feedbacks = await prisma.feedback.findMany({
+      where: { id: { in: ids } },
+      select: {
+        id: true,
+        authorId: true,
+        version: { select: { deliverableId: true } },
+      },
+    });
+
+    const othersFeedbackIds = feedbacks
+      .filter((f) => f.authorId !== userId)
+      .map((f) => f.id);
+
+    if (othersFeedbackIds.length === 0) {
+      ApiResponse.success(res, { marked: 0 });
+      return;
+    }
+
+    const readAt = new Date();
+    const result = await prisma.feedbackRead.createMany({
+      data: othersFeedbackIds.map((feedbackId) => ({ feedbackId, userId, readAt })),
+      skipDuplicates: true,
+    });
+
+    // Broadcast per deliverable for efficient fan-out
+    const byDeliverable = new Map<string, string[]>();
+    for (const f of feedbacks) {
+      if (!othersFeedbackIds.includes(f.id)) continue;
+      const d = f.version?.deliverableId;
+      if (!d) continue;
+      if (!byDeliverable.has(d)) byDeliverable.set(d, []);
+      byDeliverable.get(d)!.push(f.id);
+    }
+    for (const [deliverableId, fbIds] of byDeliverable) {
+      socketService.emitToDeliverable(deliverableId, 'feedback:read', {
+        userId,
+        readAt: readAt.toISOString(),
+        feedbackIds: fbIds,
+        deliverableId,
+      });
+    }
+
+    ApiResponse.success(res, { marked: result.count }, 'Feedbacks marked as read');
+  } catch (error) {
+    next(error);
+  }
+};
+
 export const deleteRevisionTask = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const taskId = String(req.params.taskId);

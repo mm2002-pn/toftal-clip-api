@@ -12,6 +12,9 @@ router.use(authenticate);
 router.put('/:id', validate(updateFeedbackValidation), feedbackController.updateFeedback);
 router.delete('/:id', feedbackController.deleteFeedback);
 
+// WhatsApp-style read receipts (group)
+router.post('/bulk-read', feedbackController.bulkMarkFeedbacksAsRead);
+
 // Vimeo-style video review - Toggle resolved status
 router.patch('/:id/resolve', feedbackController.toggleFeedbackResolved);
 

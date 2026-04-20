@@ -60,7 +60,7 @@ export const deliverableResolvers = {
         include: {
           deliverable: true,
           uploadedBy: true,
-          feedbacks: { include: { revisionTasks: true, author: true }, orderBy: { createdAt: 'asc' } },
+          feedbacks: { include: { revisionTasks: true, author: true, reads: { select: { userId: true, readAt: true } } }, orderBy: { createdAt: 'asc' } },
         },
       });
     },
@@ -70,7 +70,7 @@ export const deliverableResolvers = {
         orderBy: { versionNumber: 'desc' },
         include: {
           uploadedBy: true,
-          feedbacks: { include: { revisionTasks: true, author: true }, orderBy: { createdAt: 'asc' } },
+          feedbacks: { include: { revisionTasks: true, author: true, reads: { select: { userId: true, readAt: true } } }, orderBy: { createdAt: 'asc' } },
         },
       });
     },
@@ -132,6 +132,7 @@ export const deliverableResolvers = {
         include: {
           author: true,
           revisionTasks: true,
+          reads: { select: { userId: true, readAt: true } },
           replyingTo: {
             select: {
               id: true,
@@ -187,6 +188,7 @@ export const deliverableResolvers = {
             include: {
               revisionTasks: true,
               author: true,
+              reads: { select: { userId: true, readAt: true } },
               replyingTo: {
                 select: {
                   id: true,
@@ -304,6 +306,7 @@ export const deliverableResolvers = {
         include: {
           revisionTasks: true,
           author: true,
+          reads: { select: { userId: true, readAt: true } },
           replyingTo: {
             select: {
               id: true,
