@@ -35,7 +35,8 @@ export type SocketEvent =
   | 'access-request:rejected'
   | 'typing:user'
   | 'typing:stopped'
-  | 'feedback:read';
+  | 'feedback:read'
+  | 'feedback:reaction';
 
 // Payload types for each event
 export interface NotificationPayload {
@@ -273,16 +274,22 @@ class SocketService {
         logger.debug(`Socket ${socket.id} left deliverable:${deliverableId}`);
       });
 
-      // Typing indicator - user started typing
+      // Typing indicator - user started typing (text) or recording (voice)
       socket.on(
         'typing:start',
-        (payload: { deliverableId: string; userName: string; avatarUrl?: string }) => {
+        (payload: {
+          deliverableId: string;
+          userName: string;
+          avatarUrl?: string;
+          mode?: 'text' | 'voice';
+        }) => {
           if (!payload?.deliverableId || !payload?.userName) return;
           socket.to(`deliverable:${payload.deliverableId}`).emit('typing:user', {
             userId,
             userName: payload.userName,
             avatarUrl: payload.avatarUrl,
             deliverableId: payload.deliverableId,
+            mode: payload.mode === 'voice' ? 'voice' : 'text',
           });
         }
       );

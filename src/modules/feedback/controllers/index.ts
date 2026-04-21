@@ -214,6 +214,94 @@ export const bulkMarkFeedbacksAsRead = async (
   }
 };
 
+/**
+ * Toggle an emoji reaction on a feedback for the current user.
+ * POST /api/v1/feedback/:id/reactions  body: { emoji: string }
+ *
+ * - If the (feedbackId, userId, emoji) triple exists, it is removed.
+ * - Otherwise it is created.
+ *
+ * Emits `feedback:reaction` on the deliverable room so every client renders
+ * the new counter/pill in real time.
+ */
+export const toggleFeedbackReaction = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const userId = req.user!.id;
+    const feedbackId = String(req.params.id);
+    const emojiRaw = (req.body?.emoji ?? '') as unknown;
+
+    if (typeof emojiRaw !== 'string' || emojiRaw.length === 0 || emojiRaw.length > 16) {
+      ApiResponse.badRequest(res, 'emoji must be a short non-empty string');
+      return;
+    }
+    const emoji = emojiRaw;
+
+    // Confirm feedback exists and grab deliverable for the socket room
+    const feedback = await prisma.feedback.findUnique({
+      where: { id: feedbackId },
+      select: {
+        id: true,
+        version: { select: { deliverableId: true } },
+      },
+    });
+    if (!feedback) {
+      throw new NotFoundError('Feedback not found');
+    }
+
+    // A user can have at most ONE reaction per feedback.
+    // Same emoji → remove; different emoji → replace; none → add.
+    const existing = await prisma.feedbackReaction.findUnique({
+      where: {
+        feedbackId_userId: { feedbackId, userId },
+      },
+    });
+
+    let action: 'added' | 'removed' | 'changed';
+    if (!existing) {
+      await prisma.feedbackReaction.create({
+        data: { feedbackId, userId, emoji },
+      });
+      action = 'added';
+    } else if (existing.emoji === emoji) {
+      await prisma.feedbackReaction.delete({ where: { id: existing.id } });
+      action = 'removed';
+    } else {
+      await prisma.feedbackReaction.update({
+        where: { id: existing.id },
+        data: { emoji, createdAt: new Date() },
+      });
+      action = 'changed';
+    }
+
+    // Return the fresh reactions list so the client can reconcile optimistic state
+    const reactions = await prisma.feedbackReaction.findMany({
+      where: { feedbackId },
+      select: { id: true, userId: true, emoji: true, createdAt: true },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    const deliverableId = feedback.version?.deliverableId;
+    if (deliverableId) {
+      socketService.emitToDeliverable(deliverableId, 'feedback:reaction', {
+        feedbackId,
+        userId,
+        emoji,
+        action,
+        deliverableId,
+        reactions,
+      });
+    }
+
+    ApiResponse.success(res, { action, reactions }, 'Reaction toggled');
+  } catch (error) {
+    next(error);
+  }
+};
+
 export const deleteRevisionTask = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const taskId = String(req.params.taskId);

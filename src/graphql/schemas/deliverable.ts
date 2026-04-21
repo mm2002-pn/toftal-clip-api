@@ -104,6 +104,8 @@ export const deliverableTypeDefs = gql`
     drawings: JSON
     # WhatsApp-style read receipts (group)
     reads: [FeedbackRead!]
+    # Emoji reactions (WhatsApp-style)
+    reactions: [FeedbackReaction!]
     createdAt: DateTime!
     editedAt: DateTime
   }
@@ -111,6 +113,13 @@ export const deliverableTypeDefs = gql`
   type FeedbackRead {
     userId: ID!
     readAt: DateTime!
+  }
+
+  type FeedbackReaction {
+    id: ID!
+    userId: ID!
+    emoji: String!
+    createdAt: DateTime!
   }
 
   type RevisionTask {

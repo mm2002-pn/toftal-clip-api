@@ -194,6 +194,7 @@ model User {
   transferRequestsFrom    OwnershipTransferRequest[] @relation("TransferRequestsFrom")
   transferRequestsTo      OwnershipTransferRequest[] @relation("TransferRequestsTo")
   feedbackReads           FeedbackRead[]
+  feedbackReactions       FeedbackReaction[]
 
   @@map("users")
 }
@@ -363,6 +364,7 @@ model Feedback {
   replyingTo    Feedback?      @relation("FeedbackReplies", fields: [replyingToId], references: [id], onDelete: SetNull)
   replies       Feedback[]     @relation("FeedbackReplies")
   reads         FeedbackRead[]
+  reactions     FeedbackReaction[]
 
   // ✅ PHASE 2: Index pour optimiser les queries
   @@index([versionId])
@@ -384,6 +386,23 @@ model FeedbackRead {
   @@index([feedbackId])
   @@index([userId])
   @@map("feedback_reads")
+}
+
+// Emoji reactions on feedback (WhatsApp/Linear-style)
+model FeedbackReaction {
+  id         String   @id @default(uuid())
+  feedbackId String   @map("feedback_id")
+  userId     String   @map("user_id")
+  emoji      String
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  feedback Feedback @relation(fields: [feedbackId], references: [id], onDelete: Cascade)
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([feedbackId, userId])
+  @@index([feedbackId])
+  @@index([userId])
+  @@map("feedback_reactions")
 }
 
 model RevisionTask {

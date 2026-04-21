@@ -15,6 +15,9 @@ router.delete('/:id', feedbackController.deleteFeedback);
 // WhatsApp-style read receipts (group)
 router.post('/bulk-read', feedbackController.bulkMarkFeedbacksAsRead);
 
+// Emoji reactions (WhatsApp-style quick reactions)
+router.post('/:id/reactions', feedbackController.toggleFeedbackReaction);
+
 // Vimeo-style video review - Toggle resolved status
 router.patch('/:id/resolve', feedbackController.toggleFeedbackResolved);
 

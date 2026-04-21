@@ -522,7 +522,7 @@ export const getVersions = async (req: Request, res: Response, next: NextFunctio
       orderBy: { versionNumber: 'desc' },
       include: {
         uploadedBy: { select: { id: true, name: true, avatarUrl: true } },
-        feedbacks: { include: { revisionTasks: true, author: true }, orderBy: { createdAt: 'asc' } },
+        feedbacks: { include: { revisionTasks: true, author: true, reads: { select: { userId: true, readAt: true } }, reactions: { select: { id: true, userId: true, emoji: true, createdAt: true }, orderBy: { createdAt: 'asc' } } }, orderBy: { createdAt: 'asc' } },
       },
     });
 

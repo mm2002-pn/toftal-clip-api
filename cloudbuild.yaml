@@ -58,40 +58,6 @@ steps:
         kill $$PROXY_PID || true
     secretEnv: ['DB_PASSWORD']
 
-  # Run WebM to MP4 migration (one-time, remove after successful run)
-  - name: 'node:20'
-    id: 'migrate-webm-to-mp4'
-    entrypoint: bash
-    args:
-      - '-c'
-      - |
-        # Install ffmpeg for transcoding
-        apt-get update && apt-get install -y ffmpeg
-
-        # Download Cloud SQL Proxy
-        curl -o /tmp/cloud-sql-proxy https://storage.googleapis.com/cloud-sql-connectors/cloud-sql-proxy/v2.8.0/cloud-sql-proxy.linux.amd64
-        chmod +x /tmp/cloud-sql-proxy
-
-        # Start proxy in background
-        /tmp/cloud-sql-proxy --port=5432 ${_INSTANCE_CONNECTION_NAME} &
-        PROXY_PID=$$!
-        sleep 5
-
-        # Set DATABASE_URL for Prisma (PRODUCTION database)
-        export DATABASE_URL="postgresql://toftal_user:$${DB_PASSWORD}@127.0.0.1:5432/toftal_clip?schema=public"
-
-        # Install dependencies and generate Prisma client
-        npm ci
-        npx prisma generate
-
-        # Run migration script
-        echo "Running WebM to MP4 migration..."
-        npx ts-node scripts/transcode-webm-to-mp4.ts || echo "Migration completed or no files to migrate"
-
-        # Kill proxy
-        kill $$PROXY_PID || true
-    secretEnv: ['DB_PASSWORD']
-
   # Deploy to Cloud Run
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: gcloud
