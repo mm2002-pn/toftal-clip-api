@@ -16,6 +16,7 @@ RUN npm ci
 # Copy source code
 COPY tsconfig.json ./
 COPY src ./src
+COPY scripts ./scripts
 
 # Generate Prisma client
 RUN npx prisma generate
@@ -77,6 +78,13 @@ RUN npx prisma generate
 
 # Copy built application
 COPY --from=builder /app/dist ./dist
+
+# Copy TS backfill scripts (run via ts-node as Cloud Run Jobs) and the src/
+# folder they import from. These are excluded from the normal build because
+# they're only executed as one-off maintenance tasks.
+COPY --from=builder /app/scripts ./scripts
+COPY --from=builder /app/src ./src
+COPY --from=builder /app/tsconfig.json ./tsconfig.json
 
 # Create startup script
 RUN echo '#!/bin/bash\n\
