@@ -24,7 +24,9 @@
     "backfill:metadata:dry": "ts-node --transpile-only scripts/backfill-metadata.ts --dry-run",
     "backfill:cache-control": "ts-node --transpile-only scripts/backfill-cache-control.ts",
     "backfill:cache-control:dry": "ts-node --transpile-only scripts/backfill-cache-control.ts --dry-run",
-    "backfill:all": "npm run backfill:metadata && npm run backfill:thumbnails && npm run backfill:cache-control"
+    "backfill:audio-mime": "ts-node --transpile-only scripts/backfill-audio-content-type.ts",
+    "backfill:audio-mime:dry": "ts-node --transpile-only scripts/backfill-audio-content-type.ts --dry-run",
+    "backfill:all": "npm run backfill:metadata && npm run backfill:thumbnails && npm run backfill:cache-control && npm run backfill:audio-mime"
   },
   "keywords": [
     "api",

@@ -116,6 +116,33 @@ export const uploadVideoToGCS = async (
 };
 
 /**
+ * Upload audio (voice note) to GCS.
+ *
+ * Essential for iOS: iPhone/iPad records voice notes as MP4/AAC, so the
+ * extension is `.mp4`. The browser <audio> element needs a proper
+ * Content-Type of `audio/mp4` (or `audio/aac`) to play it — serving
+ * `application/octet-stream` or `video/mp4` makes desktop browsers show
+ * errors or try to render the track as video.
+ */
+export const uploadAudioToGCS = async (
+  filePath: string,
+  originalName: string
+): Promise<GCSUploadResult> => {
+  const ext = path.extname(originalName).toLowerCase();
+  const mimeTypes: Record<string, string> = {
+    '.mp4': 'audio/mp4',     // iOS Safari native format
+    '.m4a': 'audio/mp4',
+    '.aac': 'audio/aac',
+    '.webm': 'audio/webm',   // Chrome / Android default
+    '.ogg': 'audio/ogg',
+    '.wav': 'audio/wav',
+    '.mp3': 'audio/mpeg',
+  };
+  const mimeType = mimeTypes[ext] || 'audio/mp4';
+  return uploadToGCS(filePath, originalName, mimeType, 'audio');
+};
+
+/**
  * Upload PDF/Document to GCS
  */
 export const uploadDocumentToGCS = async (
@@ -133,6 +160,11 @@ export const uploadDocumentToGCS = async (
     '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
     '.zip': 'application/zip',
     '.rar': 'application/x-rar-compressed',
+    // Fallback when an audio file is (mis-)uploaded via this helper. Ideally
+    // callers should use uploadAudioToGCS for audio instead.
+    '.mp4': 'audio/mp4',
+    '.m4a': 'audio/mp4',
+    '.webm': 'audio/webm',
   };
   const mimeType = mimeTypes[ext] || 'application/octet-stream';
 

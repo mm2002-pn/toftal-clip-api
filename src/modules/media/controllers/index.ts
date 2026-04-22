@@ -11,6 +11,7 @@ import {
 import {
   uploadImageToGCS,
   uploadVideoToGCS,
+  uploadAudioToGCS,
   uploadDocumentToGCS,
   deleteFromGCS,
   getSignedUrl,
@@ -91,9 +92,10 @@ export const uploadFile = async (req: Request, res: Response, next: NextFunction
         provider: 'gcs',
       };
     }
-    // Audio → Google Cloud Storage
+    // Audio → Google Cloud Storage (uses dedicated uploader so Content-Type
+    // is set to audio/* — otherwise <audio> playback fails on desktop)
     else if (mimeType.startsWith('audio/')) {
-      gcsResult = await uploadDocumentToGCS(req.file.path, req.file.originalname);
+      gcsResult = await uploadAudioToGCS(req.file.path, req.file.originalname);
       result = {
         url: gcsResult.url,
         fileName: gcsResult.fileName,
@@ -213,8 +215,8 @@ export const uploadAudio = async (req: Request, res: Response, next: NextFunctio
       }
     }
 
-    // Upload to GCS
-    const gcsResult = await uploadDocumentToGCS(filePath, finalName);
+    // Upload to GCS with audio/* Content-Type so desktop browsers can play it.
+    const gcsResult = await uploadAudioToGCS(filePath, finalName);
 
     // Delete local files
     if (fs.existsSync(req.file.path)) {

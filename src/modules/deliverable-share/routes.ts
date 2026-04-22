@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { authenticate } from '../../middlewares/auth';
 import { uploadAny } from '../../middlewares/upload';
-import { uploadDocumentToGCS, uploadImageToGCS } from '../../config/gcs';
+import { uploadDocumentToGCS, uploadImageToGCS, uploadAudioToGCS } from '../../config/gcs';
 import { socketService } from '../../services/socketService';
 import { cacheService, CACHE_KEYS, CACHE_TTL } from '../../services/cacheService';
 import { EmailService } from '../../services/EmailService';
@@ -1019,8 +1019,9 @@ router.post('/:token/upload/audio', uploadAny.single('file'), async (req: Reques
       }
     }
 
-    // Upload to GCS
-    const gcsResult = await uploadDocumentToGCS(filePath, finalName);
+    // Upload to GCS with proper audio Content-Type so <audio> can play it
+    // on desktop (iOS records as .mp4/AAC — octet-stream makes browsers fail).
+    const gcsResult = await uploadAudioToGCS(filePath, finalName);
 
     // Delete local files
     if (fs.existsSync(req.file.path)) {
