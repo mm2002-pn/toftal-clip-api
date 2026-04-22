@@ -1,0 +1,81 @@
+# Cloud Run Job — one-shot backfill for staging
+# ==============================================
+# Runs ffmpeg-powered scripts against the staging Cloud SQL DB to fill
+# thumbnails / metadata for versions uploaded before these features existed.
+#
+# Deploy once:
+#   gcloud run jobs replace cloudrun-jobs/backfill-staging.yaml \
+#     --region=europe-west1
+#
+# Run on demand (each script as a separate execution):
+#   # 1. Metadata (duration / width / height)
+#   gcloud run jobs execute toftal-backfill-staging \
+#     --region=europe-west1 \
+#     --args="run,backfill:metadata"
+#
+#   # 2. Thumbnails (JPEG preview frame)
+#   gcloud run jobs execute toftal-backfill-staging \
+#     --region=europe-west1 \
+#     --args="run,backfill:thumbnails"
+#
+#   # 3. Cache-Control headers on existing GCS files (already done on the
+#   #    shared bucket — here only if you add more buckets or re-upload)
+#   gcloud run jobs execute toftal-backfill-staging \
+#     --region=europe-west1 \
+#     --args="run,backfill:cache-control"
+#
+# The container is the SAME image already built for the staging API —
+# no separate build required. It just runs an npm script instead of starting
+# the server.
+
+apiVersion: run.googleapis.com/v1
+kind: Job
+metadata:
+  name: toftal-backfill-staging
+  labels:
+    env: staging
+    purpose: backfill
+spec:
+  template:
+    spec:
+      # Re-try the job up to 3 times if it fails mid-way (safe because
+      # all backfill scripts are idempotent — already-processed rows are skipped).
+      taskCount: 1
+      template:
+        spec:
+          # Up to 1h per run; each backfill tops out at ~15-20 min for 100 videos
+          timeoutSeconds: 3600
+          # Retry the task once if it crashes
+          maxRetries: 1
+          containers:
+            - image: gcr.io/toftal-clip-api/toftal-clip-api-staging:staging-latest
+              # Override the default CMD (which starts the server) to run a script.
+              # The exact script is provided via --args when executing the job.
+              command:
+                - npm
+              # Example default: `npm run backfill:metadata`. Override with
+              # --args at execution time for each script.
+              args:
+                - run
+                - backfill:metadata
+              env:
+                - name: NODE_ENV
+                  value: staging
+                - name: GCS_BUCKET_NAME
+                  value: toftal-clip-media
+                - name: GCP_PROJECT_ID
+                  value: toftal-clip-api
+                # Secret: points at the staging DB
+                - name: DATABASE_URL
+                  valueFrom:
+                    secretKeyRef:
+                      name: DATABASE_URL_STAGING
+                      key: latest
+              resources:
+                limits:
+                  cpu: "2"
+                  memory: "2Gi"
+          # Staging DB is on the same Cloud SQL instance as production
+          volumes: []
+          # Service account with permissions to read/write GCS + query Cloud SQL
+          serviceAccountName: backfill-job-sa@toftal-clip-api.iam.gserviceaccount.com
