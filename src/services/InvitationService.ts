@@ -47,12 +47,21 @@ export class InvitationService {
     });
 
     if (!project) {
-      throw new Error('Project not found');
+      throw new Error('Projet introuvable');
     }
 
-    // Verify inviter is project owner
+    // Verify inviter is the project owner OR a member with edit permission.
+    // The route middleware already checks this when called via HTTP, but we
+    // keep a defence-in-depth here in case the service is called elsewhere.
     if (project.ownerId !== inviterUserId) {
-      throw new Error('Only project owner can send invitations');
+      const member = await this.prisma.projectMember.findUnique({
+        where: { projectId_userId: { projectId, userId: inviterUserId } },
+        select: { permissions: true },
+      });
+      const canInvite = !!(member?.permissions as any)?.edit;
+      if (!canInvite) {
+        throw new Error("Seul le proprietaire ou un collaborateur avec la permission d'edition peut envoyer des invitations");
+      }
     }
 
     // Check if user with this email is already a member
@@ -71,7 +80,7 @@ export class InvitationService {
       });
 
       if (existingMember) {
-        throw new Error('User is already a member of this project');
+        throw new Error("Cet utilisateur est deja membre du projet");
       }
     }
 

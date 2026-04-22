@@ -17,7 +17,13 @@
     "db:seed": "ts-node prisma/seed.ts",
     "test": "jest",
     "test:watch": "jest --watch",
-    "test:coverage": "jest --coverage"
+    "test:coverage": "jest --coverage",
+    "backfill:thumbnails": "ts-node scripts/backfill-thumbnails.ts",
+    "backfill:thumbnails:dry": "ts-node scripts/backfill-thumbnails.ts --dry-run",
+    "backfill:metadata": "ts-node scripts/backfill-metadata.ts",
+    "backfill:metadata:dry": "ts-node scripts/backfill-metadata.ts --dry-run",
+    "backfill:cache-control": "ts-node scripts/backfill-cache-control.ts",
+    "backfill:cache-control:dry": "ts-node scripts/backfill-cache-control.ts --dry-run"
   },
   "keywords": [
     "api",

@@ -21,6 +21,7 @@ import path from 'path';
 import fs from 'fs';
 import { unlinkSync, existsSync } from 'fs';
 import cacheService from '../services/cacheService';
+import { generateVideoThumbnail } from '../services/VideoThumbnailService';
 
 const prisma = new PrismaClient();
 
@@ -282,6 +283,8 @@ const transferToGcsInBackground = async (uploadId: string, upload: Upload) => {
         resumable: true,
         metadata: {
           contentType: metadata.filetype || 'video/mp4',
+          // UUID-based path → immutable, cache forever on browser + CDN
+          cacheControl: 'public, max-age=31536000, immutable',
           metadata: {
             originalFileName: filename,
             uploadedAt: new Date().toISOString(),
@@ -402,6 +405,20 @@ const transferToGcsInBackground = async (uploadId: string, upload: Upload) => {
       });
 
       console.log('✅ Version created:', version.id);
+
+      // Fire-and-forget thumbnail generation (same pattern as REST upload)
+      setImmediate(async () => {
+        const thumbnailUrl = await generateVideoThumbnail(videoUrl);
+        if (!thumbnailUrl) return;
+        try {
+          await prisma.version.update({
+            where: { id: version.id },
+            data: { thumbnailUrl },
+          });
+        } catch (err) {
+          console.warn('Thumbnail persist failed (TUS):', err);
+        }
+      });
     }
   } catch (error: any) {
     console.error('❌ Background GCS transfer error:', error);

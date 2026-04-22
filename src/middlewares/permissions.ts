@@ -35,29 +35,35 @@ export const requireProjectAccess = (
     try {
       // Check if user is authenticated
       if (!req.user || !req.user.id) {
-        return res.status(401).json({ error: 'Unauthorized: User not authenticated' });
+        return res.status(401).json({ error: 'Non authentifie' });
       }
 
       // Get project ID from params or body
       const projectId = req.params.projectId || req.body.projectId;
 
       if (!projectId) {
-        return res.status(400).json({ error: 'Project ID is required' });
+        return res.status(400).json({ error: 'L\'identifiant du projet est requis' });
       }
 
       // Check project access
       const permission = await permissionService.canAccessProject(projectId, req.user.id);
 
       if (!permission.hasAccess) {
-        return res.status(403).json({ error: 'Forbidden: You do not have access to this project' });
+        return res.status(403).json({ error: 'Acces refuse : vous n\'etes pas membre de ce projet' });
       }
 
       // If specific permission is required, check it
       if (requiredPermission && permission.permissions) {
         const hasPermission = permission.permissions[requiredPermission];
         if (!hasPermission) {
+          const labels: Record<string, string> = {
+            view: 'de lecture',
+            edit: 'd\'edition',
+            comment: 'de commentaire',
+            approve: 'de validation',
+          };
           return res.status(403).json({
-            error: `Forbidden: You do not have ${requiredPermission} permission for this project`,
+            error: `Acces refuse : la permission ${labels[requiredPermission] || requiredPermission} est requise`,
           });
         }
       }

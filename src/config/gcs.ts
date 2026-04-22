@@ -39,11 +39,15 @@ export const uploadToGCS = async (
   const ext = path.extname(originalName);
   const fileName = `${folder}/${uuidv4()}${ext}`;
 
-  // Upload file
+  // Upload file.
+  // The generated fileName contains a UUID, so the URL is immutable — we can
+  // tell browsers + CDN to cache it forever. `immutable` tells the browser
+  // never to send revalidation requests (0ms reload instead of ~200ms HEAD).
   await bucket.upload(filePath, {
     destination: fileName,
     metadata: {
       contentType: mimeType,
+      cacheControl: 'public, max-age=31536000, immutable',
       metadata: {
         originalName: originalName,
         uploadedAt: new Date().toISOString(),

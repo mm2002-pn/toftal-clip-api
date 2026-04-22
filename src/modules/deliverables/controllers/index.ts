@@ -5,6 +5,7 @@ import { NotFoundError } from '../../../utils/errors';
 import { sendEmail, emailTemplates } from '../../../config/email';
 import { socketService } from '../../../services/socketService';
 import { extractVideoMetadata } from '../../../services/VideoMetadataService';
+import { generateVideoThumbnail } from '../../../services/VideoThumbnailService';
 
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
 
@@ -447,6 +448,30 @@ export const addVersion = async (req: Request, res: Response, next: NextFunction
     });
 
     console.log(`✅ Version created with ID: ${version.id}, Duration: ${metadata?.duration}s`);
+
+    // Fire-and-forget: generate JPEG thumbnail in background so the response
+    // is not blocked by ffmpeg. Once ready, patch the version row and emit
+    // a socket event so any open client swaps the <video poster> instantly.
+    setImmediate(async () => {
+      const thumbnailUrl = await generateVideoThumbnail(videoUrl);
+      if (!thumbnailUrl) return;
+      try {
+        await prisma.version.update({
+          where: { id: version.id },
+          data: { thumbnailUrl },
+        });
+        const projectId = deliverable.project?.id;
+        if (projectId) {
+          socketService.emitToProject(projectId, 'version:thumbnail', {
+            versionId: version.id,
+            deliverableId: id,
+            thumbnailUrl,
+          } as any);
+        }
+      } catch (err) {
+        console.warn('Thumbnail persist failed:', err);
+      }
+    });
 
     // Update deliverable status to VALIDATION with progress 75%
     await prisma.deliverable.update({

@@ -226,6 +226,34 @@ export const deliverableResolvers = {
         return null;
       }
     },
+    latestThumbnailUrl: async (parent: any) => {
+      try {
+        const latestVersion = await prisma.version.findFirst({
+          where: { deliverableId: parent.id },
+          orderBy: { versionNumber: 'desc' },
+          select: { thumbnailUrl: true },
+        });
+        return latestVersion?.thumbnailUrl || null;
+      } catch (err) {
+        console.error(`Error in latestThumbnailUrl:`, err);
+        return null;
+      }
+    },
+    latestDuration: async (parent: any) => {
+      try {
+        const latestVersion = await prisma.version.findFirst({
+          where: { deliverableId: parent.id },
+          orderBy: { versionNumber: 'desc' },
+          select: { metadata: true },
+        });
+        const md = latestVersion?.metadata as any;
+        const dur = md?.duration;
+        return typeof dur === 'number' && Number.isFinite(dur) ? dur : null;
+      } catch (err) {
+        console.error(`Error in latestDuration:`, err);
+        return null;
+      }
+    },
     lastUploader: async (parent: any, _args: any, context: any) => {
       try {
         const latestVersion = await prisma.version.findFirst({

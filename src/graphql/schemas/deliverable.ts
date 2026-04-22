@@ -22,6 +22,8 @@ export const deliverableTypeDefs = gql`
     workflow: [WorkflowPhase!]!
     # Phase 4 Backend Optimizations
     latestVideoUrl: String
+    latestThumbnailUrl: String
+    latestDuration: Float
     lastUploader: User
     taskProgress: Int
     totalTasks: Int
@@ -44,6 +46,7 @@ export const deliverableTypeDefs = gql`
     deliverable: Deliverable!
     versionNumber: Int!
     videoUrl: String!
+    thumbnailUrl: String
     description: String
     status: VersionStatus!
     uploadedBy: User

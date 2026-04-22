@@ -16,9 +16,13 @@ const permissionService = new PermissionService(prisma);
 
 /**
  * POST /api/v1/invitations
- * Create a new project invitation and send email
+ * Create a new project invitation and send email.
+ *
+ * Permission: owner OR any project member with the `edit` permission.
+ * The `edit` permission grants collaboration-level actions (adding members,
+ * uploading versions, etc.), which matches the intent here.
  */
-router.post('/', authenticate, requireProjectOwner(), async (req: Request, res: Response) => {
+router.post('/', authenticate, requireProjectAccess('edit'), async (req: Request, res: Response) => {
   try {
     const { projectId, email, message, permission } = req.body;
     const userId = req.user!.id;
@@ -252,7 +256,9 @@ router.post('/accept-after-email-verification', async (req: Request, res: Respon
 router.get(
   '/project/:projectId',
   authenticate,
-  requireProjectOwner(),
+  // Listing invitations is a read action — any project member (view+) can see
+  // it, so it matches the rest of the drawer UI for collaborators.
+  requireProjectAccess('view'),
   async (req: Request, res: Response) => {
     try {
       const projectId = String(req.params.projectId);

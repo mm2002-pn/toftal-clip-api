@@ -36,7 +36,8 @@ export type SocketEvent =
   | 'typing:user'
   | 'typing:stopped'
   | 'feedback:read'
-  | 'feedback:reaction';
+  | 'feedback:reaction'
+  | 'version:thumbnail';
 
 // Payload types for each event
 export interface NotificationPayload {
