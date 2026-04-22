@@ -1,5 +1,7 @@
 import { Server as HttpServer } from 'http';
 import { Server, Socket } from 'socket.io';
+import { createAdapter } from '@socket.io/redis-adapter';
+import IORedis from 'ioredis';
 import jwt from 'jsonwebtoken';
 import { config } from '../config';
 import { logger } from '../utils/logger';
@@ -204,6 +206,27 @@ class SocketService {
       },
       transports: ['websocket', 'polling'],
     });
+
+    // Redis adapter — required on Cloud Run (multi-instance) so rooms and
+    // broadcasts are shared across every container. Without it, clients on
+    // different instances (e.g. Chrome on Instance A, Mobile on Instance B)
+    // silently miss each other's events. Expects REDIS_TCP_URL in the form
+    // rediss://default:<token>@<host>:<port> (Upstash TCP endpoint).
+    const redisUrl = process.env.REDIS_TCP_URL;
+    if (redisUrl) {
+      try {
+        const pub = new IORedis(redisUrl, { lazyConnect: false, maxRetriesPerRequest: null });
+        const sub = pub.duplicate();
+        pub.on('error', (err) => logger.error(`Redis pub error: ${err.message}`));
+        sub.on('error', (err) => logger.error(`Redis sub error: ${err.message}`));
+        this.io.adapter(createAdapter(pub, sub));
+        logger.info('Socket.io: Redis adapter enabled for multi-instance broadcast');
+      } catch (err) {
+        logger.error(`Socket.io: failed to enable Redis adapter: ${(err as Error).message}`);
+      }
+    } else {
+      logger.warn('Socket.io: REDIS_TCP_URL not set — running with in-memory adapter. Cross-instance events WILL be lost on multi-replica deploys.');
+    }
 
     // Authentication middleware
     this.io.use(async (socket: AuthenticatedSocket, next) => {
