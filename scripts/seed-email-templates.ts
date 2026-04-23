@@ -159,22 +159,30 @@ const DEFS: TemplateDef[] = [
     name: 'ownership_transfer_request',
     description: 'Demande de transfert de propriété d\'un projet',
     variables: ['recipientName', 'senderName', 'projectTitle', 'acceptUrl', 'expiresAt'],
-    // expiresAt is a Date in the hardcoded template (calls .toLocaleDateString).
-    // We pass a fixed date at seed time and replace it in the rendered HTML with
-    // a {{expiresAt}} placeholder.
+    // The hardcoded template formats expiresAt with Intl.DateTimeFormat('fr-FR', {...}).
+    // We call it with a fixed sentinel date, format it the same way, then
+    // swap the rendered string with the {{expiresAt}} placeholder. Midday UTC
+    // is used so no timezone shift can move the day.
     build: () => {
+      const sentinel = new Date('2099-06-15T12:00:00.000Z');
       const out = emailTemplates.ownershipTransferRequest(
         v('recipientName'),
         v('senderName'),
         v('projectTitle'),
         v('acceptUrl'),
-        new Date('2099-12-31T23:59:59.000Z')
+        sentinel
       );
-      const expiryLocal = new Date('2099-12-31T23:59:59.000Z').toLocaleDateString('fr-FR');
+      const expiryStr = new Intl.DateTimeFormat('fr-FR', {
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      }).format(sentinel);
       return {
-        subject: out.subject.replace(expiryLocal, v('expiresAt')),
-        html: out.html.split(expiryLocal).join(v('expiresAt')),
-        text: out.text.split(expiryLocal).join(v('expiresAt')),
+        subject: out.subject.split(expiryStr).join(v('expiresAt')),
+        html: out.html.split(expiryStr).join(v('expiresAt')),
+        text: out.text.split(expiryStr).join(v('expiresAt')),
       };
     },
   },

@@ -7,6 +7,7 @@ import { socketService } from '../../../services/socketService';
 import { extractVideoMetadata } from '../../../services/VideoMetadataService';
 import { generateVideoThumbnail } from '../../../services/VideoThumbnailService';
 import { bucket, BUCKET_NAME } from '../../../config/gcs';
+import { renderEmailFromDB } from '../../../services/templateResolver';
 
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
 
@@ -222,7 +223,6 @@ export const assignTalent = async (req: Request, res: Response, next: NextFuncti
       // Send email notification — DB template (talent_unassigned) overrides hardcoded.
       try {
         const workspaceUrl = `${FRONTEND_URL}/#/workspace/${del.project.id}`;
-        const { renderEmailFromDB } = await import('../../../services/templateResolver');
         const vars = {
           talentName: previousTalent.name,
           deliverableTitle: deliverable.title,

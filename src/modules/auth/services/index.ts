@@ -5,6 +5,7 @@ import { prisma } from '../../../config/database';
 import { config } from '../../../config';
 import { firebaseAuth } from '../../../config/firebase';
 import { sendEmail, emailTemplates } from '../../../config/email';
+import { renderEmailFromDB } from '../../../services/templateResolver';
 import { ConflictError, UnauthorizedError, NotFoundError, BadRequestError } from '../../../utils/errors';
 import { UserRole } from '@prisma/client';
 
@@ -390,7 +391,6 @@ export const forgotPassword = async (email: string): Promise<{ message: string }
 
   // Send OTP via email — DB template (password_reset_otp) overrides hardcoded.
   try {
-    const { renderEmailFromDB } = await import('../../../services/templateResolver');
     const db = await renderEmailFromDB('password_reset_otp', { name: user.name, otp });
     const fallback = emailTemplates.forgotPassword(user.name, otp);
     await sendEmail(email, db ? { subject: db.subject, html: db.html, text: fallback.text } : fallback);
