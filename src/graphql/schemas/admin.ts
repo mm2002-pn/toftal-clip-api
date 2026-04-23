@@ -297,6 +297,35 @@ export const adminTypeDefs = gql`
     last90d
   }
 
+  # ============ EMAIL TEMPLATES ============
+  type EmailTemplate {
+    id: ID!
+    name: String!
+    description: String
+    subject: String!
+    htmlBody: String!
+    textBody: String
+    variables: [String!]!
+    createdAt: DateTime!
+    updatedAt: DateTime!
+  }
+
+  # ============ AI PROMPT TEMPLATES ============
+  type AIPromptTemplate {
+    id: ID!
+    name: String!
+    description: String
+    model: String!
+    systemPrompt: String
+    userPromptTemplate: String!
+    temperature: Float!
+    maxTokens: Int
+    responseFormat: String
+    variables: [String!]!
+    createdAt: DateTime!
+    updatedAt: DateTime!
+  }
+
   extend type Query {
     adminStats: AdminStats!
     adminUsers(
@@ -332,5 +361,13 @@ export const adminTypeDefs = gql`
     adminKPIs: AdminKPIs!
     adminTimeSeries(metric: MetricKind!, period: MetricPeriod = last30d): [TimeSeriesPoint!]!
     adminTopUsers(metric: MetricKind!, period: MetricPeriod = last30d, limit: Int = 10): [TopUser!]!
+
+    # Email templates
+    adminEmailTemplates: [EmailTemplate!]!
+    adminEmailTemplate(id: ID!): EmailTemplate
+
+    # AI prompt templates
+    adminAIPromptTemplates: [AIPromptTemplate!]!
+    adminAIPromptTemplate(id: ID!): AIPromptTemplate
   }
 `;

@@ -219,18 +219,19 @@ export const assignTalent = async (req: Request, res: Response, next: NextFuncti
       // Emit real-time notification
       socketService.emitToUser(previousTalent.id, 'notification:new', notification);
 
-      // Send email notification
+      // Send email notification — DB template (talent_unassigned) overrides hardcoded.
       try {
         const workspaceUrl = `${FRONTEND_URL}/#/workspace/${del.project.id}`;
-        await sendEmail(
-          previousTalent.email,
-          emailTemplates.talentUnassigned(
-            previousTalent.name,
-            deliverable.title,
-            del.project.title,
-            workspaceUrl
-          )
-        );
+        const { renderEmailFromDB } = await import('../../../services/templateResolver');
+        const vars = {
+          talentName: previousTalent.name,
+          deliverableTitle: deliverable.title,
+          projectTitle: del.project.title,
+          workspaceUrl,
+        };
+        const db = await renderEmailFromDB('talent_unassigned', vars);
+        const fallback = emailTemplates.talentUnassigned(previousTalent.name, deliverable.title, del.project.title, workspaceUrl);
+        await sendEmail(previousTalent.email, db ? { subject: db.subject, html: db.html, text: fallback.text } : fallback);
       } catch (emailError) {
         console.error('Failed to send unassignment email:', emailError);
         // Don't fail the request if email fails

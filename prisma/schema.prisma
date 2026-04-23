@@ -845,6 +845,37 @@ model FeatureFlag {
   @@map("feature_flags")
 }
 
+model EmailTemplate {
+  id          String   @id @default(uuid())
+  name        String   @unique // "invitation" | "verify_email" | "password_reset" | ...
+  description String?
+  subject     String
+  htmlBody    String   @map("html_body") @db.Text
+  textBody    String?  @map("text_body") @db.Text
+  variables   String[] @default([]) // documented list, e.g. ["userName","projectTitle","link"]
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@map("email_templates")
+}
+
+model AIPromptTemplate {
+  id                  String   @id @default(uuid())
+  name                String   @unique // "brief_optimization" | "video_analysis" | ...
+  description         String?
+  model               String   @default("groq:llama-3.3-70b-versatile") // provider:model
+  systemPrompt        String?  @map("system_prompt") @db.Text
+  userPromptTemplate  String   @map("user_prompt_template") @db.Text
+  temperature         Float    @default(0.7)
+  maxTokens           Int?     @map("max_tokens")
+  responseFormat      String?  @map("response_format") // "json" | "text"
+  variables           String[] @default([])
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @updatedAt @map("updated_at")
+
+  @@map("ai_prompt_templates")
+}
+
 model AuditLog {
   id         String   @id @default(uuid())
   userId     String   @map("user_id")

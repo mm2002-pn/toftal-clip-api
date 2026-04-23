@@ -388,9 +388,12 @@ export const forgotPassword = async (email: string): Promise<{ message: string }
     },
   });
 
-  // Send OTP via email
+  // Send OTP via email — DB template (password_reset_otp) overrides hardcoded.
   try {
-    await sendEmail(email, emailTemplates.forgotPassword(user.name, otp));
+    const { renderEmailFromDB } = await import('../../../services/templateResolver');
+    const db = await renderEmailFromDB('password_reset_otp', { name: user.name, otp });
+    const fallback = emailTemplates.forgotPassword(user.name, otp);
+    await sendEmail(email, db ? { subject: db.subject, html: db.html, text: fallback.text } : fallback);
     console.log(`✅ Password reset OTP sent to ${email}`);
   } catch (error) {
     console.error('❌ Failed to send OTP email:', error);

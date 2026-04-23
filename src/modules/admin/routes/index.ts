@@ -8,6 +8,8 @@ import * as featureFlagsController from '../controllers/featureFlags';
 import * as invitationsController from '../controllers/invitations';
 import * as storageController from '../controllers/storage';
 import * as membersController from '../controllers/members';
+import * as emailTemplatesController from '../controllers/emailTemplates';
+import * as aiPromptsController from '../controllers/aiPrompts';
 
 const router = Router();
 
@@ -53,5 +55,12 @@ router.post('/invitations/:id/revoke', invitationsController.revokeInvitation);
 // Storage — purge jobs
 router.post('/storage/purge-old-versions', storageController.purgeOldVersions);
 router.post('/storage/purge-deleted-projects', storageController.purgeDeletedProjects);
+
+// Email templates — edit + preview
+router.patch('/email-templates/:id', emailTemplatesController.updateEmailTemplate);
+router.post('/email-templates/:id/preview', emailTemplatesController.previewEmailTemplate);
+
+// AI prompt templates — edit
+router.patch('/ai-prompts/:id', aiPromptsController.updateAIPrompt);
 
 export default router;

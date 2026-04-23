@@ -28,6 +28,11 @@
     "backfill:audio-mime:dry": "ts-node --transpile-only scripts/backfill-audio-content-type.ts --dry-run",
     "backfill:file-sizes": "ts-node --transpile-only scripts/backfill-file-sizes.ts",
     "backfill:file-sizes:dry": "ts-node --transpile-only scripts/backfill-file-sizes.ts --dry-run",
+    "seed:feature-flags": "ts-node --transpile-only scripts/seed-feature-flags.ts",
+    "seed:feature-flags:reset": "ts-node --transpile-only scripts/seed-feature-flags.ts --reset",
+    "seed:email-templates": "ts-node --transpile-only scripts/seed-email-templates.ts",
+    "seed:ai-prompts": "ts-node --transpile-only scripts/seed-ai-prompts.ts",
+    "seed:all": "npm run seed:feature-flags && npm run seed:email-templates && npm run seed:ai-prompts",
     "backfill:all": "npm run backfill:metadata && npm run backfill:thumbnails && npm run backfill:cache-control && npm run backfill:audio-mime && npm run backfill:file-sizes"
   },
   "keywords": [

@@ -31,7 +31,9 @@ export type AuditAction =
   | 'STORAGE_PURGE_PROJECTS'
   | 'MEMBER_ADD'
   | 'MEMBER_UPDATE'
-  | 'MEMBER_REMOVE';
+  | 'MEMBER_REMOVE'
+  | 'EMAIL_TEMPLATE_UPDATE'
+  | 'AI_PROMPT_UPDATE';
 
 export type AuditTargetType =
   | 'project'

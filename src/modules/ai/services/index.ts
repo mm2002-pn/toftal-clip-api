@@ -2,6 +2,31 @@ import { config } from '../../../config';
 import { chatCompletionJSON, chatCompletion, transcribeAudio as groqTranscribe } from '../../../config/groq';
 import { logger } from '../../../utils/logger';
 import { prisma } from '../../../config/database';
+import { renderAIPromptFromDB } from '../../../services/templateResolver';
+
+/**
+ * Try to build the messages[] array + model config from a DB-backed prompt
+ * template. Returns null if the template isn't in the DB, letting the caller
+ * fall back to its inline hardcoded messages.
+ *
+ * The `model` field on AIPromptTemplate uses the format "provider:model" (e.g.
+ * "groq:llama-3.3-70b-versatile"). Only the part after ":" is passed to the
+ * Groq client — the provider prefix is informational for now.
+ */
+const buildPromptFromDB = async (
+  name: string,
+  vars: Record<string, unknown>
+): Promise<{ messages: Array<{ role: 'system' | 'user'; content: string }>; model: string; temperature: number } | null> => {
+  const rendered = await renderAIPromptFromDB(name, vars);
+  if (!rendered) return null;
+
+  const messages: Array<{ role: 'system' | 'user'; content: string }> = [];
+  if (rendered.systemPrompt) messages.push({ role: 'system', content: rendered.systemPrompt });
+  messages.push({ role: 'user', content: rendered.userPrompt });
+
+  const model = rendered.model.includes(':') ? rendered.model.split(':')[1] : rendered.model;
+  return { messages, model, temperature: rendered.temperature };
+};
 
 // ============================================
 // Types
@@ -58,6 +83,25 @@ export const optimizeBrief = async (brief: any): Promise<BriefOptimization> => {
   try {
     // Determine if we're reformulating existing text or generating from scratch
     const hasExistingBrief = brief.aiSummary && brief.aiSummary.trim().length > 10;
+
+    // Try DB-backed prompt first. Two distinct names for the two flows so
+    // admins can tune each independently.
+    const dbPrompt = await buildPromptFromDB(
+      hasExistingBrief ? 'brief_rephrase' : 'brief_optimization',
+      {
+        objective: brief.objective || 'Non spécifié',
+        contentType: brief.contentType || 'Non spécifié',
+        targetAudience: brief.targetAudience || 'Non spécifié',
+        tone: brief.tone || 'Non spécifié',
+        existingBrief: brief.aiSummary || '',
+      }
+    );
+    if (dbPrompt) {
+      return await chatCompletionJSON<BriefOptimization>(dbPrompt.messages, {
+        model: dbPrompt.model || config.groq.models.powerful,
+        temperature: dbPrompt.temperature,
+      });
+    }
 
     const systemPrompt = hasExistingBrief
       ? `Tu es un directeur de création expert spécialisé dans le contenu vidéo.
@@ -159,6 +203,20 @@ export const matchTalents = async (brief: any): Promise<TalentMatch[]> => {
       rating: t.rating,
     }));
 
+    const dbPrompt = await buildPromptFromDB('talent_matching', {
+      briefSummary: brief.aiSummary || brief.objective || '',
+      contentType: brief.contentType || '',
+      targetAudience: brief.targetAudience || '',
+      talentsJson: JSON.stringify(talentList, null, 2),
+    });
+    if (dbPrompt) {
+      const r = await chatCompletionJSON<{ matches: TalentMatch[] }>(dbPrompt.messages, {
+        model: dbPrompt.model || config.groq.models.powerful,
+        temperature: dbPrompt.temperature,
+      });
+      return r.matches || [];
+    }
+
     const result = await chatCompletionJSON<{ matches: TalentMatch[] }>([
       {
         role: 'system',
@@ -208,6 +266,14 @@ export const analyzeVideo = async (description: string): Promise<VideoAnalysis> 
   }
 
   try {
+    const dbPrompt = await buildPromptFromDB('video_analysis', { description });
+    if (dbPrompt) {
+      return await chatCompletionJSON<VideoAnalysis>(dbPrompt.messages, {
+        model: dbPrompt.model || config.groq.models.powerful,
+        temperature: dbPrompt.temperature,
+      });
+    }
+
     const result = await chatCompletionJSON<VideoAnalysis>([
       {
         role: 'system',
@@ -275,6 +341,14 @@ export const generateTasks = async (feedbackText: string): Promise<TaskGeneratio
   }
 
   try {
+    const dbPrompt = await buildPromptFromDB('task_generation', { feedbackText });
+    if (dbPrompt) {
+      return await chatCompletionJSON<TaskGeneration>(dbPrompt.messages, {
+        model: dbPrompt.model || config.groq.models.fast,
+        temperature: dbPrompt.temperature,
+      });
+    }
+
     const result = await chatCompletionJSON<TaskGeneration>([
       {
         role: 'system',
@@ -323,6 +397,22 @@ export const rephraseContent = async (text: string): Promise<string[]> => {
     // Extract timestamp from the text if present
     const timestampMatch = text.match(/\[?\d{1,2}:\d{2}\]?/);
     const timestamp = timestampMatch ? timestampMatch[0] : '';
+
+    // For content_rephrase, the DB template returns a JSON array of strings.
+    // We keep the chatCompletion (raw string) path as fallback when there's
+    // no DB entry — it returns 3 lines separated by \n.
+    const dbPrompt = await buildPromptFromDB('content_rephrase', { text });
+    if (dbPrompt) {
+      try {
+        const arr = await chatCompletionJSON<string[]>(dbPrompt.messages, {
+          model: dbPrompt.model || config.groq.models.fast,
+          temperature: dbPrompt.temperature,
+        });
+        return Array.isArray(arr) ? arr : [text];
+      } catch {
+        // fall through to the raw-text path
+      }
+    }
 
     const result = await chatCompletion([
       {

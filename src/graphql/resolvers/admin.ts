@@ -459,6 +459,28 @@ export const adminResolvers = {
       }));
     },
 
+    // ============ EMAIL TEMPLATES ============
+    adminEmailTemplates: async (_: any, __: any, context: any) => {
+      requireAdmin(context);
+      return prisma.emailTemplate.findMany({ orderBy: { name: 'asc' } });
+    },
+
+    adminEmailTemplate: async (_: any, { id }: { id: string }, context: any) => {
+      requireAdmin(context);
+      return prisma.emailTemplate.findUnique({ where: { id } });
+    },
+
+    // ============ AI PROMPT TEMPLATES ============
+    adminAIPromptTemplates: async (_: any, __: any, context: any) => {
+      requireAdmin(context);
+      return prisma.aIPromptTemplate.findMany({ orderBy: { name: 'asc' } });
+    },
+
+    adminAIPromptTemplate: async (_: any, { id }: { id: string }, context: any) => {
+      requireAdmin(context);
+      return prisma.aIPromptTemplate.findUnique({ where: { id } });
+    },
+
     adminAuditLogs: async (_: any, { filter, pagination }: any, context: any) => {
       requireAdmin(context);
       const page = Math.max(1, pagination?.page || 1);

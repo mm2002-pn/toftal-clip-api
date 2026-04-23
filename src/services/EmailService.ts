@@ -1,4 +1,28 @@
 import { sendEmail, emailTemplates } from '../config/email';
+import { renderEmailFromDB, RenderedEmail } from './templateResolver';
+
+/**
+ * Try to render from the DB-backed email_templates table. Falls back to the
+ * hardcoded `emailTemplates` object if the DB template doesn't exist. The DB
+ * version lets admins tune subject/HTML from the admin UI without redeploy.
+ *
+ * Returns `{ subject, html, text }` in the shape expected by `sendEmail`.
+ */
+const resolveTemplate = async (
+  name: string,
+  vars: Record<string, unknown>,
+  fallback: { subject: string; html: string; text: string }
+): Promise<{ subject: string; html: string; text: string }> => {
+  const dbRendered = await renderEmailFromDB(name, vars);
+  if (dbRendered) {
+    return {
+      subject: dbRendered.subject,
+      html: dbRendered.html,
+      text: dbRendered.text ?? fallback.text,
+    };
+  }
+  return fallback;
+};
 
 interface SendInvitationEmailData {
   to: string;
@@ -30,16 +54,12 @@ export class EmailService {
     console.log('🔗 Invitation URL:', invitationUrl);
     console.log('📝 Token:', invitationToken);
 
-    // Get email template
-    const emailTemplate = emailTemplates.projectInvitation(
-      to,
-      projectTitle,
-      inviterName,
-      invitationUrl,
-      message
+    const emailTemplate = await resolveTemplate(
+      'invitation',
+      { email: to, projectTitle, inviterName, invitationUrl, message: message ?? '' },
+      emailTemplates.projectInvitation(to, projectTitle, inviterName, invitationUrl, message)
     );
 
-    // Send email
     await sendEmail(to, emailTemplate);
   }
 
@@ -53,13 +73,11 @@ export class EmailService {
     projectTitle: string,
     workspaceUrl: string
   ): Promise<void> {
-    const emailTemplate = emailTemplates.talentAssigned(
-      talentName,
-      deliverableTitle,
-      projectTitle,
-      workspaceUrl
+    const emailTemplate = await resolveTemplate(
+      'talent_assigned',
+      { talentName, deliverableTitle, projectTitle, workspaceUrl },
+      emailTemplates.talentAssigned(talentName, deliverableTitle, projectTitle, workspaceUrl)
     );
-
     await sendEmail(talentEmail, emailTemplate);
   }
 
@@ -74,14 +92,11 @@ export class EmailService {
     versionNumber: number,
     workspaceUrl: string
   ): Promise<void> {
-    const emailTemplate = emailTemplates.newVersion(
-      clientName,
-      deliverableTitle,
-      projectTitle,
-      versionNumber,
-      workspaceUrl
+    const emailTemplate = await resolveTemplate(
+      'new_version',
+      { clientName, deliverableTitle, projectTitle, versionNumber, workspaceUrl },
+      emailTemplates.newVersion(clientName, deliverableTitle, projectTitle, versionNumber, workspaceUrl)
     );
-
     await sendEmail(clientEmail, emailTemplate);
   }
 
@@ -96,14 +111,11 @@ export class EmailService {
     projectTitle: string,
     workspaceUrl: string
   ): Promise<void> {
-    const emailTemplate = emailTemplates.assignmentAccepted(
-      clientName,
-      talentName,
-      deliverableTitle,
-      projectTitle,
-      workspaceUrl
+    const emailTemplate = await resolveTemplate(
+      'assignment_accepted',
+      { clientName, talentName, deliverableTitle, projectTitle, workspaceUrl },
+      emailTemplates.assignmentAccepted(clientName, talentName, deliverableTitle, projectTitle, workspaceUrl)
     );
-
     await sendEmail(clientEmail, emailTemplate);
   }
 
@@ -119,15 +131,11 @@ export class EmailService {
     reason: string | null,
     workspaceUrl: string
   ): Promise<void> {
-    const emailTemplate = emailTemplates.assignmentRejected(
-      clientName,
-      talentName,
-      deliverableTitle,
-      projectTitle,
-      reason,
-      workspaceUrl
+    const emailTemplate = await resolveTemplate(
+      'assignment_rejected',
+      { clientName, talentName, deliverableTitle, projectTitle, reason: reason ?? '', workspaceUrl },
+      emailTemplates.assignmentRejected(clientName, talentName, deliverableTitle, projectTitle, reason, workspaceUrl)
     );
-
     await sendEmail(clientEmail, emailTemplate);
   }
 
@@ -139,7 +147,11 @@ export class EmailService {
     name: string,
     verificationUrl: string
   ): Promise<void> {
-    const emailTemplate = emailTemplates.verification(name, verificationUrl);
+    const emailTemplate = await resolveTemplate(
+      'verify_email',
+      { name, verificationUrl },
+      emailTemplates.verification(name, verificationUrl)
+    );
 
     await sendEmail(email, emailTemplate);
   }
@@ -157,12 +169,10 @@ export class EmailService {
   }): Promise<void> {
     const { to, requesterName, requesterEmail, projectTitle, message, projectUrl } = data;
 
-    const emailTemplate = emailTemplates.accessRequest(
-      requesterName,
-      requesterEmail,
-      projectTitle,
-      message,
-      projectUrl
+    const emailTemplate = await resolveTemplate(
+      'access_request',
+      { requesterName, requesterEmail, projectTitle, message: message ?? '', projectUrl },
+      emailTemplates.accessRequest(requesterName, requesterEmail, projectTitle, message, projectUrl)
     );
 
     await sendEmail(to, emailTemplate);
@@ -177,7 +187,11 @@ export class EmailService {
   }): Promise<void> {
     const { to, projectTitle } = data;
 
-    const emailTemplate = emailTemplates.accessApproved(projectTitle);
+    const emailTemplate = await resolveTemplate(
+      'access_approved',
+      { projectTitle },
+      emailTemplates.accessApproved(projectTitle)
+    );
 
     await sendEmail(to, emailTemplate);
   }
@@ -191,7 +205,11 @@ export class EmailService {
   }): Promise<void> {
     const { to, projectTitle } = data;
 
-    const emailTemplate = emailTemplates.accessRejected(projectTitle);
+    const emailTemplate = await resolveTemplate(
+      'access_rejected',
+      { projectTitle },
+      emailTemplates.accessRejected(projectTitle)
+    );
 
     await sendEmail(to, emailTemplate);
   }
@@ -211,11 +229,10 @@ export class EmailService {
     const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
     const workspaceUrl = `${frontendUrl}/#/workspace/${projectId}`;
 
-    const emailTemplate = emailTemplates.invitationAccepted(
-      talentName,
-      clientName,
-      projectTitle,
-      workspaceUrl
+    const emailTemplate = await resolveTemplate(
+      'invitation_accepted',
+      { talentName, clientName, projectTitle, workspaceUrl },
+      emailTemplates.invitationAccepted(talentName, clientName, projectTitle, workspaceUrl)
     );
 
     await sendEmail(to, emailTemplate);
@@ -237,12 +254,10 @@ export class EmailService {
     const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
     const workspaceUrl = `${frontendUrl}/#/workspace/${projectId}`;
 
-    const emailTemplate = emailTemplates.invitationRejected(
-      talentName,
-      clientEmail,
-      projectTitle,
-      workspaceUrl,
-      reason
+    const emailTemplate = await resolveTemplate(
+      'invitation_rejected',
+      { talentName, clientEmail, projectTitle, workspaceUrl, reason: reason ?? '' },
+      emailTemplates.invitationRejected(talentName, clientEmail, projectTitle, workspaceUrl, reason)
     );
 
     await sendEmail(to, emailTemplate);
@@ -286,21 +301,38 @@ export class EmailService {
     const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
     const adminUrl = `${frontendUrl}/#/admin/beta-signups`;
 
-    const emailTemplate = emailTemplates.betaSignupNotification(
-      name,
-      email,
-      contact,
-      role,
-      interests,
-      videoCount,
-      collaboration,
-      biggestProblem,
-      feedbackReady,
-      link,
-      marketplaceInterest,
-      source,
-      adminUrl,
-      signupNumber
+    const emailTemplate = await resolveTemplate(
+      'beta_signup_notification',
+      {
+        name,
+        email,
+        contact,
+        role: role ?? '',
+        videoCount: videoCount ?? '',
+        collaboration: collaboration ?? '',
+        biggestProblem: biggestProblem ?? '',
+        interests: (interests ?? []).join(', '),
+        feedbackReady: feedbackReady ?? '',
+        link: link ?? '',
+        marketplaceInterest: marketplaceInterest ?? '',
+        source: source ?? '',
+      },
+      emailTemplates.betaSignupNotification(
+        name,
+        email,
+        contact,
+        role,
+        interests,
+        videoCount,
+        collaboration,
+        biggestProblem,
+        feedbackReady,
+        link,
+        marketplaceInterest,
+        source,
+        adminUrl,
+        signupNumber
+      )
     );
 
     // Send to manager
@@ -312,7 +344,11 @@ export class EmailService {
    * Send beta signup confirmation email to the user
    */
   async sendBetaSignupConfirmation(userEmail: string, userName: string): Promise<void> {
-    const emailTemplate = emailTemplates.betaSignupConfirmation(userName);
+    const emailTemplate = await resolveTemplate(
+      'beta_signup_confirmation',
+      { name: userName },
+      emailTemplates.betaSignupConfirmation(userName)
+    );
     await sendEmail(userEmail, emailTemplate);
   }
 
@@ -328,12 +364,23 @@ export class EmailService {
     permissions?: { view?: boolean; edit?: boolean; comment?: boolean; approve?: boolean };
   }): Promise<void> {
     const { to, collaboratorName, projectTitle, projectId, addedBy, permissions } = data;
-    const emailTemplate = emailTemplates.collaboratorAdded(
-      collaboratorName,
-      projectTitle,
-      addedBy,
-      projectId,
-      permissions
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+    const permLabels = Object.entries(permissions || {})
+      .filter(([, v]) => v)
+      .map(([k]) => k)
+      .join(', ');
+
+    const emailTemplate = await resolveTemplate(
+      'collaborator_added',
+      {
+        collaboratorName,
+        projectTitle,
+        addedBy,
+        projectId,
+        projectUrl: `${frontendUrl}/#/workspace/${projectId}`,
+        permissions: permLabels || 'view',
+      },
+      emailTemplates.collaboratorAdded(collaboratorName, projectTitle, addedBy, projectId, permissions)
     );
     await sendEmail(to, emailTemplate);
   }
@@ -351,13 +398,10 @@ export class EmailService {
     updatedBy: string;
   }): Promise<void> {
     const { to, memberName, projectTitle, projectId, oldRole, newRole, updatedBy } = data;
-    const emailTemplate = emailTemplates.memberRoleUpdated(
-      memberName,
-      projectTitle,
-      projectId,
-      oldRole,
-      newRole,
-      updatedBy
+    const emailTemplate = await resolveTemplate(
+      'member_role_updated',
+      { memberName, projectTitle, projectId, oldRole, newRole, updatedBy },
+      emailTemplates.memberRoleUpdated(memberName, projectTitle, projectId, oldRole, newRole, updatedBy)
     );
     await sendEmail(to, emailTemplate);
   }
@@ -374,13 +418,10 @@ export class EmailService {
     message?: string;
   }): Promise<void> {
     const { to, inviterName, videoTitle, shareUrl, permission, message } = data;
-    const emailTemplate = emailTemplates.videoShareInvitation(
-      to,
-      inviterName,
-      videoTitle,
-      shareUrl,
-      permission,
-      message
+    const emailTemplate = await resolveTemplate(
+      'video_share_invitation',
+      { to, inviterName, videoTitle, shareUrl, permission, message: message ?? '' },
+      emailTemplates.videoShareInvitation(to, inviterName, videoTitle, shareUrl, permission, message)
     );
     await sendEmail(to, emailTemplate);
   }
@@ -401,12 +442,10 @@ export class EmailService {
     const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
     const acceptUrl = `${frontendUrl}/#/accept-transfer/${token}`;
 
-    const emailTemplate = emailTemplates.ownershipTransferRequest(
-      recipientName,
-      senderName,
-      projectTitle,
-      acceptUrl,
-      expiresAt
+    const emailTemplate = await resolveTemplate(
+      'ownership_transfer_request',
+      { recipientName, senderName, projectTitle, acceptUrl, expiresAt: expiresAt.toISOString() },
+      emailTemplates.ownershipTransferRequest(recipientName, senderName, projectTitle, acceptUrl, expiresAt)
     );
     await sendEmail(to, emailTemplate);
   }
@@ -425,11 +464,10 @@ export class EmailService {
     const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
     const workspaceUrl = `${frontendUrl}/#/workspace/${projectId}`;
 
-    const emailTemplate = emailTemplates.ownershipTransferAccepted(
-      oldOwnerName,
-      newOwnerName,
-      projectTitle,
-      workspaceUrl
+    const emailTemplate = await resolveTemplate(
+      'ownership_transfer_accepted',
+      { oldOwnerName, newOwnerName, projectTitle, workspaceUrl },
+      emailTemplates.ownershipTransferAccepted(oldOwnerName, newOwnerName, projectTitle, workspaceUrl)
     );
     await sendEmail(to, emailTemplate);
   }
@@ -446,11 +484,10 @@ export class EmailService {
   }): Promise<void> {
     const { to, oldOwnerName, newOwnerName, projectTitle, reason } = data;
 
-    const emailTemplate = emailTemplates.ownershipTransferRejected(
-      oldOwnerName,
-      newOwnerName,
-      projectTitle,
-      reason
+    const emailTemplate = await resolveTemplate(
+      'ownership_transfer_rejected',
+      { oldOwnerName, newOwnerName, projectTitle, reason: reason ?? '' },
+      emailTemplates.ownershipTransferRejected(oldOwnerName, newOwnerName, projectTitle, reason)
     );
     await sendEmail(to, emailTemplate);
   }
