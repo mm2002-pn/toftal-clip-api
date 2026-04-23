@@ -397,6 +397,7 @@ const transferToGcsInBackground = async (uploadId: string, upload: Upload) => {
           videoUrl,
           status: 'PROCESSING',
           uploadedById: userId,
+          fileSize: upload.size ? BigInt(upload.size) : null,
           metadata: {
             fileSize: upload.size || 0,
             originalFileName: filename,

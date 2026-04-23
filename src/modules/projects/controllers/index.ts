@@ -801,7 +801,7 @@ export const getProjectMedia = async (req: Request, res: Response, next: NextFun
 export const addProjectMedia = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const id = String(req.params.id);
-    const { name, url, type, category } = req.body;
+    const { name, url, type, category, fileSize } = req.body;
 
     const media = await prisma.mediaResource.create({
       data: {
@@ -811,6 +811,7 @@ export const addProjectMedia = async (req: Request, res: Response, next: NextFun
         type,
         category,
         addedBy: req.user!.id,
+        fileSize: fileSize ? BigInt(fileSize) : null,
       },
     });
 

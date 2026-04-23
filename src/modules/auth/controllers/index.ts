@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import * as authService from '../services';
 import { ApiResponse } from '../../../utils/apiResponse';
 import { config } from '../../../config';
+import { auditLog } from '../../../services/auditLogger';
 
 // Cookie options - handle cross-origin in production
 const cookieOptions = {
@@ -31,6 +32,15 @@ export const register = async (
       ? 'Inscription réussie ! Vérifiez votre email pour activer votre compte.'
       : 'Inscription réussie mais l\'email de vérification n\'a pas pu être envoyé. Utilisez "Renvoyer l\'email" sur la page de connexion.';
 
+    if (result.user?.id) {
+      auditLog({
+        userId: result.user.id,
+        action: 'REGISTER',
+        ipAddress: req.ip ?? null,
+        userAgent: req.get('user-agent') ?? null,
+      });
+    }
+
     ApiResponse.created(res, {
       user: result.user,
       accessToken: result.tokens?.accessToken || null,
@@ -56,6 +66,15 @@ export const login = async (
       res.cookie('refreshToken', result.tokens.refreshToken, cookieOptions);
     }
 
+    if (result.user?.id) {
+      auditLog({
+        userId: result.user.id,
+        action: 'LOGIN',
+        ipAddress: req.ip ?? null,
+        userAgent: req.get('user-agent') ?? null,
+      });
+    }
+
     ApiResponse.success(res, {
       user: result.user,
       accessToken: result.tokens?.accessToken || null,
@@ -74,6 +93,16 @@ export const logout = async (
   try {
     // Clear refresh token cookie
     res.clearCookie('refreshToken', cookieOptions);
+
+    const userId = (req as any).user?.id;
+    if (userId) {
+      auditLog({
+        userId,
+        action: 'LOGOUT',
+        ipAddress: req.ip ?? null,
+        userAgent: req.get('user-agent') ?? null,
+      });
+    }
 
     ApiResponse.success(res, null, 'Logout successful');
   } catch (error) {

@@ -6,6 +6,7 @@ import { sendEmail, emailTemplates } from '../../../config/email';
 import { socketService } from '../../../services/socketService';
 import { extractVideoMetadata } from '../../../services/VideoMetadataService';
 import { generateVideoThumbnail } from '../../../services/VideoThumbnailService';
+import { bucket, BUCKET_NAME } from '../../../config/gcs';
 
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
 
@@ -402,7 +403,7 @@ export const validateDeliverable = async (req: Request, res: Response, next: Nex
 export const addVersion = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const id = String(req.params.id);
-    const { videoUrl, description } = req.body;
+    const { videoUrl, description, fileSize } = req.body;
 
     // Get deliverable with project info for notification
     const deliverable = await prisma.deliverable.findUnique({
@@ -443,9 +444,29 @@ export const addVersion = async (req: Request, res: Response, next: NextFunction
         videoUrl,
         description,
         uploadedById: req.user!.id,
+        fileSize: fileSize ? BigInt(fileSize) : null,
         metadata, // Save extracted metadata
       },
     });
+
+    // Fallback: if the client didn't send fileSize, query GCS for it in
+    // background so storage stats stay accurate without a backfill run.
+    if (!fileSize) {
+      setImmediate(async () => {
+        try {
+          const prefix = `https://storage.googleapis.com/${BUCKET_NAME}/`;
+          if (!videoUrl.startsWith(prefix)) return;
+          const gcsPath = decodeURIComponent(videoUrl.slice(prefix.length).split('?')[0]);
+          const [md] = await bucket.file(gcsPath).getMetadata();
+          const size = typeof md.size === 'string' ? BigInt(md.size) : BigInt(md.size ?? 0);
+          if (size > BigInt(0)) {
+            await prisma.version.update({ where: { id: version.id }, data: { fileSize: size } });
+          }
+        } catch {
+          // best-effort
+        }
+      });
+    }
 
     console.log(`✅ Version created with ID: ${version.id}, Duration: ${metadata?.duration}s`);
 
@@ -560,7 +581,7 @@ export const getVersions = async (req: Request, res: Response, next: NextFunctio
 export const addMedia = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const id = String(req.params.id);
-    const { name, url, type, category } = req.body;
+    const { name, url, type, category, fileSize } = req.body;
 
     const deliverable = await prisma.deliverable.findUnique({ where: { id } });
     if (!deliverable) throw new NotFoundError('Deliverable not found');
@@ -574,6 +595,7 @@ export const addMedia = async (req: Request, res: Response, next: NextFunction):
         type,
         category,
         addedBy: req.user!.id,
+        fileSize: fileSize ? BigInt(fileSize) : null,
       },
     });
 

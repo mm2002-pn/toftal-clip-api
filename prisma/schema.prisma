@@ -12,18 +12,18 @@ datasource db {
 enum UserRole {
   USER
   ADMIN
-  CLIENT  // Legacy - kept for backwards compatibility
-  TALENT  // Legacy - kept for backwards compatibility
+  CLIENT // Legacy - kept for backwards compatibility
+  TALENT // Legacy - kept for backwards compatibility
 }
 
 enum ProjectStatus {
-  DRAFT         // Brouillon
+  DRAFT // Brouillon
   PENDING
   MATCHING
-  IN_PROGRESS   // Production (projet actif)
+  IN_PROGRESS // Production (projet actif)
   REVIEW
-  COMPLETED     // Terminé (auto: tous livrables à 100%)
-  ARCHIVED      // Archivé (action manuelle)
+  COMPLETED // Terminé (auto: tous livrables à 100%)
+  ARCHIVED // Archivé (action manuelle)
 }
 
 enum DeliverableStatus {
@@ -114,33 +114,33 @@ enum ContentType {
 // ==================== MODELS ====================
 
 model VideoFormatSpec {
-  contentType     ContentType @id // Unique identifier
+  contentType ContentType @id // Unique identifier
 
   // Video specifications
-  minWidth        Int         @map("min_width")        // Ex: 1080
-  minHeight       Int         @map("min_height")       // Ex: 1920
-  aspectRatio     String      @map("aspect_ratio")    // Ex: "9:16", "16:9", "1:1"
+  minWidth    Int    @map("min_width") // Ex: 1080
+  minHeight   Int    @map("min_height") // Ex: 1920
+  aspectRatio String @map("aspect_ratio") // Ex: "9:16", "16:9", "1:1"
 
   // Duration specs
-  minDuration     Int         @map("min_duration")     // In seconds
-  maxDuration     Int?        @map("max_duration")     // null = unlimited
+  minDuration Int  @map("min_duration") // In seconds
+  maxDuration Int? @map("max_duration") // null = unlimited
 
   // Encoding specs
-  recommendedCodec String     @map("recommended_codec") // Ex: "H.264", "VP9"
-  recommendedBitrate Int      @map("recommended_bitrate") // kbps
+  recommendedCodec   String @map("recommended_codec") // Ex: "H.264", "VP9"
+  recommendedBitrate Int    @map("recommended_bitrate") // kbps
 
   // Metadata
-  description     String
-  label           String      // "Short Form", "Long Form", etc.
-  icon            String?     // Icon URL or emoji
+  description String
+  label       String // "Short Form", "Long Form", etc.
+  icon        String? // Icon URL or emoji
 
-  createdAt       DateTime    @default(now()) @map("created_at")
-  updatedAt       DateTime    @updatedAt @map("updated_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   // Relations
-  deliverables    Deliverable[]
-  portfolioItems  PortfolioItem[]
-  opportunities   Opportunity[]
+  deliverables   Deliverable[]
+  portfolioItems PortfolioItem[]
+  opportunities  Opportunity[]
 
   @@map("video_format_specs")
 }
@@ -167,34 +167,35 @@ model User {
   updatedAt                 DateTime      @updatedAt @map("updated_at")
 
   // Talent Mode Fields (NEW!)
-  talentModeEnabled         Boolean       @default(false) @map("talent_mode_enabled")
-  talentActivationDate      DateTime?     @map("talent_activation_date")
-  talentQuestionnaire       Json?         @map("talent_questionnaire")
+  talentModeEnabled    Boolean   @default(false) @map("talent_mode_enabled")
+  talentActivationDate DateTime? @map("talent_activation_date")
+  talentQuestionnaire  Json?     @map("talent_questionnaire")
 
   // Relations
-  clientProjects          Project[]              @relation("ClientProjects")
+  clientProjects           Project[]                  @relation("ClientProjects")
   talentModeActivationLogs TalentModeActivationLog[]
-  talentProjects          Project[]              @relation("TalentProjects")
-  ownedProjects           Project[]              @relation("OwnedProjects")
-  assignedDeliverables    Deliverable[]
-  uploadedVersions        Version[]
-  feedbacks               Feedback[]
-  resolvedFeedbacks       Feedback[]             @relation("ResolvedFeedbacks")
-  reviews                 Review[]               @relation("ReviewAuthor")
-  talentProfile           TalentProfile?
-  opportunities           Opportunity[]
-  notifications           Notification[]
-  workspaceMembers        WorkspaceMember[]
-  ownedWorkspaces         Workspace[]
-  projectMemberships      ProjectMember[]
-  sentInvitations         ProjectInvitation[]
-  accessRequests          AccessRequest[]        @relation("AccessRequests")
-  createdPublicLinks      PublicShareLink[]      @relation("PublicShareLinks")
-  createdDeliverableLinks DeliverableShareLink[] @relation("DeliverableShareLinks")
-  transferRequestsFrom    OwnershipTransferRequest[] @relation("TransferRequestsFrom")
-  transferRequestsTo      OwnershipTransferRequest[] @relation("TransferRequestsTo")
-  feedbackReads           FeedbackRead[]
-  feedbackReactions       FeedbackReaction[]
+  talentProjects           Project[]                  @relation("TalentProjects")
+  ownedProjects            Project[]                  @relation("OwnedProjects")
+  assignedDeliverables     Deliverable[]
+  uploadedVersions         Version[]
+  feedbacks                Feedback[]
+  resolvedFeedbacks        Feedback[]                 @relation("ResolvedFeedbacks")
+  reviews                  Review[]                   @relation("ReviewAuthor")
+  talentProfile            TalentProfile?
+  opportunities            Opportunity[]
+  notifications            Notification[]
+  workspaceMembers         WorkspaceMember[]
+  ownedWorkspaces          Workspace[]
+  projectMemberships       ProjectMember[]
+  sentInvitations          ProjectInvitation[]
+  accessRequests           AccessRequest[]            @relation("AccessRequests")
+  createdPublicLinks       PublicShareLink[]          @relation("PublicShareLinks")
+  createdDeliverableLinks  DeliverableShareLink[]     @relation("DeliverableShareLinks")
+  transferRequestsFrom     OwnershipTransferRequest[] @relation("TransferRequestsFrom")
+  transferRequestsTo       OwnershipTransferRequest[] @relation("TransferRequestsTo")
+  feedbackReads            FeedbackRead[]
+  feedbackReactions        FeedbackReaction[]
+  auditLogs                AuditLog[]
 
   @@map("users")
 }
@@ -220,14 +221,14 @@ model Project {
   updatedAt           DateTime      @updatedAt @map("updated_at")
 
   // Relations
-  client         User                @relation("ClientProjects", fields: [clientId], references: [id], onDelete: Cascade)
-  talent         User?               @relation("TalentProjects", fields: [talentId], references: [id], onDelete: SetNull)
-  owner          User?               @relation("OwnedProjects", fields: [ownerId], references: [id], onDelete: SetNull)
-  deliverables   Deliverable[]
-  mediaResources MediaResource[]
-  members        ProjectMember[]
-  invitations    ProjectInvitation[]
-  accessRequests   AccessRequest[]     @relation("AccessRequests")
+  client           User                       @relation("ClientProjects", fields: [clientId], references: [id], onDelete: Cascade)
+  talent           User?                      @relation("TalentProjects", fields: [talentId], references: [id], onDelete: SetNull)
+  owner            User?                      @relation("OwnedProjects", fields: [ownerId], references: [id], onDelete: SetNull)
+  deliverables     Deliverable[]
+  mediaResources   MediaResource[]
+  members          ProjectMember[]
+  invitations      ProjectInvitation[]
+  accessRequests   AccessRequest[]            @relation("AccessRequests")
   publicLinks      PublicShareLink[]
   transferRequests OwnershipTransferRequest[]
 
@@ -238,7 +239,7 @@ model Deliverable {
   id               String            @id @default(uuid())
   projectId        String            @map("project_id")
   title            String
-  type             String?           // Legacy - kept for backwards compatibility
+  type             String? // Legacy - kept for backwards compatibility
   contentType      ContentType?      @map("content_type") // New unified system
   status           DeliverableStatus @default(PREPARATION)
   progress         Int               @default(0)
@@ -279,6 +280,9 @@ model Version {
   // Video metadata
   metadata             Json? // { width, height, duration, quality, fps, bitrate }
   alternativeQualities Json? @map("alternative_qualities") // { "2K": "url", "1080p": "url" }
+
+  // File size in bytes (backfilled from GCS; populated on upload going forward).
+  fileSize BigInt? @map("file_size")
 
   uploadedAt DateTime @default(now()) @map("uploaded_at")
   createdAt  DateTime @default(now()) @map("created_at")
@@ -337,35 +341,35 @@ model Feedback {
   replyingToId   String?      @map("replying_to_id")
 
   // Voice note fields (WhatsApp-style)
-  audioUrl       String?      @map("audio_url")       // URL of audio file in GCS
-  audioDuration  Float?       @map("audio_duration")  // Duration in seconds
+  audioUrl      String? @map("audio_url") // URL of audio file in GCS
+  audioDuration Float?  @map("audio_duration") // Duration in seconds
 
   // File attachments (WhatsApp-style) - array of {name, url, type, size}
-  attachments    Json?        @default("[]")          // JSON array of attachment objects
+  attachments Json? @default("[]") // JSON array of attachment objects
 
   // Video annotation fields - position on video where comment was made
-  annotationX    Float?       @map("annotation_x") // X coordinate (0-100%) of annotation point
-  annotationY    Float?       @map("annotation_y") // Y coordinate (0-100%) of annotation point
+  annotationX Float? @map("annotation_x") // X coordinate (0-100%) of annotation point
+  annotationY Float? @map("annotation_y") // Y coordinate (0-100%) of annotation point
 
   // Vimeo-style video review features
-  timestamp      Float?       @map("timestamp")        // Video position in seconds when comment was made
-  resolved       Boolean      @default(false)          // Comment resolved status
-  resolvedAt     DateTime?    @map("resolved_at")      // When the comment was resolved
-  resolvedById   String?      @map("resolved_by_id")   // Who resolved the comment
+  timestamp    Float?    @map("timestamp") // Video position in seconds when comment was made
+  resolved     Boolean   @default(false) // Comment resolved status
+  resolvedAt   DateTime? @map("resolved_at") // When the comment was resolved
+  resolvedById String?   @map("resolved_by_id") // Who resolved the comment
 
   // Drawing annotations (Timeliner.io style) - array of DrawingShape objects
-  drawings       Json?        @default("[]")           // JSON array of drawing shapes
+  drawings Json? @default("[]") // JSON array of drawing shapes
 
-  createdAt      DateTime     @default(now()) @map("created_at")
-  editedAt       DateTime?    @map("edited_at") // WhatsApp-style: shows "Modifié" when not null
+  createdAt DateTime  @default(now()) @map("created_at")
+  editedAt  DateTime? @map("edited_at") // WhatsApp-style: shows "Modifié" when not null
 
   // Relations
-  version       Version        @relation(fields: [versionId], references: [id], onDelete: Cascade)
-  author        User?          @relation(fields: [authorId], references: [id], onDelete: Cascade) // Optional for guests
-  resolvedBy    User?          @relation("ResolvedFeedbacks", fields: [resolvedById], references: [id], onDelete: SetNull)
+  version       Version            @relation(fields: [versionId], references: [id], onDelete: Cascade)
+  author        User?              @relation(fields: [authorId], references: [id], onDelete: Cascade) // Optional for guests
+  resolvedBy    User?              @relation("ResolvedFeedbacks", fields: [resolvedById], references: [id], onDelete: SetNull)
   revisionTasks RevisionTask[]
-  replyingTo    Feedback?      @relation("FeedbackReplies", fields: [replyingToId], references: [id], onDelete: SetNull)
-  replies       Feedback[]     @relation("FeedbackReplies")
+  replyingTo    Feedback?          @relation("FeedbackReplies", fields: [replyingToId], references: [id], onDelete: SetNull)
+  replies       Feedback[]         @relation("FeedbackReplies")
   reads         FeedbackRead[]
   reactions     FeedbackReaction[]
 
@@ -431,6 +435,8 @@ model MediaResource {
   category      String?
   tags          String[] @default([]) // Tags for organization (RUSH, AUDIO, MUSIC, etc.)
   addedBy       String?  @map("added_by")
+  // File size in bytes (backfilled from GCS; populated on upload going forward).
+  fileSize      BigInt?  @map("file_size")
   dateAdded     DateTime @default(now()) @map("date_added")
   createdAt     DateTime @default(now()) @map("created_at")
 
@@ -444,23 +450,23 @@ model MediaResource {
 // ==================== TALENT MODELS ====================
 
 model TalentProfile {
-  id                String       @id @default(uuid())
-  userId            String       @unique @map("user_id")
+  id                String      @id @default(uuid())
+  userId            String      @unique @map("user_id")
   bio               String?
   tagline           String? // Phrase d'accroche professionnelle
   location          String?
-  languages         String[]     @default([])
-  skills            String[]     @default([]) // Logiciels maîtrisés (Premiere, DaVinci, etc.)
-  expertise         String[]     @default([]) // Domaines d'expertise (Color Grading, Motion Design, etc.)
-  tags              TalentTag[]  @default([]) // Tags prédéfinis (Short, Podcast, Long Form)
-  videoType         String?      @map("video_type")
-  responseTime      String?      @map("response_time")
-  rating            Float        @default(0)
-  reviewsCount      Int          @default(0) @map("reviews_count")
-  completedProjects Int          @default(0) @map("completed_projects")
-  startingPrice     String?      @map("starting_price")
-  verified          Boolean      @default(false)
-  coverImage        String?      @map("cover_image")
+  languages         String[]    @default([])
+  skills            String[]    @default([]) // Logiciels maîtrisés (Premiere, DaVinci, etc.)
+  expertise         String[]    @default([]) // Domaines d'expertise (Color Grading, Motion Design, etc.)
+  tags              TalentTag[] @default([]) // Tags prédéfinis (Short, Podcast, Long Form)
+  videoType         String?     @map("video_type")
+  responseTime      String?     @map("response_time")
+  rating            Float       @default(0)
+  reviewsCount      Int         @default(0) @map("reviews_count")
+  completedProjects Int         @default(0) @map("completed_projects")
+  startingPrice     String?     @map("starting_price")
+  verified          Boolean     @default(false)
+  coverImage        String?     @map("cover_image")
 
   // Nouveaux champs pour portfolio professionnel
   socialLinks Json? @map("social_links") // { youtube, vimeo, instagram, tiktok, website, linkedin }
@@ -479,22 +485,22 @@ model TalentProfile {
 }
 
 model PortfolioItem {
-  id         String   @id @default(uuid())
-  talentId   String   @map("talent_id")
-  title      String
-  thumbnail  String
-  videoUrl   String?  @map("video_url") // URL de la vidéo (YouTube, Vimeo, etc.)
-  type       String? // Legacy - kept for backwards compatibility
-  tag        String?  // Legacy - Tag: SHORT, PODCAST, LONG_FORM
+  id          String       @id @default(uuid())
+  talentId    String       @map("talent_id")
+  title       String
+  thumbnail   String
+  videoUrl    String?      @map("video_url") // URL de la vidéo (YouTube, Vimeo, etc.)
+  type        String? // Legacy - kept for backwards compatibility
+  tag         String? // Legacy - Tag: SHORT, PODCAST, LONG_FORM
   contentType ContentType? @map("content_type") // New unified system
-  views      String?
-  duration   String? // "12:34"
-  orderIndex Int      @default(0) @map("order_index") // Pour trier
-  createdAt  DateTime @default(now()) @map("created_at")
-  updatedAt  DateTime @updatedAt @map("updated_at")
+  views       String?
+  duration    String? // "12:34"
+  orderIndex  Int          @default(0) @map("order_index") // Pour trier
+  createdAt   DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime     @updatedAt @map("updated_at")
 
   // Relations
-  talent     TalentProfile @relation(fields: [talentId], references: [id], onDelete: Cascade)
+  talent     TalentProfile    @relation(fields: [talentId], references: [id], onDelete: Cascade)
   formatSpec VideoFormatSpec? @relation(fields: [contentType], references: [contentType])
 
   @@map("portfolio_items")
@@ -539,7 +545,7 @@ model Opportunity {
   clientId       String            @map("client_id")
   clientName     String?           @map("client_name")
   clientAvatar   String?           @map("client_avatar")
-  type           OpportunityType?  // Legacy - kept for backwards compatibility
+  type           OpportunityType? // Legacy - kept for backwards compatibility
   contentType    ContentType?      @map("content_type") // New unified system
   volume         String?
   duration       String?
@@ -553,7 +559,7 @@ model Opportunity {
   createdAt      DateTime          @default(now()) @map("created_at")
 
   // Relations
-  client       User          @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  client       User             @relation(fields: [clientId], references: [id], onDelete: Cascade)
   formatSpec   VideoFormatSpec? @relation(fields: [contentType], references: [contentType])
   applications Application[]
 
@@ -759,22 +765,22 @@ model DeliverableShareLink {
 // ==================== OWNERSHIP TRANSFER REQUEST MODEL ====================
 
 model OwnershipTransferRequest {
-  id              String    @id @default(uuid())
-  projectId       String    @map("project_id")
-  fromUserId      String    @map("from_user_id")
-  toUserId        String    @map("to_user_id")
-  token           String    @unique
-  status          String    @default("PENDING") // PENDING, ACCEPTED, REJECTED, EXPIRED, CANCELLED
-  message         String?   @db.Text
-  expiresAt       DateTime  @map("expires_at")
-  respondedAt     DateTime? @map("responded_at")
-  createdAt       DateTime  @default(now()) @map("created_at")
-  updatedAt       DateTime  @updatedAt @map("updated_at")
+  id          String    @id @default(uuid())
+  projectId   String    @map("project_id")
+  fromUserId  String    @map("from_user_id")
+  toUserId    String    @map("to_user_id")
+  token       String    @unique
+  status      String    @default("PENDING") // PENDING, ACCEPTED, REJECTED, EXPIRED, CANCELLED
+  message     String?   @db.Text
+  expiresAt   DateTime  @map("expires_at")
+  respondedAt DateTime? @map("responded_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
 
   // Relations
-  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  fromUser  User    @relation("TransferRequestsFrom", fields: [fromUserId], references: [id], onDelete: Cascade)
-  toUser    User    @relation("TransferRequestsTo", fields: [toUserId], references: [id], onDelete: Cascade)
+  project  Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  fromUser User    @relation("TransferRequestsFrom", fields: [fromUserId], references: [id], onDelete: Cascade)
+  toUser   User    @relation("TransferRequestsTo", fields: [toUserId], references: [id], onDelete: Cascade)
 
   @@index([projectId])
   @@index([token])
@@ -814,16 +820,45 @@ model BetaSignup {
 // ==================== TALENT MODE ACTIVATION LOG ====================
 
 model TalentModeActivationLog {
-  id        String   @id @default(cuid())
-  userId    String   @map("user_id")
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  action    String   // "ENABLED" | "DISABLED"
+  id            String   @id @default(cuid())
+  userId        String   @map("user_id")
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  action        String // "ENABLED" | "DISABLED"
   questionnaire Json? // Store questionnaire answers
-  ipAddress String?  @map("ip_address")
-  userAgent String?  @map("user_agent") @db.Text
-  createdAt DateTime @default(now()) @map("created_at")
+  ipAddress     String?  @map("ip_address")
+  userAgent     String?  @map("user_agent") @db.Text
+  createdAt     DateTime @default(now()) @map("created_at")
 
   @@index([userId])
   @@index([createdAt])
   @@map("talent_mode_activation_logs")
+}
+
+model FeatureFlag {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  description String?
+  enabled     Boolean  @default(false)
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@map("feature_flags")
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  userId     String   @map("user_id")
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  action     String
+  targetType String?  @map("target_type")
+  targetId   String?  @map("target_id")
+  metadata   Json?
+  ipAddress  String?  @map("ip_address")
+  userAgent  String?  @map("user_agent") @db.Text
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@index([userId, createdAt])
+  @@index([action, createdAt])
+  @@index([targetType, targetId])
+  @@map("audit_logs")
 }

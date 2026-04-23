@@ -21,6 +21,7 @@ import publicShareRoutes from '../modules/public-share/routes';
 import deliverableShareRoutes from '../modules/deliverable-share/routes';
 import betaSignupsRoutes from '../modules/beta-signups/routes';
 import tusUploadRoutes from '../modules/tus-upload/routes';
+import adminRoutes from '../modules/admin/routes';
 
 const router = Router();
 
@@ -52,6 +53,7 @@ router.get('/', (req, res) => {
         deliverableShare: '/api/v1/deliverable-share',
         betaSignups: '/api/v1/beta-signups',
         tusUpload: '/api/v1/tus',
+        admin: '/api/v1/admin',
       },
       graphql: '/graphql',
     },
@@ -79,5 +81,6 @@ router.use('/public-share', publicShareRoutes);
 router.use('/deliverable-share', deliverableShareRoutes);
 router.use('/beta-signups', betaSignupsRoutes);
 router.use('/tus', tusUploadRoutes);
+router.use('/admin', adminRoutes);
 
 export default router;

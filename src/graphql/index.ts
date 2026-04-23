@@ -11,6 +11,7 @@ import { talentTypeDefs } from './schemas/talent';
 import { opportunityTypeDefs } from './schemas/opportunity';
 import { studioTypeDefs } from './schemas/studio';
 import { mediaTypeDefs } from './schemas/media';
+import { adminTypeDefs } from './schemas/admin';
 
 // Import resolvers
 import { scalarResolvers } from './resolvers/scalars';
@@ -22,6 +23,7 @@ import { talentResolvers } from './resolvers/talent';
 import { opportunityResolvers } from './resolvers/opportunity';
 import { studioResolvers } from './resolvers/studio';
 import { mediaResolvers } from './resolvers/media';
+import { adminResolvers } from './resolvers/admin';
 
 // Merge all type definitions
 const typeDefs = mergeTypeDefs([
@@ -34,6 +36,7 @@ const typeDefs = mergeTypeDefs([
   opportunityTypeDefs,
   studioTypeDefs,
   mediaTypeDefs,
+  adminTypeDefs,
 ]);
 
 // Merge all resolvers
@@ -47,6 +50,7 @@ const resolvers = mergeResolvers([
   opportunityResolvers,
   studioResolvers,
   mediaResolvers,
+  adminResolvers,
 ]);
 
 // Create executable schema
