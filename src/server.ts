@@ -1,3 +1,10 @@
+// Serialize BigInt → string in JSON. Needed because Prisma returns BigInt for
+// Version.fileSize / MediaResource.fileSize, and res.json() would otherwise
+// throw `Do not know how to serialize a BigInt` on any endpoint returning them.
+(BigInt.prototype as any).toJSON = function () {
+  return this.toString();
+};
+
 import { createServer } from 'http';
 import { createApp } from './app';
 import { config } from './config';
