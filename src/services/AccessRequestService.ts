@@ -1,6 +1,7 @@
 import { PrismaClient } from '@prisma/client';
 import { EmailService } from './EmailService';
 import { socketService } from './socketService';
+import { cacheService } from './cacheService';
 
 export class AccessRequestService {
   constructor(
@@ -172,6 +173,8 @@ export class AccessRequestService {
     };
     socketService.emitToUser(userId, 'access-request:approved', approvedPayload);
     socketService.emitToProject(projectId, 'access-request:approved', approvedPayload);
+    // Permissions changed → cached member list is stale.
+    await cacheService.invalidateProjectMembers(projectId);
 
     console.log(`✅ Access request approved for ${request.user.email}`);
 

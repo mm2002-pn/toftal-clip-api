@@ -2,6 +2,8 @@ import { Request, Response, NextFunction } from 'express';
 import { prisma } from '../../../config/database';
 import { ApiResponse } from '../../../utils/apiResponse';
 import { auditLogFromRequest } from '../../../services/auditLogger';
+import { socketService } from '../../../services/socketService';
+import { cacheService } from '../../../services/cacheService';
 
 // OWNER is intentionally excluded — a project has a single owner (Project.ownerId)
 // and changing it goes through POST /admin/projects/:id/transfer.
@@ -105,6 +107,20 @@ export const addMember = async (req: Request, res: Response, next: NextFunction)
       metadata: { memberUserId: userId, role: effectiveRole, permissions: effectivePermissions },
     });
 
+    // Keep membership changes consistent with the regular invitation flow:
+    // join the new member's live sockets into the project room, then broadcast
+    // the event to everyone else in the room.
+    socketService.addUserToProjectRoom(userId, projectId);
+    socketService.emitToProject(projectId, 'project:member:added', {
+      projectId,
+      userId,
+      userName: member.user.name,
+      userEmail: member.user.email,
+      role: member.role,
+      addedBy: (req as any).user?.id,
+    });
+    await cacheService.invalidateProjectMembers(projectId);
+
     ApiResponse.created(res, member, 'Member added');
   } catch (error) {
     next(error);
@@ -165,6 +181,20 @@ export const updateMember = async (req: Request, res: Response, next: NextFuncti
       },
     });
 
+    // Broadcast role changes if the role actually changed — same event the
+    // /invitations route emits so frontend listeners stay unified.
+    if (data.role && data.role !== existing.role) {
+      socketService.emitToProject(projectId, 'project:member:role-updated', {
+        projectId,
+        userId: existing.user.id,
+        userName: member.user.name,
+        newRole: member.role,
+        oldRole: existing.role,
+        updatedBy: (req as any).user?.id,
+      });
+    }
+    await cacheService.invalidateProjectMembers(projectId);
+
     ApiResponse.success(res, member, 'Member updated');
   } catch (error) {
     next(error);
@@ -194,6 +224,21 @@ export const removeMember = async (req: Request, res: Response, next: NextFuncti
       targetId: projectId,
       metadata: { memberUserId: existing.user.id, email: existing.user.email, role: existing.role },
     });
+
+    // Notify the removed user on their personal room (they just left the
+    // project room so room broadcast wouldn't reach them), then broadcast
+    // to remaining project members, then drop the user's sockets from
+    // the project room.
+    const removedPayload = {
+      projectId,
+      userId: existing.user.id,
+      userName: (existing as any).user?.email ?? '',
+      removedBy: (req as any).user?.id,
+    };
+    socketService.emitToUser(existing.user.id, 'project:member:removed', removedPayload);
+    socketService.emitToProject(projectId, 'project:member:removed', removedPayload);
+    socketService.removeUserFromProjectRoom(existing.user.id, projectId);
+    await cacheService.invalidateProjectMembers(projectId);
 
     ApiResponse.success(res, null, 'Member removed');
   } catch (error) {

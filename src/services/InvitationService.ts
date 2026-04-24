@@ -3,6 +3,7 @@ import crypto from 'crypto';
 import { EmailService } from './EmailService';
 import { PermissionService } from './PermissionService';
 import { socketService } from './socketService';
+import { cacheService } from './cacheService';
 
 interface CreateInvitationData {
   projectId: string;
@@ -397,6 +398,16 @@ export class InvitationService {
 
       return { invitation: updatedInvitation, member: projectMember };
     });
+
+    // Invalidate the cached members list for this project — GET
+    // /projects/:id/members caches 5 min, which is why the ShareDrawer / UI
+    // appeared stale after acceptance until TTL expiry or a backend restart.
+    await cacheService.invalidateProjectMembers(invitation.projectId);
+
+    // The acceptor wasn't in this project's room before — join their live
+    // sockets so they (a) receive the member:added event for themselves and
+    // (b) get future project-scoped events without waiting for reconnect.
+    socketService.addUserToProjectRoom(result.member.userId, invitation.projectId);
 
     // Emit real-time notification to project members
     const memberAddedPayload = {

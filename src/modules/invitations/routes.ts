@@ -5,6 +5,7 @@ import { InvitationService } from '../../services/InvitationService';
 import { EmailService } from '../../services/EmailService';
 import { PermissionService } from '../../services/PermissionService';
 import { socketService } from '../../services/socketService';
+import { cacheService } from '../../services/cacheService';
 import { authenticate } from '../../middlewares/auth';
 import { requireProjectOwner, requireProjectAccess } from '../../middlewares/permissions';
 
@@ -462,6 +463,7 @@ router.patch(
 
       socketService.emitToUser(memberId, 'project:member:role-updated', roleUpdatePayload);
       socketService.emitToProject(projectId, 'project:member:role-updated', roleUpdatePayload);
+      await cacheService.invalidateProjectMembers(projectId);
       console.log(`📡 Emitted project:member:role-updated event for user ${memberId}`);
 
       res.json({
@@ -527,6 +529,10 @@ router.delete(
         socketService.emitToUser(memberId, 'project:member:removed', memberRemovedPayload);
         // Notify other project members
         socketService.emitToProject(projectId, 'project:member:removed', memberRemovedPayload);
+        // Take the removed user out of the project room so their tabs stop
+        // receiving that project's events immediately.
+        socketService.removeUserFromProjectRoom(memberId, projectId);
+        await cacheService.invalidateProjectMembers(projectId);
         console.log(`📡 Emitted project:member:removed event for user ${memberId}`);
       }
 

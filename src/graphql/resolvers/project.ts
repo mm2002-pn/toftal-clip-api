@@ -1,8 +1,14 @@
 import { prisma } from '../../config/database';
+import { assertProjectReadAccess } from '../helpers/authz';
 
 export const projectResolvers = {
   Query: {
     project: async (_: any, { id }: { id: string }, context: any) => {
+      // IDOR guard — without this, any authenticated user can fetch any
+      // project by id. Admins bypass; everyone else must be owner / client /
+      // talent / ProjectMember.
+      await assertProjectReadAccess(id, context.user);
+
       const project = await prisma.project.findUnique({
         where: { id },
         include: {
@@ -32,6 +38,12 @@ export const projectResolvers = {
       return project;
     },
     projects: async (_: any, { filter, sort, pagination }: any, context: any) => {
+      // Listing every project in the system is admin-only. Regular users must
+      // use `myProjects`, which already scopes to the caller.
+      if (!context.user || context.user.role !== 'ADMIN') {
+        throw new Error('Access denied: admin-only query');
+      }
+
       const page = pagination?.page || 1;
       const limit = pagination?.limit || 10;
       const skip = (page - 1) * limit;

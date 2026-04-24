@@ -5,6 +5,7 @@ import IORedis from 'ioredis';
 import jwt from 'jsonwebtoken';
 import { config } from '../config';
 import { logger } from '../utils/logger';
+import { prisma } from '../config/database';
 
 // Socket.io event types
 export type SocketEvent =
@@ -268,7 +269,39 @@ class SocketService {
       socket.join(`user:${userId}`);
       console.log(`[SOCKET] Socket ${socket.id} joined personal room: user:${userId}`);
 
-      // Handle joining project rooms
+      // Auto-join every project room the user belongs to. Without this, events
+      // emitted to `project:{id}` (member added/removed, status changes, etc.)
+      // would only reach clients that have visited that project's workspace
+      // this session — so the /projects list would stay stale until manual
+      // refresh. Fire-and-forget: client-side `join:project` below is the
+      // fallback if this DB lookup fails.
+      prisma.project
+        .findMany({
+          where: {
+            OR: [
+              { ownerId: userId },
+              { members: { some: { userId } } },
+            ],
+            deletedAt: null,
+          },
+          select: { id: true },
+        })
+        .then((rows) => {
+          rows.forEach((p) => socket.join(`project:${p.id}`));
+          logger.debug(
+            `[SOCKET] auto-joined ${rows.length} project rooms for user ${userId}`
+          );
+        })
+        .catch((err) => {
+          logger.warn(
+            `[SOCKET] auto-join project rooms failed for user ${userId}: ${
+              (err as Error)?.message ?? err
+            }`
+          );
+        });
+
+      // Handle joining project rooms (idempotent — client still emits this
+      // from useProjectRoom for projects created/joined during the session).
       socket.on('join:project', (projectId: string) => {
         socket.join(`project:${projectId}`);
         console.log(`[SOCKET] Socket ${socket.id} (user: ${userId}) joined project:${projectId}`);
@@ -370,6 +403,36 @@ class SocketService {
     console.log(`[SOCKET EMIT] Emitting ${event} to project:${projectId} (${socketCount} sockets in room)`, data);
     this.io.to(`project:${projectId}`).emit(event, data);
     logger.debug(`Emitted ${event} to project:${projectId}`);
+  }
+
+  // Make every currently-connected socket of `userId` join the project room.
+  // Used when a user is added to a project mid-session — their existing tabs
+  // must start receiving project-scoped events without reconnecting. Safe to
+  // call when the user isn't connected (no-op).
+  addUserToProjectRoom(userId: string, projectId: string): void {
+    if (!this.io) return;
+    const socketIds = this.userSockets.get(userId);
+    if (!socketIds || socketIds.size === 0) return;
+    socketIds.forEach((sid) => {
+      this.io!.sockets.sockets.get(sid)?.join(`project:${projectId}`);
+    });
+    logger.debug(
+      `[SOCKET] added user ${userId} (${socketIds.size} sockets) to project:${projectId}`
+    );
+  }
+
+  // Symmetric with addUserToProjectRoom — called when a user is removed from a
+  // project so their tabs stop receiving that project's events.
+  removeUserFromProjectRoom(userId: string, projectId: string): void {
+    if (!this.io) return;
+    const socketIds = this.userSockets.get(userId);
+    if (!socketIds || socketIds.size === 0) return;
+    socketIds.forEach((sid) => {
+      this.io!.sockets.sockets.get(sid)?.leave(`project:${projectId}`);
+    });
+    logger.debug(
+      `[SOCKET] removed user ${userId} (${socketIds.size} sockets) from project:${projectId}`
+    );
   }
 
   // Emit to multiple users

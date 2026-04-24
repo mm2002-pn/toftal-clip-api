@@ -364,16 +364,23 @@ export const changePassword = async (
   });
 };
 
-// Forgot password - send OTP email
+// Forgot password - send OTP email.
+// Contract: the response is identical whether or not the email exists, and
+// whether or not the email actually sent successfully. This endpoint must
+// NEVER leak account existence — otherwise it becomes an enumeration oracle.
 export const forgotPassword = async (email: string): Promise<{ message: string }> => {
+  const GENERIC_RESPONSE = {
+    message: 'Si un compte correspond à cet email, vous recevrez un code OTP.',
+  };
+
   const user = await prisma.user.findUnique({
     where: { email },
   });
 
   if (!user) {
-    // Don't reveal if email exists
+    // No account — log internally only, return the same generic response.
     console.log('ℹ️ Forgot password requested for non-existent email:', email);
-    return { message: 'Si cet email existe, un code OTP a été envoyé' };
+    return GENERIC_RESPONSE;
   }
 
   // Generate OTP (6 digits)
@@ -390,17 +397,19 @@ export const forgotPassword = async (email: string): Promise<{ message: string }
   });
 
   // Send OTP via email — DB template (password_reset_otp) overrides hardcoded.
+  // If the send fails we log it and swallow: surfacing the failure would tell
+  // an attacker "this email exists, but the mail layer broke" vs the silent
+  // 200 they get for unknown addresses — same enumeration oracle.
   try {
     const db = await renderEmailFromDB('password_reset_otp', { name: user.name, otp });
     const fallback = emailTemplates.forgotPassword(user.name, otp);
     await sendEmail(email, db ? { subject: db.subject, html: db.html, text: fallback.text } : fallback);
     console.log(`✅ Password reset OTP sent to ${email}`);
   } catch (error) {
-    console.error('❌ Failed to send OTP email:', error);
-    throw new BadRequestError('Failed to send OTP email. Please try again.');
+    console.error('❌ Failed to send OTP email (swallowed to avoid enumeration):', error);
   }
 
-  return { message: 'Si cet email existe, un code OTP a été envoyé' };
+  return GENERIC_RESPONSE;
 };
 
 // Verify OTP and allow password reset
@@ -409,11 +418,10 @@ export const verifyOtp = async (email: string, otp: string): Promise<{ resetToke
     where: { email },
   });
 
-  if (!user) {
-    throw new NotFoundError('User not found');
-  }
-
-  if (!user.passwordResetOtp || user.passwordResetOtp !== otp) {
+  // Same error for "account doesn't exist", "no OTP pending", and "wrong OTP".
+  // A distinct 404 here would let an attacker enumerate valid accounts by
+  // calling this endpoint with any OTP.
+  if (!user || !user.passwordResetOtp || user.passwordResetOtp !== otp) {
     throw new UnauthorizedError('Code OTP invalide');
   }
 
@@ -444,11 +452,10 @@ export const resetPassword = async (email: string, resetToken: string, newPasswo
     where: { email },
   });
 
-  if (!user) {
-    throw new NotFoundError('User not found');
-  }
-
-  if (!user.passwordResetToken || user.passwordResetToken !== resetToken) {
+  // Same error for "account doesn't exist", "no reset pending", and "wrong
+  // token". Distinguishing them here would turn this endpoint into an
+  // account-enumeration oracle.
+  if (!user || !user.passwordResetToken || user.passwordResetToken !== resetToken) {
     throw new UnauthorizedError('Lien de réinitialisation invalide');
   }
 

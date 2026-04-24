@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { authLimiter } from '../../../middlewares/rateLimiter';
+import { authLimiter, loginLimiter } from '../../../middlewares/rateLimiter';
 import { authenticate } from '../../../middlewares/auth';
 import { validate } from '../../../middlewares/validate';
 import * as authController from '../controllers';
@@ -15,10 +15,14 @@ import {
 
 const router = Router();
 
-// Public routes (with rate limiting)
+// Public routes.
+// - /login + /google: loginLimiter counts only FAILED attempts per (IP+email)
+//   and blocks after 10 (prod) / 15 (dev) with a 429 "Trop de tentatives".
+// - Other auth endpoints: authLimiter — less strict, covers registration /
+//   OTP / password reset abuse.
 router.post('/register', authLimiter, validate(registerValidation), authController.register);
-router.post('/login', authLimiter, validate(loginValidation), authController.login);
-router.post('/google', authLimiter, validate(googleAuthValidation), authController.googleAuth);
+router.post('/login', loginLimiter, validate(loginValidation), authController.login);
+router.post('/google', loginLimiter, validate(googleAuthValidation), authController.googleAuth);
 router.post('/refresh', authController.refreshToken);
 router.post('/verify-email', validate(verifyEmailValidation), authController.verifyEmail);
 router.post('/resend-verification', authLimiter, validate(resendVerificationValidation), authController.resendVerification);
