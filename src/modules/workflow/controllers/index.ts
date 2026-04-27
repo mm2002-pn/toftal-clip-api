@@ -2,12 +2,47 @@ import { Request, Response, NextFunction } from 'express';
 import { prisma } from '../../../config/database';
 import { ApiResponse } from '../../../utils/apiResponse';
 
+// Compare phase titles by their normalized form (trim + lowercase) so
+// "Tournage" and "  tournage " count as duplicates. We keep the original
+// casing in DB for display.
+const normalizeTitle = (s: string) => s.trim().toLowerCase();
+
+// Suggest "Title (2)", "Title (3)", … until we hit one that doesn't collide.
+// Cap at 100 attempts to avoid pathological loops.
+const suggestAlternativeTitle = (base: string, existingTitles: Set<string>): string => {
+  const trimmed = base.trim();
+  for (let i = 2; i <= 100; i++) {
+    const candidate = `${trimmed} (${i})`;
+    if (!existingTitles.has(normalizeTitle(candidate))) return candidate;
+  }
+  return `${trimmed} (${Date.now()})`;
+};
+
 export const createPhase = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { deliverableId, title } = req.body;
 
+    // Reject duplicate phase names within the same deliverable. We surface a
+    // suggested alternative ("Tournage (2)") so the client can prefill the
+    // input rather than ask the user to invent something.
+    const siblings = await prisma.workflowPhase.findMany({
+      where: { deliverableId },
+      select: { title: true },
+    });
+    const existing = new Set(siblings.map((p) => normalizeTitle(p.title)));
+    if (existing.has(normalizeTitle(title))) {
+      const suggestion = suggestAlternativeTitle(title, existing);
+      ApiResponse.error(
+        res,
+        'Une phase avec ce nom existe déjà. Choisissez un nom différent.',
+        409,
+        [{ code: 'PHASE_TITLE_DUPLICATE', suggestedTitle: suggestion }]
+      );
+      return;
+    }
+
     const phase = await prisma.workflowPhase.create({
-      data: { deliverableId, title },
+      data: { deliverableId, title: title.trim() },
       include: { tasks: true },
     });
 
@@ -22,9 +57,40 @@ export const updatePhase = async (req: Request, res: Response, next: NextFunctio
     const id = String(req.params.id);
     const { title, status, assignedTo } = req.body;
 
+    // When renaming, ensure the new title doesn't collide with another phase
+    // of the same deliverable. The phase being updated is excluded from the
+    // check so a no-op rename still succeeds.
+    if (typeof title === 'string' && title.trim().length > 0) {
+      const current = await prisma.workflowPhase.findUnique({
+        where: { id },
+        select: { deliverableId: true },
+      });
+      if (current) {
+        const siblings = await prisma.workflowPhase.findMany({
+          where: { deliverableId: current.deliverableId, NOT: { id } },
+          select: { title: true },
+        });
+        const existing = new Set(siblings.map((p) => normalizeTitle(p.title)));
+        if (existing.has(normalizeTitle(title))) {
+          const suggestion = suggestAlternativeTitle(title, existing);
+          ApiResponse.error(
+            res,
+            'Une phase avec ce nom existe déjà. Choisissez un nom différent.',
+            409,
+            [{ code: 'PHASE_TITLE_DUPLICATE', suggestedTitle: suggestion }]
+          );
+          return;
+        }
+      }
+    }
+
     const phase = await prisma.workflowPhase.update({
       where: { id },
-      data: { title, status, assignedTo },
+      data: {
+        title: typeof title === 'string' ? title.trim() : undefined,
+        status,
+        assignedTo,
+      },
     });
 
     ApiResponse.success(res, phase, 'Phase updated');

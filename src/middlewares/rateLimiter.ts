@@ -1,4 +1,4 @@
-import rateLimit from 'express-rate-limit';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import { config } from '../config';
 import { ApiResponse } from '../utils/apiResponse';
 
@@ -46,9 +46,12 @@ export const loginLimiter = rateLimit({
   skipSuccessfulRequests: true,
   // Key by IP + email so attacking two accounts doesn't exhaust a shared
   // counter, and one compromised network can't lock everyone out.
+  // Use ipKeyGenerator to normalise IPv6 (collapse to /64 prefix) — without
+  // it, an IPv6 attacker can rotate suffixes and bypass the limiter
+  // (express-rate-limit v8 ERR_ERL_KEY_GEN_IPV6).
   keyGenerator: (req) => {
     const email = String(req.body?.email || '').toLowerCase().trim();
-    const ip = req.ip || 'unknown';
+    const ip = ipKeyGenerator(req.ip || 'unknown');
     return `${ip}:${email}`;
   },
   handler: (_req, res) => {
