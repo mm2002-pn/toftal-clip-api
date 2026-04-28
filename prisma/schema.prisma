@@ -196,6 +196,7 @@ model User {
   feedbackReads            FeedbackRead[]
   feedbackReactions        FeedbackReaction[]
   auditLogs                AuditLog[]
+  deviceTokens             UserDeviceToken[]
 
   @@map("users")
 }
@@ -892,4 +893,22 @@ model AuditLog {
   @@index([action, createdAt])
   @@index([targetType, targetId])
   @@map("audit_logs")
+}
+
+// FCM device tokens for web push notifications. One row per device/browser.
+// `token` is the FCM registration token (globally unique) so we can upsert by
+// it — that way reinstalling on the same browser under a different account
+// reassigns the token to the new user instead of duplicating rows.
+model UserDeviceToken {
+  id         String   @id @default(uuid())
+  userId     String   @map("user_id")
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token      String   @unique
+  platform   String   @default("web") // "web" | "ios" | "android"
+  userAgent  String?  @map("user_agent") @db.Text
+  lastSeenAt DateTime @default(now()) @map("last_seen_at")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@map("user_device_tokens")
 }

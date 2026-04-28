@@ -22,6 +22,7 @@ import deliverableShareRoutes from '../modules/deliverable-share/routes';
 import betaSignupsRoutes from '../modules/beta-signups/routes';
 import tusUploadRoutes from '../modules/tus-upload/routes';
 import adminRoutes from '../modules/admin/routes';
+import deviceTokensRoutes from '../modules/device-tokens/routes';
 
 const router = Router();
 
@@ -54,6 +55,7 @@ router.get('/', (req, res) => {
         betaSignups: '/api/v1/beta-signups',
         tusUpload: '/api/v1/tus',
         admin: '/api/v1/admin',
+        deviceTokens: '/api/v1/device-tokens',
       },
       graphql: '/graphql',
     },
@@ -82,5 +84,6 @@ router.use('/deliverable-share', deliverableShareRoutes);
 router.use('/beta-signups', betaSignupsRoutes);
 router.use('/tus', tusUploadRoutes);
 router.use('/admin', adminRoutes);
+router.use('/device-tokens', deviceTokensRoutes);
 
 export default router;

@@ -6,6 +6,7 @@ import jwt from 'jsonwebtoken';
 import { config } from '../config';
 import { logger } from '../utils/logger';
 import { prisma } from '../config/database';
+import { sendPushToUser } from './pushNotificationService';
 
 // Socket.io event types
 export type SocketEvent =
@@ -388,6 +389,23 @@ class SocketService {
     console.log(`[SOCKET EMIT] Emitting ${event} to user:${userId} (connected: ${isConnected})`, data);
     this.io.to(`user:${userId}`).emit(event, data);
     logger.debug(`Emitted ${event} to user:${userId}`);
+
+    // Mirror new notifications to FCM so users get OS-level pushes even when
+    // the tab is closed. We piggyback on the existing socket emit point so
+    // every controller that creates a notification automatically triggers a
+    // push — no need to touch all 20+ callsites. Fire-and-forget; failures
+    // are swallowed inside sendPushToUser.
+    if (event === 'notification:new' && data && typeof data === 'object') {
+      const n = data as any;
+      console.log(`[PUSH-HOOK] notification:new intercepted for user ${userId}, firing push`);
+      void sendPushToUser(userId, {
+        title: n.title || 'Toftal Clip',
+        body: n.message || undefined,
+        link: n.link || '/',
+        tag: n.type ? `notif-${n.type}` : undefined,
+        notificationId: n.id || undefined,
+      });
+    }
   }
 
   // Emit to all users in a project
