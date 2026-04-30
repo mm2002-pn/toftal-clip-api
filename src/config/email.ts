@@ -1453,6 +1453,93 @@ L'équipe Toftal Clip
     };
   },
 
+  // Member permissions updated - sent when only permissions change (no role change)
+  memberPermissionsUpdated: (
+    memberName: string,
+    projectTitle: string,
+    projectId: string,
+    oldPermissions: { view: boolean; edit: boolean; comment: boolean; approve: boolean },
+    newPermissions: { view: boolean; edit: boolean; comment: boolean; approve: boolean },
+    updatedBy: string
+  ) => {
+    const PERM_LABELS: Record<string, string> = {
+      view: 'Voir',
+      comment: 'Commenter',
+      edit: 'Modifier',
+      approve: 'Approuver',
+    };
+
+    const renderPerms = (perms: { view: boolean; edit: boolean; comment: boolean; approve: boolean }) =>
+      (['view', 'comment', 'edit', 'approve'] as const)
+        .map((k) => `${perms[k] ? '✅' : '❌'} ${PERM_LABELS[k]}`)
+        .join(' · ');
+
+    const oldStr = renderPerms(oldPermissions);
+    const newStr = renderPerms(newPermissions);
+
+    return {
+      subject: `Vos permissions ont changé - ${projectTitle}`,
+      html: emailWrapper(`
+      <h2 style="color: #FAFAFA; margin: 0 0 16px 0; font-size: 24px;">Bonjour ${memberName} !</h2>
+
+      <p style="color: #A1A1AA; font-size: 16px; line-height: 1.6; margin: 0 0 24px 0;">
+        ${updatedBy} a modifié vos permissions sur le projet <strong style="color: #FAFAFA;">"${projectTitle}"</strong>.
+      </p>
+
+      <!-- Permissions Change Box -->
+      <div style="background: linear-gradient(135deg, rgba(233, 30, 99, 0.1) 0%, rgba(194, 24, 91, 0.05) 100%); border: 1px solid rgba(233, 30, 99, 0.2); border-radius: 12px; padding: 24px; margin: 24px 0;">
+        <div style="margin-bottom: 16px;">
+          <span style="color: #71717A; font-size: 12px; text-transform: uppercase; font-weight: 600;">Anciennes permissions</span>
+          <p style="color: #A1A1AA; font-size: 14px; margin: 4px 0 0 0;">${oldStr}</p>
+        </div>
+        <div style="height: 1px; background-color: rgba(233, 30, 99, 0.2); margin: 16px 0;"></div>
+        <div>
+          <span style="color: #E91E63; font-size: 12px; text-transform: uppercase; font-weight: 600;">Nouvelles permissions</span>
+          <p style="color: #FAFAFA; font-size: 14px; font-weight: 600; margin: 4px 0 0 0;">${newStr}</p>
+        </div>
+      </div>
+
+      <p style="color: #A1A1AA; font-size: 14px; line-height: 1.6; margin: 24px 0;">
+        Vos nouvelles permissions sont maintenant actives.
+      </p>
+
+      <!-- Button -->
+      <table width="100%" cellpadding="0" cellspacing="0">
+        <tr>
+          <td align="center" style="padding: 24px 0;">
+            <a href="${config.frontendUrl}/#/workspace/${projectId}" style="display: inline-block; background: linear-gradient(135deg, #E91E63 0%, #C2185B 100%); color: white; text-decoration: none; padding: 16px 48px; border-radius: 8px; font-weight: 600; font-size: 16px;">
+              Accéder au Projet
+            </a>
+          </td>
+        </tr>
+      </table>
+
+      <p style="color: #A1A1AA; font-size: 14px; line-height: 1.6; margin: 24px 0 0 0;">
+        Bonne collaboration ! 🚀<br>
+        <span style="color: #71717A;">L'équipe Toftal Clip</span>
+      </p>
+    `, 'Permissions modifiées', '🔐'),
+      text: `
+Bonjour ${memberName} !
+
+${updatedBy} a modifié vos permissions sur le projet "${projectTitle}".
+
+ANCIENNES PERMISSIONS
+${oldStr}
+
+NOUVELLES PERMISSIONS
+${newStr}
+
+Vos nouvelles permissions sont maintenant actives.
+
+Accéder au projet: ${config.frontendUrl}/#/workspace/${projectId}
+
+Bonne collaboration !
+L'équipe Toftal Clip
+      `,
+    };
+  },
+
   // Ownership transfer request - sent to recipient to confirm transfer
   ownershipTransferRequest: (
     recipientName: string,

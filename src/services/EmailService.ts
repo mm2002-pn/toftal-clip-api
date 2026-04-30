@@ -511,6 +511,51 @@ export class EmailService {
   }
 
   /**
+   * Send member permissions updated email — used when permissions change but
+   * the role doesn't (the role-update template would render an empty/wrong
+   * role-change block in that case).
+   */
+  async sendMemberPermissionsUpdatedEmail(data: {
+    to: string;
+    memberName: string;
+    projectTitle: string;
+    projectId: string;
+    oldPermissions: { view: boolean; edit: boolean; comment: boolean; approve: boolean };
+    newPermissions: { view: boolean; edit: boolean; comment: boolean; approve: boolean };
+    updatedBy: string;
+  }): Promise<void> {
+    const { to, memberName, projectTitle, projectId, oldPermissions, newPermissions, updatedBy } = data;
+
+    // Pre-render the perm strings so DB-template authors can use simple
+    // {{oldPermissionsLabel}} / {{newPermissionsLabel}} placeholders without
+    // implementing per-key formatting in mustache.
+    const PERM_LABELS: Record<string, string> = {
+      view: 'Voir',
+      comment: 'Commenter',
+      edit: 'Modifier',
+      approve: 'Approuver',
+    };
+    const renderPerms = (perms: { view: boolean; edit: boolean; comment: boolean; approve: boolean }) =>
+      (['view', 'comment', 'edit', 'approve'] as const)
+        .map((k) => `${perms[k] ? '✅' : '❌'} ${PERM_LABELS[k]}`)
+        .join(' · ');
+
+    const emailTemplate = await resolveTemplate(
+      'member_permissions_updated',
+      {
+        memberName,
+        projectTitle,
+        projectId,
+        oldPermissionsLabel: renderPerms(oldPermissions),
+        newPermissionsLabel: renderPerms(newPermissions),
+        updatedBy,
+      },
+      emailTemplates.memberPermissionsUpdated(memberName, projectTitle, projectId, oldPermissions, newPermissions, updatedBy)
+    );
+    await sendEmail(to, emailTemplate);
+  }
+
+  /**
    * Send video share invitation email
    */
   async sendVideoShareInvitationEmail(data: {

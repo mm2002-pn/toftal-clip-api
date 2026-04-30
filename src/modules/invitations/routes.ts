@@ -437,12 +437,24 @@ router.patch(
         select: { name: true },
       });
 
-      // Send email notification — only when the role actually changed.
-      // The same endpoint also handles permissions-only updates (sent by the
-      // ShareDrawer dropdown), in which case `role` is undefined; sending the
-      // role-change email there would render "Votre rôle a changé" with no
-      // new role to display, and leave `{{newRole}}` literal in the body.
+      // Send email notification. Two distinct emails depending on what changed:
+      //  - Role changed (with or without permissions change) → "rôle modifié"
+      //  - Permissions only changed → "permissions modifiées"
+      // We avoid the role-change email when only permissions change because
+      // the role-change template renders "Ancien rôle → Nouveau rôle" and
+      // would leave `{{newRole}}` literal in the body otherwise.
       const roleActuallyChanged = !!role && role !== currentMember.role;
+      const PERM_KEYS = ['view', 'edit', 'comment', 'approve'] as const;
+      const normalizePerms = (p: any) => ({
+        view: !!p?.view,
+        edit: !!p?.edit,
+        comment: !!p?.comment,
+        approve: !!p?.approve,
+      });
+      const oldPerms = normalizePerms(currentMember.permissions);
+      const newPerms = permissions ? normalizePerms(permissions) : oldPerms;
+      const permsActuallyChanged = !!permissions && PERM_KEYS.some((k) => oldPerms[k] !== newPerms[k]);
+
       if (project && updater && roleActuallyChanged) {
         await emailService.sendMemberRoleUpdatedEmail({
           to: updatedMember.user.email,
@@ -451,6 +463,16 @@ router.patch(
           projectId,
           oldRole: currentMember.role,
           newRole: role,
+          updatedBy: updater.name,
+        });
+      } else if (project && updater && permsActuallyChanged) {
+        await emailService.sendMemberPermissionsUpdatedEmail({
+          to: updatedMember.user.email,
+          memberName: updatedMember.user.name,
+          projectTitle: project.title,
+          projectId,
+          oldPermissions: oldPerms,
+          newPermissions: newPerms,
           updatedBy: updater.name,
         });
       }

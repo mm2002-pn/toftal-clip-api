@@ -154,6 +154,50 @@ const DEFS: TemplateDef[] = [
     build: () => emailTemplates.memberRoleUpdated(v('memberName'), v('projectTitle'), v('projectId'), v('oldRole'), v('newRole'), v('updatedBy')),
   },
   {
+    name: 'member_permissions_updated',
+    description: "Mise à jour des permissions d'un membre (rôle inchangé)",
+    variables: ['memberName', 'projectTitle', 'projectId', 'oldPermissionsLabel', 'newPermissionsLabel', 'updatedBy'],
+    // The hardcoded template formats permissions client-side as a string
+    // ("✅ Voir · ❌ Modifier · …"). At runtime the EmailService pre-renders
+    // those strings and passes them as variables, so the DB-template just
+    // needs single placeholders rather than per-key checks. We seed by
+    // calling the hardcoded template with sentinel boolean structs and
+    // splice the rendered permission strings out for placeholders.
+    build: () => {
+      const SENTINEL_OLD = { view: true, edit: false, comment: false, approve: false };
+      const SENTINEL_NEW = { view: true, edit: true, comment: true, approve: true };
+      const out = emailTemplates.memberPermissionsUpdated(
+        v('memberName'),
+        v('projectTitle'),
+        v('projectId'),
+        SENTINEL_OLD,
+        SENTINEL_NEW,
+        v('updatedBy')
+      );
+      const PERM_LABELS: Record<string, string> = {
+        view: 'Voir',
+        comment: 'Commenter',
+        edit: 'Modifier',
+        approve: 'Approuver',
+      };
+      const renderPerms = (perms: { view: boolean; edit: boolean; comment: boolean; approve: boolean }) =>
+        (['view', 'comment', 'edit', 'approve'] as const)
+          .map((k) => `${perms[k] ? '✅' : '❌'} ${PERM_LABELS[k]}`)
+          .join(' · ');
+      const oldStr = renderPerms(SENTINEL_OLD);
+      const newStr = renderPerms(SENTINEL_NEW);
+      // Replace newStr first — newStr is a superset and would otherwise be
+      // partially clobbered by the oldStr replace.
+      const swap = (s: string) =>
+        s.split(newStr).join(v('newPermissionsLabel')).split(oldStr).join(v('oldPermissionsLabel'));
+      return {
+        subject: swap(out.subject),
+        html: swap(out.html),
+        text: swap(out.text),
+      };
+    },
+  },
+  {
     name: 'video_share_invitation',
     description: 'Partage d\'une vidéo via lien',
     variables: ['recipientName', 'senderName', 'projectTitle', 'deliverableTitle', 'shareUrl', 'message'],
