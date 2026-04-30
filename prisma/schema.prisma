@@ -220,6 +220,13 @@ model Project {
   clientId            String        @map("client_id")
   talentId            String?       @map("talent_id")
   type                ProjectType   @default(PERSONAL)
+  // INVARIANT: ownerId can become an "orphan" pointer after US-TEAM-09 —
+  // when a user is removed from an org, we delete their ProjectMember rows
+  // on team projects but intentionally leave Project.owner_id alone (per
+  // spec: "Ses vidéos et projets restent dans l'équipe sans propriétaire,
+  // réattribution manuelle"). The project then has no active accessor: the
+  // ex-owner has no membership row, and the team admins haven't been added
+  // either. V2 will add a "reassign ownership" admin action to fix this.
   ownerId             String?       @map("owner_id")
   // NULL = personal project. Set = the project lives in this organisation's
   // team space. The org admin chooses what to put there (or it's set
