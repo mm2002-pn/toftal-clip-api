@@ -23,6 +23,7 @@ import betaSignupsRoutes from '../modules/beta-signups/routes';
 import tusUploadRoutes from '../modules/tus-upload/routes';
 import adminRoutes from '../modules/admin/routes';
 import deviceTokensRoutes from '../modules/device-tokens/routes';
+import organizationsRoutes from '../modules/organizations/routes';
 
 const router = Router();
 
@@ -56,6 +57,7 @@ router.get('/', (req, res) => {
         tusUpload: '/api/v1/tus',
         admin: '/api/v1/admin',
         deviceTokens: '/api/v1/device-tokens',
+        organizations: '/api/v1/organizations',
       },
       graphql: '/graphql',
     },
@@ -85,5 +87,6 @@ router.use('/beta-signups', betaSignupsRoutes);
 router.use('/tus', tusUploadRoutes);
 router.use('/admin', adminRoutes);
 router.use('/device-tokens', deviceTokensRoutes);
+router.use('/organizations', organizationsRoutes);
 
 export default router;

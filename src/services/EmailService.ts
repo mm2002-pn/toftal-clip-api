@@ -32,6 +32,22 @@ interface SendInvitationEmailData {
   message?: string;
 }
 
+interface SendTeamInvitationEmailData {
+  to: string;
+  teamName: string;
+  inviterName: string;
+  invitationToken: string;
+}
+
+interface SendTeamMemberNotifyEmailData {
+  to: string;
+  ownerName: string;
+  memberName: string;
+  memberEmail: string;
+  teamName: string;
+  addToProjectUrl: string;
+}
+
 export class EmailService {
   /**
    * Send project invitation email
@@ -60,6 +76,94 @@ export class EmailService {
       emailTemplates.projectInvitation(to, projectTitle, inviterName, invitationUrl, message)
     );
 
+    await sendEmail(to, emailTemplate);
+  }
+
+  /**
+   * Send team (organisation) invitation email. Lands the user on the same
+   * /accept-invitation route as project invites — the route resolver will
+   * inspect the token and figure out which type it is.
+   */
+  async sendTeamInvitationEmail(data: SendTeamInvitationEmailData): Promise<void> {
+    const { to, teamName, inviterName, invitationToken } = data;
+
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+    const invitationUrl = `${frontendUrl}/#/accept-invitation?token=${invitationToken}&type=team`;
+
+    const emailTemplate = await resolveTemplate(
+      'team_invitation',
+      { email: to, teamName, inviterName, invitationUrl },
+      emailTemplates.teamInvitation(to, teamName, inviterName, invitationUrl)
+    );
+
+    await sendEmail(to, emailTemplate);
+  }
+
+  /**
+   * Notify the team admin/owner that a new member has joined the team. Sent
+   * automatically when an invitation is accepted (US-TEAM-04).
+   */
+  async sendTeamMemberJoinedEmail(data: SendTeamMemberNotifyEmailData): Promise<void> {
+    const { to, ownerName, memberName, memberEmail, teamName, addToProjectUrl } = data;
+    const emailTemplate = await resolveTemplate(
+      'team_member_joined',
+      { ownerName, memberName, memberEmail, teamName, addToProjectUrl },
+      emailTemplates.teamMemberJoined(ownerName, memberName, memberEmail, teamName, addToProjectUrl)
+    );
+    await sendEmail(to, emailTemplate);
+  }
+
+  /**
+   * Notify a user that they were removed from a team (US-TEAM-09). Sent
+   * after the OrganizationMember row is deleted. Best-effort — failure to
+   * send must not roll back the removal.
+   */
+  async sendTeamMemberRemovedEmail(
+    to: string,
+    memberName: string,
+    teamName: string,
+    ownerName: string
+  ): Promise<void> {
+    const emailTemplate = await resolveTemplate(
+      'team_member_removed',
+      { memberName, teamName, ownerName },
+      emailTemplates.teamMemberRemoved(memberName, teamName, ownerName)
+    );
+    await sendEmail(to, emailTemplate);
+  }
+
+  /**
+   * Notify a user that they were just granted access to a project (US-TEAM-06
+   * direct-add flow). Different from the invitation email — there's no token
+   * to accept; the membership row is already created.
+   */
+  async sendProjectAccessGrantedEmail(
+    to: string,
+    memberName: string,
+    ownerName: string,
+    projectTitle: string,
+    permissionLabel: string,
+    workspaceUrl: string
+  ): Promise<void> {
+    const emailTemplate = await resolveTemplate(
+      'project_access_granted',
+      { memberName, ownerName, projectTitle, permissionLabel, workspaceUrl },
+      emailTemplates.projectAccessGranted(memberName, ownerName, projectTitle, permissionLabel, workspaceUrl)
+    );
+    await sendEmail(to, emailTemplate);
+  }
+
+  /**
+   * Notify the team admin/owner that a member is asking to be added to a
+   * project. Triggered manually by the member from the empty-state CTA.
+   */
+  async sendTeamMemberRequestsAccessEmail(data: SendTeamMemberNotifyEmailData): Promise<void> {
+    const { to, ownerName, memberName, memberEmail, teamName, addToProjectUrl } = data;
+    const emailTemplate = await resolveTemplate(
+      'team_member_requests_access',
+      { ownerName, memberName, memberEmail, teamName, addToProjectUrl },
+      emailTemplates.teamMemberRequestsAccess(ownerName, memberName, memberEmail, teamName, addToProjectUrl)
+    );
     await sendEmail(to, emailTemplate);
   }
 

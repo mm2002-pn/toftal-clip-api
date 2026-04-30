@@ -451,6 +451,217 @@ export const emailTemplates = {
     `,
   }),
 
+  teamInvitation: (email: string, teamName: string, inviterName: string, invitationUrl: string) => ({
+    subject: `${inviterName} vous invite à rejoindre "${teamName}" sur Toftal Clip`,
+    html: emailWrapper(`
+      <h2 style="color: #FAFAFA; margin: 0 0 16px 0; font-size: 24px;">Bonjour !</h2>
+      <p style="color: #A1A1AA; font-size: 16px; line-height: 1.6; margin: 0 0 24px 0;">
+        <strong style="color: #FAFAFA;">${inviterName}</strong> vous invite à rejoindre son équipe sur Toftal Clip.
+      </p>
+
+      <div style="background-color: #18181B; border-radius: 12px; padding: 24px; margin-bottom: 24px; border: 1px solid #27272A;">
+        <span style="color: #71717A; font-size: 12px; text-transform: uppercase;">Équipe</span>
+        <p style="color: #FAFAFA; font-size: 20px; font-weight: 600; margin: 4px 0 0 0;">${teamName}</p>
+      </div>
+
+      <p style="color: #A1A1AA; font-size: 14px; line-height: 1.6; margin: 0 0 24px 0;">
+        Cliquez sur le bouton ci-dessous pour accepter l'invitation et collaborer avec votre équipe.
+      </p>
+
+      <table width="100%" cellpadding="0" cellspacing="0">
+        <tr>
+          <td align="center" style="padding: 24px 0;">
+            <a href="${invitationUrl}" style="display: inline-block; background: linear-gradient(135deg, #E91E63 0%, #C2185B 100%); color: white; text-decoration: none; padding: 16px 48px; border-radius: 8px; font-weight: 600; font-size: 16px;">
+              Rejoindre l'équipe
+            </a>
+          </td>
+        </tr>
+      </table>
+
+      <p style="color: #71717A; font-size: 12px; line-height: 1.6; margin: 24px 0 0 0;">
+        Ce lien expire dans <strong style="color: #A1A1AA;">30 jours</strong>.
+      </p>
+
+      <div style="margin-top: 32px; padding: 16px; background-color: #18181B; border-radius: 8px; border: 1px solid #27272A;">
+        <p style="color: #71717A; font-size: 12px; margin: 0 0 8px 0;">
+          Si le bouton ne fonctionne pas, copiez ce lien :
+        </p>
+        <p style="color: #E91E63; font-size: 12px; word-break: break-all; margin: 0;">
+          ${invitationUrl}
+        </p>
+      </div>
+    `, 'Invitation à une équipe', '👥'),
+    text: `
+      Bonjour !
+
+      ${inviterName} vous invite à rejoindre son équipe "${teamName}" sur Toftal Clip.
+
+      Cliquez sur le lien ci-dessous pour accepter l'invitation :
+      ${invitationUrl}
+
+      Ce lien expire dans 30 jours.
+
+      - L'équipe Toftal Clip
+    `,
+  }),
+
+  teamMemberJoined: (
+    ownerName: string,
+    memberName: string,
+    memberEmail: string,
+    teamName: string,
+    addToProjectUrl: string
+  ) => ({
+    subject: `${memberName} a rejoint l'équipe "${teamName}"`,
+    html: emailWrapper(`
+      <h2 style="color: #FAFAFA; margin: 0 0 16px 0; font-size: 24px;">Salut ${ownerName} !</h2>
+      <p style="color: #A1A1AA; font-size: 16px; line-height: 1.6; margin: 0 0 24px 0;">
+        <strong style="color: #FAFAFA;">${memberName}</strong> (${memberEmail}) vient de rejoindre votre équipe sur Toftal Clip.
+      </p>
+
+      <div style="background-color: #18181B; border-radius: 12px; padding: 24px; margin-bottom: 24px; border: 1px solid #27272A;">
+        <span style="color: #71717A; font-size: 12px; text-transform: uppercase;">Équipe</span>
+        <p style="color: #FAFAFA; font-size: 20px; font-weight: 600; margin: 4px 0 0 0;">${teamName}</p>
+      </div>
+
+      <p style="color: #A1A1AA; font-size: 14px; line-height: 1.6; margin: 0 0 24px 0;">
+        Pour qu'iel puisse commencer à collaborer, ajoutez-le à un projet.
+      </p>
+
+      <table width="100%" cellpadding="0" cellspacing="0">
+        <tr>
+          <td align="center" style="padding: 24px 0;">
+            <a href="${addToProjectUrl}" style="display: inline-block; background: linear-gradient(135deg, #E91E63 0%, #C2185B 100%); color: white; text-decoration: none; padding: 16px 48px; border-radius: 8px; font-weight: 600; font-size: 16px;">
+              Ajouter à un projet
+            </a>
+          </td>
+        </tr>
+      </table>
+    `, 'Nouveau membre', '🎉'),
+    text: `
+      Salut ${ownerName} !
+
+      ${memberName} (${memberEmail}) vient de rejoindre votre équipe "${teamName}" sur Toftal Clip.
+
+      Pour qu'iel puisse commencer à collaborer, ajoutez-le à un projet :
+      ${addToProjectUrl}
+
+      - L'équipe Toftal Clip
+    `,
+  }),
+
+  projectAccessGranted: (
+    memberName: string,
+    ownerName: string,
+    projectTitle: string,
+    permissionLabel: string,
+    workspaceUrl: string
+  ) => ({
+    subject: `${ownerName} vous a ajouté au projet "${projectTitle}"`,
+    html: emailWrapper(`
+      <h2 style="color: #FAFAFA; margin: 0 0 16px 0; font-size: 24px;">Salut ${memberName} !</h2>
+      <p style="color: #A1A1AA; font-size: 16px; line-height: 1.6; margin: 0 0 24px 0;">
+        <strong style="color: #FAFAFA;">${ownerName}</strong> vous a ajouté au projet
+        <strong style="color: #FAFAFA;">${projectTitle}</strong> en tant que
+        <strong style="color: #FAFAFA;">${permissionLabel}</strong>.
+      </p>
+
+      <p style="color: #A1A1AA; font-size: 14px; line-height: 1.6; margin: 0 0 24px 0;">
+        Vous pouvez accéder au projet depuis votre espace équipe.
+      </p>
+
+      <table width="100%" cellpadding="0" cellspacing="0">
+        <tr>
+          <td align="center" style="padding: 24px 0;">
+            <a href="${workspaceUrl}" style="display: inline-block; background: linear-gradient(135deg, #E91E63 0%, #C2185B 100%); color: white; text-decoration: none; padding: 16px 48px; border-radius: 8px; font-weight: 600; font-size: 16px;">
+              Ouvrir le projet
+            </a>
+          </td>
+        </tr>
+      </table>
+    `, 'Accès accordé', '🎬'),
+    text: `
+      Salut ${memberName} !
+
+      ${ownerName} vous a ajouté au projet "${projectTitle}" en tant que ${permissionLabel}.
+
+      Ouvrir : ${workspaceUrl}
+
+      - L'équipe Toftal Clip
+    `,
+  }),
+
+  teamMemberRemoved: (
+    memberName: string,
+    teamName: string,
+    ownerName: string
+  ) => ({
+    subject: `Vous avez été retiré de l'équipe "${teamName}"`,
+    html: emailWrapper(`
+      <h2 style="color: #FAFAFA; margin: 0 0 16px 0; font-size: 24px;">Bonjour ${memberName},</h2>
+      <p style="color: #A1A1AA; font-size: 16px; line-height: 1.6; margin: 0 0 24px 0;">
+        ${ownerName} a retiré votre accès à l'équipe
+        <strong style="color: #FAFAFA;">${teamName}</strong> sur Toftal Clip.
+      </p>
+
+      <p style="color: #A1A1AA; font-size: 14px; line-height: 1.6; margin: 0 0 24px 0;">
+        Vous n'avez plus accès aux projets de cette équipe. Vos commentaires et
+        contributions restent visibles dans les projets.
+      </p>
+
+      <p style="color: #71717A; font-size: 12px; line-height: 1.6; margin: 24px 0 0 0;">
+        Si vous pensez qu'il s'agit d'une erreur, contactez l'administrateur de l'équipe.
+      </p>
+    `, "Retiré d'une équipe", '👋'),
+    text: `
+      Bonjour ${memberName},
+
+      ${ownerName} a retiré votre accès à l'équipe "${teamName}" sur Toftal Clip.
+
+      Vous n'avez plus accès aux projets de cette équipe. Vos commentaires et
+      contributions restent visibles dans les projets.
+
+      - L'équipe Toftal Clip
+    `,
+  }),
+
+  teamMemberRequestsAccess: (
+    ownerName: string,
+    memberName: string,
+    memberEmail: string,
+    teamName: string,
+    addToProjectUrl: string
+  ) => ({
+    subject: `${memberName} attend d'être ajouté à un projet de "${teamName}"`,
+    html: emailWrapper(`
+      <h2 style="color: #FAFAFA; margin: 0 0 16px 0; font-size: 24px;">Salut ${ownerName} !</h2>
+      <p style="color: #A1A1AA; font-size: 16px; line-height: 1.6; margin: 0 0 24px 0;">
+        <strong style="color: #FAFAFA;">${memberName}</strong> (${memberEmail}) a rejoint l'équipe
+        <strong style="color: #FAFAFA;">${teamName}</strong> mais n'a encore accès à aucun projet. Iel
+        attend que vous l'ajoutiez à un projet pour commencer à collaborer.
+      </p>
+
+      <table width="100%" cellpadding="0" cellspacing="0">
+        <tr>
+          <td align="center" style="padding: 24px 0;">
+            <a href="${addToProjectUrl}" style="display: inline-block; background: linear-gradient(135deg, #E91E63 0%, #C2185B 100%); color: white; text-decoration: none; padding: 16px 48px; border-radius: 8px; font-weight: 600; font-size: 16px;">
+              Ajouter à un projet
+            </a>
+          </td>
+        </tr>
+      </table>
+    `, 'Demande d\'accès', '🔔'),
+    text: `
+      Salut ${ownerName} !
+
+      ${memberName} (${memberEmail}) a rejoint l'équipe "${teamName}" et attend d'être ajouté à un projet.
+
+      Ajoutez-le ici : ${addToProjectUrl}
+
+      - L'équipe Toftal Clip
+    `,
+  }),
+
   verification: (name: string, verificationUrl: string) => ({
     subject: 'Vérifiez votre email - Toftal Clip',
     html: emailWrapper(`

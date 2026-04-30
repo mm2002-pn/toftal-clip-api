@@ -27,6 +27,7 @@ export type SocketEvent =
   | 'project:member:added'
   | 'project:member:removed'
   | 'project:member:role-updated'
+  | 'org:member:removed'
   | 'deliverable:status'
   | 'deliverable:assigned'
   | 'deliverable:assignment:accepted'

@@ -13,9 +13,30 @@ const emailService = new EmailService();
 // Create project (now supports V2 with type and ownerId)
 export const createProject = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const { title, startDate, deadline, brief, talentId, type = 'PERSONAL', deliverables, collaboratorIds = [], collaborators = [], status = 'DRAFT' } = req.body;
+    const { title, startDate, deadline, brief, talentId, type = 'PERSONAL', deliverables, collaboratorIds = [], collaborators = [], status = 'DRAFT', organizationId } = req.body;
     const userId = req.user!.id;
     const userRole = req.user!.role;
+
+    // If the caller passed an organizationId (= they're creating in team
+    // mode), validate they're an active admin of that org. Anything else
+    // would let a user attach a project to a team they don't belong to.
+    let scopedOrgId: string | null = null;
+    if (typeof organizationId === 'string' && organizationId.length > 0) {
+      const adminMembership = await prisma.organizationMember.findFirst({
+        where: {
+          organizationId,
+          userId,
+          role: 'ADMIN',
+          status: 'ACTIVE',
+        },
+        select: { id: true },
+      });
+      if (!adminMembership) {
+        ApiResponse.forbidden(res, "Vous n'êtes pas administrateur de cette équipe.");
+        return;
+      }
+      scopedOrgId = organizationId;
+    }
 
     const project = await prisma.project.create({
       data: {
@@ -23,6 +44,7 @@ export const createProject = async (req: Request, res: Response, next: NextFunct
         clientId: userId, // Default to current user
         talentId,
         ownerId: userId, // Set owner as current user
+        organizationId: scopedOrgId,
         type: type || 'PERSONAL',
         status: status as any, // DRAFT or IN_PROGRESS
         startDate: startDate ? new Date(startDate) : null,
@@ -856,6 +878,179 @@ export const getProjectMembers = async (req: Request, res: Response, next: NextF
     await cacheService.set(cacheKey, members, CACHE_TTL.MEDIUM);
 
     ApiResponse.success(res, members, 'Project members fetched successfully');
+  } catch (error) {
+    next(error);
+  }
+};
+
+// Add a team member to a project directly (US-TEAM-06). Skips the invitation
+// flow — the member is already trusted (they joined the team), so the owner
+// just picks them from the annuaire and assigns a role.
+export const addTeamMemberToProject = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const callerId = req.user!.id;
+    const projectId = String(req.params.id);
+    const { userId, permission } = req.body as { userId?: string; permission?: string };
+
+    if (!userId || typeof userId !== 'string') {
+      ApiResponse.badRequest(res, 'userId requis.');
+      return;
+    }
+    const allowed: Array<'view' | 'comment' | 'download'> = ['view', 'comment', 'download'];
+    const perm = (typeof permission === 'string' ? permission : 'view') as 'view' | 'comment' | 'download';
+    if (!allowed.includes(perm)) {
+      ApiResponse.badRequest(res, 'Permission invalide.');
+      return;
+    }
+
+    // Project ownership is enforced by the route's requireProjectOwner middleware.
+    const project = await prisma.project.findUnique({
+      where: { id: projectId },
+      select: { id: true, title: true, ownerId: true, clientId: true },
+    });
+    if (!project) {
+      ApiResponse.notFound(res, 'Projet introuvable.');
+      return;
+    }
+
+    // The target user must share at least one organisation with the caller,
+    // and the caller must be ADMIN of that org. Prevents adding random users
+    // through the team-member endpoint.
+    const sharedOrg = await prisma.organizationMember.findFirst({
+      where: {
+        userId: callerId,
+        role: 'ADMIN',
+        status: 'ACTIVE',
+        organization: {
+          members: {
+            some: { userId, status: 'ACTIVE' },
+          },
+        },
+      },
+      select: { organizationId: true },
+    });
+    if (!sharedOrg) {
+      ApiResponse.forbidden(res, "Cet utilisateur n'appartient pas à votre équipe.");
+      return;
+    }
+
+    // Map permission → permissions JSON. Same shape used by InvitationService
+    // when accepting a project invitation, so the rest of the app already
+    // knows how to read it.
+    let permissions: Record<string, boolean>;
+    switch (perm) {
+      case 'download':
+        permissions = { view: true, edit: true, comment: true, approve: true };
+        break;
+      case 'comment':
+        permissions = { view: true, edit: false, comment: true, approve: false };
+        break;
+      case 'view':
+      default:
+        permissions = { view: true, edit: false, comment: false, approve: false };
+        break;
+    }
+
+    const membership = await prisma.projectMember.upsert({
+      where: { projectId_userId: { projectId, userId } },
+      create: {
+        projectId,
+        userId,
+        role: 'COLLABORATOR',
+        permissions,
+      },
+      update: {
+        // Don't downgrade an OWNER to COLLABORATOR — odd state, refuse.
+        role: 'COLLABORATOR',
+        permissions,
+      },
+      include: {
+        user: { select: { id: true, name: true, email: true, avatarUrl: true } },
+      },
+    });
+
+    // Invalidate the cached project members list so subsequent reads see the
+    // new member without waiting for the TTL.
+    try {
+      await cacheService.invalidateProjectMembers(projectId);
+    } catch {
+      /* non-fatal */
+    }
+
+    // Join the new member's live sockets to the project room so they receive
+    // future events without waiting for a reconnect.
+    socketService.addUserToProjectRoom(userId, projectId);
+
+    // Fetched once and reused: needed for the socket payload (addedByName)
+    // and for the in-app/email notifications below.
+    const callerUser = await prisma.user.findUnique({
+      where: { id: callerId },
+      select: { name: true },
+    });
+
+    // Real-time event so the ShareDrawer "Utilisateurs avec accès" list of
+    // every connected user updates instantly. The payload mirrors what the
+    // DeliverableListPage's addMemberLocal expects (id + user + permissions)
+    // so it can append the row to project.members without a re-fetch — the
+    // avatar group on the header reflects the new member immediately.
+    socketService.emitToProject(projectId, 'project:member:added', {
+      projectId,
+      id: membership.id,
+      userId: membership.userId,
+      userName: membership.user.name,
+      userEmail: membership.user.email,
+      user: membership.user,
+      role: membership.role,
+      permissions: membership.permissions,
+      addedBy: callerId,
+      addedByName: callerUser?.name,
+    });
+    const permLabel = perm === 'download' ? 'Éditeur' : perm === 'comment' ? 'Commentateur' : 'Lecteur';
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+
+    try {
+      const notification = await prisma.notification.create({
+        data: {
+          userId,
+          type: 'PROJECT_ACCESS_GRANTED',
+          title: 'Ajouté à un projet',
+          message: `${callerUser?.name || 'Un administrateur'} vous a ajouté au projet "${project.title}" (${permLabel})`,
+          link: `/workspace/${project.id}`,
+        },
+      });
+      socketService.emitToUser(userId, 'notification:new', notification);
+    } catch (notifErr) {
+      console.error('[ADD_TEAM_MEMBER_TO_PROJECT] notification failed (non-fatal):', notifErr);
+    }
+
+    try {
+      await emailService.sendProjectAccessGrantedEmail(
+        membership.user.email,
+        membership.user.name,
+        callerUser?.name || 'Un administrateur',
+        project.title,
+        permLabel,
+        `${frontendUrl}/#/workspace/${project.id}`
+      );
+    } catch (mailErr) {
+      console.error('[ADD_TEAM_MEMBER_TO_PROJECT] email failed (non-fatal):', mailErr);
+    }
+
+    ApiResponse.success(
+      res,
+      {
+        id: membership.id,
+        userId: membership.userId,
+        role: membership.role,
+        permissions: membership.permissions,
+        user: membership.user,
+      },
+      'Membre ajouté au projet'
+    );
   } catch (error) {
     next(error);
   }

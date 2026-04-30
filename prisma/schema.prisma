@@ -111,6 +111,16 @@ enum ContentType {
   THUMBNAIL
 }
 
+enum OrganizationMemberRole {
+  ADMIN
+  MEMBER
+}
+
+enum OrganizationMemberStatus {
+  ACTIVE
+  PENDING
+}
+
 // ==================== MODELS ====================
 
 model VideoFormatSpec {
@@ -186,6 +196,9 @@ model User {
   notifications            Notification[]
   workspaceMembers         WorkspaceMember[]
   ownedWorkspaces          Workspace[]
+  organizationMemberships  OrganizationMember[]
+  ownedOrganizations       Organization[]
+  teamInvitationsSent      TeamInvitation[]
   projectMemberships       ProjectMember[]
   sentInvitations          ProjectInvitation[]
   accessRequests           AccessRequest[]            @relation("AccessRequests")
@@ -208,6 +221,10 @@ model Project {
   talentId            String?       @map("talent_id")
   type                ProjectType   @default(PERSONAL)
   ownerId             String?       @map("owner_id")
+  // NULL = personal project. Set = the project lives in this organisation's
+  // team space. The org admin chooses what to put there (or it's set
+  // automatically when a team member is added — see addTeamMemberToProject).
+  organizationId      String?       @map("organization_id")
   status              ProjectStatus @default(DRAFT)
   startDate           DateTime?     @map("start_date")
   deadline            DateTime?
@@ -225,6 +242,7 @@ model Project {
   client           User                       @relation("ClientProjects", fields: [clientId], references: [id], onDelete: Cascade)
   talent           User?                      @relation("TalentProjects", fields: [talentId], references: [id], onDelete: SetNull)
   owner            User?                      @relation("OwnedProjects", fields: [ownerId], references: [id], onDelete: SetNull)
+  organization     Organization?              @relation(fields: [organizationId], references: [id], onDelete: SetNull)
   deliverables     Deliverable[]
   mediaResources   MediaResource[]
   members          ProjectMember[]
@@ -233,6 +251,7 @@ model Project {
   publicLinks      PublicShareLink[]
   transferRequests OwnershipTransferRequest[]
 
+  @@index([organizationId])
   @@map("projects")
 }
 
@@ -646,6 +665,69 @@ model WorkspaceMember {
 
   @@unique([workspaceId, userId])
   @@map("workspace_members")
+}
+
+// ==================== ORGANIZATION MODELS ====================
+
+model Organization {
+  id          String   @id @default(uuid())
+  name        String
+  slug        String   @unique
+  logoUrl     String?  @map("logo_url")
+  createdById String   @map("created_by_id")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  createdBy   User                 @relation(fields: [createdById], references: [id], onDelete: Cascade)
+  members     OrganizationMember[]
+  invitations TeamInvitation[]
+  projects    Project[]
+
+  @@map("organizations")
+}
+
+model OrganizationMember {
+  id             String                   @id @default(uuid())
+  organizationId String                   @map("organization_id")
+  userId         String                   @map("user_id")
+  role           OrganizationMemberRole   @default(MEMBER)
+  status         OrganizationMemberStatus @default(ACTIVE)
+  jobLabel       String?                  @map("job_label")
+  joinedAt       DateTime                 @default(now()) @map("joined_at")
+
+  // Relations
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, userId])
+  @@index([organizationId])
+  @@index([userId])
+  @@map("organization_members")
+}
+
+model TeamInvitation {
+  id             String           @id @default(uuid())
+  organizationId String           @map("organization_id")
+  invitedById    String           @map("invited_by_id")
+  email          String
+  token          String           @unique
+  status         InvitationStatus @default(PENDING)
+  expiresAt      DateTime         @map("expires_at")
+  acceptedAt     DateTime?        @map("accepted_at")
+  refusedAt      DateTime?        @map("refused_at")
+  refusalReason  String?          @map("refusal_reason") @db.Text
+  createdAt      DateTime         @default(now()) @map("created_at")
+
+  // Relations
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  invitedBy    User         @relation(fields: [invitedById], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([email])
+  @@index([token])
+  @@index([status])
+  @@map("team_invitations")
 }
 
 // ==================== PROJECT COLLABORATION MODELS ====================

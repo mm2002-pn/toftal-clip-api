@@ -149,6 +149,17 @@ export const projectResolvers = {
       }
 
       if (filter?.status) where.status = filter.status;
+      // Org scope filter — implements the Solo / Team workspace split.
+      //   filter.organizationId === 'PERSONAL'  → only projects with NULL org (Solo)
+      //   filter.organizationId === '<uuid>'    → only projects of that team
+      //   filter.organizationId omitted          → both (legacy "everything" behaviour)
+      if (typeof filter?.organizationId === 'string') {
+        if (filter.organizationId === 'PERSONAL') {
+          where.organizationId = null;
+        } else {
+          where.organizationId = filter.organizationId;
+        }
+      }
 
       const [data, total] = await Promise.all([
         prisma.project.findMany({
