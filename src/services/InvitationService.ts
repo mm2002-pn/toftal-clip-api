@@ -419,6 +419,24 @@ export class InvitationService {
       addedBy: invitation.inviterUserId,
     };
     socketService.emitToProject(invitation.projectId, 'project:member:added', memberAddedPayload);
+
+    // Also fan out the event to every existing project member's personal
+    // user room. Without this, members who aren't currently inside the
+    // project room (e.g. browsing /projects) miss the update — their
+    // ProjectContext only refreshes when they navigate back. Sending to
+    // their user room means it works regardless of which page they're on.
+    try {
+      const allMembers = await this.prisma.projectMember.findMany({
+        where: { projectId: invitation.projectId },
+        select: { userId: true },
+      });
+      for (const m of allMembers) {
+        if (m.userId === result.member.userId) continue; // acceptor already added to room
+        socketService.emitToUser(m.userId, 'project:member:added', memberAddedPayload);
+      }
+    } catch (fanoutErr) {
+      console.error('[ACCEPT_INVITATION] member fanout failed (non-fatal):', fanoutErr);
+    }
     console.log(`📡 [ACCEPT_INVITATION] Emitted project:member:added event`);
 
     // Send email to talent/owner that client has accepted and is doing onboarding

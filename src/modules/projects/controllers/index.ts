@@ -997,7 +997,7 @@ export const addTeamMemberToProject = async (
     // DeliverableListPage's addMemberLocal expects (id + user + permissions)
     // so it can append the row to project.members without a re-fetch — the
     // avatar group on the header reflects the new member immediately.
-    socketService.emitToProject(projectId, 'project:member:added', {
+    const memberAddedPayload = {
       projectId,
       id: membership.id,
       userId: membership.userId,
@@ -1008,7 +1008,26 @@ export const addTeamMemberToProject = async (
       permissions: membership.permissions,
       addedBy: callerId,
       addedByName: callerUser?.name,
-    });
+    };
+    socketService.emitToProject(projectId, 'project:member:added', memberAddedPayload);
+
+    // Fan out to every project member's personal user room so their
+    // ProjectContext on /projects refreshes immediately, even if they're
+    // not currently inside the project room. Same pattern as
+    // InvitationService.acceptInvitation — fixes the case where the owner
+    // browsing /projects didn't see the new card-member-count update.
+    try {
+      const allMembers = await prisma.projectMember.findMany({
+        where: { projectId },
+        select: { userId: true },
+      });
+      for (const m of allMembers) {
+        if (m.userId === membership.userId) continue;
+        socketService.emitToUser(m.userId, 'project:member:added', memberAddedPayload);
+      }
+    } catch (fanoutErr) {
+      console.error('[ADD_TEAM_MEMBER_TO_PROJECT] fanout failed (non-fatal):', fanoutErr);
+    }
     const permLabel = perm === 'download' ? 'Éditeur' : perm === 'comment' ? 'Commentateur' : 'Lecteur';
     const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
 
