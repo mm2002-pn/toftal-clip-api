@@ -146,8 +146,12 @@ const DEFS: TemplateDef[] = [
   {
     name: 'member_role_updated',
     description: 'Mise à jour du rôle d\'un membre',
-    variables: ['memberName', 'projectTitle', 'updatedBy', 'projectId', 'oldRole', 'newRole'],
-    build: () => emailTemplates.memberRoleUpdated(v('memberName'), v('projectTitle'), v('updatedBy'), v('projectId'), v('oldRole'), v('newRole')),
+    variables: ['memberName', 'projectTitle', 'projectId', 'oldRole', 'newRole', 'updatedBy'],
+    // Argument order MUST match the function signature in config/email.ts —
+    // (memberName, projectTitle, projectId, oldRole, newRole, updatedBy).
+    // Earlier seed had updatedBy and projectId swapped, which produced the
+    // bug where "Ancien rôle" rendered the project UUID instead of the role.
+    build: () => emailTemplates.memberRoleUpdated(v('memberName'), v('projectTitle'), v('projectId'), v('oldRole'), v('newRole'), v('updatedBy')),
   },
   {
     name: 'video_share_invitation',

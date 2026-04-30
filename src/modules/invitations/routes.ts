@@ -437,8 +437,13 @@ router.patch(
         select: { name: true },
       });
 
-      // Send email notification
-      if (project && updater) {
+      // Send email notification — only when the role actually changed.
+      // The same endpoint also handles permissions-only updates (sent by the
+      // ShareDrawer dropdown), in which case `role` is undefined; sending the
+      // role-change email there would render "Votre rôle a changé" with no
+      // new role to display, and leave `{{newRole}}` literal in the body.
+      const roleActuallyChanged = !!role && role !== currentMember.role;
+      if (project && updater && roleActuallyChanged) {
         await emailService.sendMemberRoleUpdatedEmail({
           to: updatedMember.user.email,
           memberName: updatedMember.user.name,
@@ -448,7 +453,6 @@ router.patch(
           newRole: role,
           updatedBy: updater.name,
         });
-        console.log(`📧 Role update email sent to ${updatedMember.user.email}`);
       }
 
       // Emit real-time notification
