@@ -445,6 +445,12 @@ export const acceptTeamInvitation = async (
       });
     });
 
+    // Auto-join the new member's currently-open tabs to the org room so they
+    // receive realtime team events (project:new, etc.) without having to
+    // reconnect. No-op if the user has no open socket on this instance —
+    // their next reconnect will auto-join via the connection handler.
+    socketService.addUserToOrgRoom(userId, invitation.organizationId);
+
     // Notify the org admin(s) — in-app + email per spec. Failures are logged
     // but don't fail the acceptance (the member is in, the host can be told
     // later if needed).
@@ -798,6 +804,12 @@ export const removeOrganizationMember = async (
       }),
       prisma.organizationMember.delete({ where: { id: target.id } }),
     ]);
+
+    // Drop the user's tabs out of the org room — without this they'd keep
+    // receiving project:new events for a team they no longer belong to until
+    // their next reconnect. Done before the notification so by the time the
+    // org:member:removed event fires, the room is already clean.
+    socketService.removeUserFromOrgRoom(target.user.id, orgId);
 
     // In-app + socket notification + email to the removed user. All
     // best-effort: the OrganizationMember row is already deleted, failures

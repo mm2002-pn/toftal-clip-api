@@ -190,14 +190,29 @@ export const createProject = async (req: Request, res: Response, next: NextFunct
 
       // Emit real-time notification to talent
       socketService.emitToUser(talentId, 'notification:new', notification);
+    }
 
-      // Emit project:new event to talent
-      socketService.emitToUser(talentId, 'project:new', {
-        id: project.id,
-        title: project.title,
-        clientId: project.clientId,
-        talentId: project.talentId,
-      });
+    // Realtime fan-out for project:new
+    //
+    // - Team workspace (organizationId set): broadcast to every connected
+    //   member of the org so their /projects list updates without a refresh.
+    //   This is the bug the team reported: in prod (multi-instance) other
+    //   admins had to reload to see a teammate's new project. The Redis
+    //   adapter (REDIS_TCP_URL) ensures the room reaches every replica.
+    // - Personal project: keep the legacy behaviour and notify only the
+    //   assigned talent. Owner already gets the project via the API response
+    //   + optimistic insert in ProjectContext.createProjectFromApi.
+    const projectNewPayload = {
+      id: project.id,
+      title: project.title,
+      clientId: project.clientId,
+      talentId: project.talentId,
+      organizationId: scopedOrgId,
+    };
+    if (scopedOrgId) {
+      socketService.emitToOrg(scopedOrgId, 'project:new', projectNewPayload);
+    } else if (talentId) {
+      socketService.emitToUser(talentId, 'project:new', projectNewPayload);
     }
 
     ApiResponse.created(res, project, 'Project created successfully');
