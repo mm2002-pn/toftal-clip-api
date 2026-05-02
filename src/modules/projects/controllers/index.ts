@@ -202,6 +202,10 @@ export const createProject = async (req: Request, res: Response, next: NextFunct
     // - Personal project: keep the legacy behaviour and notify only the
     //   assigned talent. Owner already gets the project via the API response
     //   + optimistic insert in ProjectContext.createProjectFromApi.
+    // - External talent on a team project: the talent isn't necessarily a
+    //   member of the org, so emitting to org alone would miss them. We do a
+    //   secondary emit to the talent's user room — only when needed (talent
+    //   set AND not already in the org room) to avoid double delivery.
     const projectNewPayload = {
       id: project.id,
       title: project.title,
@@ -211,6 +215,19 @@ export const createProject = async (req: Request, res: Response, next: NextFunct
     };
     if (scopedOrgId) {
       socketService.emitToOrg(scopedOrgId, 'project:new', projectNewPayload);
+      if (talentId) {
+        const talentInOrg = await prisma.organizationMember.findFirst({
+          where: {
+            organizationId: scopedOrgId,
+            userId: talentId,
+            status: 'ACTIVE',
+          },
+          select: { id: true },
+        });
+        if (!talentInOrg) {
+          socketService.emitToUser(talentId, 'project:new', projectNewPayload);
+        }
+      }
     } else if (talentId) {
       socketService.emitToUser(talentId, 'project:new', projectNewPayload);
     }
