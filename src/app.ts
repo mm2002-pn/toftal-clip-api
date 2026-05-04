@@ -51,6 +51,12 @@ const corsOptions = {
     // Share-link auth: GraphQL requests from /share/video/<token> pages
     // include this so the resolver can grant read access to non-members.
     'X-Share-Token',
+    // Sentry distributed tracing: the JS SDK adds these to every outgoing
+    // fetch so backend spans can be stitched to the frontend transaction.
+    // Without them in the CORS preflight allow-list, prod blocks every
+    // request from toftalclip.io to api.toftalclip.io.
+    'sentry-trace',
+    'baggage',
     // TUS protocol headers
     'Tus-Resumable',
     'Upload-Length',
