@@ -7,7 +7,7 @@ export const projectResolvers = {
       // IDOR guard — without this, any authenticated user can fetch any
       // project by id. Admins bypass; everyone else must be owner / client /
       // talent / ProjectMember.
-      await assertProjectReadAccess(id, context.user);
+      await assertProjectReadAccess(id, context.user, context.share);
 
       const project = await prisma.project.findUnique({
         where: { id },
