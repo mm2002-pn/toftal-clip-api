@@ -27,6 +27,15 @@ interface MyContext {
     email: string;
     role: string;
   };
+  // Set when the request carried a valid X-Share-Token header. The presence
+  // of this field is what lets ACL helpers (assertProjectReadAccess etc.)
+  // grant read access to a deliverable that the authenticated user isn't a
+  // member of — they hold a valid share link instead.
+  share?: {
+    deliverableId: string;
+    projectId: string;
+    permission: string; // "view" | "comment" | "download"
+  };
   loaders: DataLoaders;
 }
 
@@ -39,6 +48,9 @@ const corsOptions = {
     'Content-Type',
     'Authorization',
     'X-Requested-With',
+    // Share-link auth: GraphQL requests from /share/video/<token> pages
+    // include this so the resolver can grant read access to non-members.
+    'X-Share-Token',
     // TUS protocol headers
     'Tus-Resumable',
     'Upload-Length',
@@ -219,15 +231,54 @@ export const createApp = async (): Promise<Application> => {
         // le cache entre requêtes et les problèmes de permissions
         const loaders = createDataLoaders();
 
+        // Resolve the share-link side first — it's independent of (and may
+        // accompany) the JWT. Used by /share/video/<token> pages where the
+        // viewer is authenticated but isn't a member of the project: the
+        // share-link grants them read access to one specific deliverable.
+        let share: MyContext['share'] | undefined;
+        const shareTokenHeader = req.headers['x-share-token'];
+        const shareTokenRaw = Array.isArray(shareTokenHeader)
+          ? shareTokenHeader[0]
+          : shareTokenHeader;
+        if (typeof shareTokenRaw === 'string' && shareTokenRaw.length > 0) {
+          try {
+            const { prisma } = await import('./config/database');
+            const link = await prisma.deliverableShareLink.findUnique({
+              where: { token: shareTokenRaw },
+              select: {
+                deliverableId: true,
+                isActive: true,
+                expiresAt: true,
+                permission: true,
+                deliverable: { select: { projectId: true } },
+              },
+            });
+            const stillValid =
+              !!link &&
+              link.isActive &&
+              (!link.expiresAt || link.expiresAt > new Date());
+            if (stillValid) {
+              share = {
+                deliverableId: link!.deliverableId,
+                projectId: link!.deliverable.projectId,
+                permission: link!.permission,
+              };
+            }
+          } catch {
+            // Don't fail the whole request on a malformed share token —
+            // fall through to JWT-only auth.
+          }
+        }
+
         // Extract token from Authorization header
         const authHeader = req.headers.authorization;
         if (!authHeader?.startsWith('Bearer ')) {
-          return { loaders };
+          return { loaders, share };
         }
 
         const token = authHeader.split(' ')[1];
         if (!token) {
-          return { loaders };
+          return { loaders, share };
         }
 
         try {
@@ -245,10 +296,11 @@ export const createApp = async (): Promise<Application> => {
               role: decoded.role,
             },
             loaders,
+            share,
           };
         } catch {
-          // Invalid token - return empty context with loaders
-          return { loaders };
+          // Invalid token - return empty context with loaders + share
+          return { loaders, share };
         }
       },
     }) as unknown as express.RequestHandler

@@ -9,7 +9,7 @@ export const deliverableResolvers = {
   Query: {
     deliverable: async (_: any, { id }: { id: string }, context: any) => {
       // IDOR guard — must be a member of the parent project (or admin).
-      await assertDeliverableReadAccess(id, context.user);
+      await assertDeliverableReadAccess(id, context.user, context.share);
 
       return prisma.deliverable.findUnique({
         where: { id },
@@ -61,7 +61,7 @@ export const deliverableResolvers = {
       };
     },
     projectDeliverables: async (_: any, { projectId }: { projectId: string }, context: any) => {
-      await assertProjectReadAccess(projectId, context.user);
+      await assertProjectReadAccess(projectId, context.user, context.share);
 
       return prisma.deliverable.findMany({
         where: { projectId },
@@ -71,7 +71,7 @@ export const deliverableResolvers = {
       });
     },
     version: async (_: any, { id }: { id: string }, context: any) => {
-      await assertVersionReadAccess(id, context.user);
+      await assertVersionReadAccess(id, context.user, context.share);
 
       return prisma.version.findUnique({
         where: { id },
@@ -83,7 +83,7 @@ export const deliverableResolvers = {
       });
     },
     deliverableVersions: async (_: any, { deliverableId }: { deliverableId: string }, context: any) => {
-      await assertDeliverableReadAccess(deliverableId, context.user);
+      await assertDeliverableReadAccess(deliverableId, context.user, context.share);
 
       return prisma.version.findMany({
         where: { deliverableId },
@@ -95,7 +95,7 @@ export const deliverableResolvers = {
       });
     },
     deliverableWorkflow: async (_: any, { deliverableId }: { deliverableId: string }, context: any) => {
-      await assertDeliverableReadAccess(deliverableId, context.user);
+      await assertDeliverableReadAccess(deliverableId, context.user, context.share);
 
       // No phase filtering - all users see all phases
       return prisma.workflowPhase.findMany({
@@ -113,7 +113,7 @@ export const deliverableResolvers = {
         select: { deliverableId: true },
       });
       if (phase) {
-        await assertDeliverableReadAccess(phase.deliverableId, context.user);
+        await assertDeliverableReadAccess(phase.deliverableId, context.user, context.share);
       }
       return prisma.workflowPhase.findUnique({
         where: { id },
@@ -126,7 +126,7 @@ export const deliverableResolvers = {
         where: { id },
         select: { versionId: true },
       });
-      if (fb) await assertVersionReadAccess(fb.versionId, context.user);
+      if (fb) await assertVersionReadAccess(fb.versionId, context.user, context.share);
       return prisma.feedback.findUnique({
         where: { id },
         include: {
@@ -145,7 +145,7 @@ export const deliverableResolvers = {
     },
     // Paginated feedbacks for infinite scroll (WhatsApp-style)
     versionFeedbacks: async (_: any, { versionId, limit = 30, before }: { versionId: string; limit?: number; before?: string }, context: any) => {
-      await assertVersionReadAccess(versionId, context.user);
+      await assertVersionReadAccess(versionId, context.user, context.share);
 
       // Get total count
       const totalCount = await prisma.feedback.count({ where: { versionId } });
