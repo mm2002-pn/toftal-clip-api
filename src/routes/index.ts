@@ -24,6 +24,7 @@ import tusUploadRoutes from '../modules/tus-upload/routes';
 import adminRoutes from '../modules/admin/routes';
 import deviceTokensRoutes from '../modules/device-tokens/routes';
 import organizationsRoutes from '../modules/organizations/routes';
+import subscriptionsRoutes, { plansRouter } from '../modules/subscriptions/routes';
 
 const router = Router();
 
@@ -58,6 +59,8 @@ router.get('/', (req, res) => {
         admin: '/api/v1/admin',
         deviceTokens: '/api/v1/device-tokens',
         organizations: '/api/v1/organizations',
+        plans: '/api/v1/plans',
+        subscriptions: '/api/v1/subscriptions',
       },
       graphql: '/graphql',
     },
@@ -88,5 +91,7 @@ router.use('/tus', tusUploadRoutes);
 router.use('/admin', adminRoutes);
 router.use('/device-tokens', deviceTokensRoutes);
 router.use('/organizations', organizationsRoutes);
+router.use('/plans', plansRouter);
+router.use('/subscriptions', subscriptionsRoutes);
 
 export default router;

@@ -676,21 +676,37 @@ model WorkspaceMember {
 
 // ==================== ORGANIZATION MODELS ====================
 
+// Workspace status — gates access to the org's projects/team UI.
+//   DRAFT     : just created, awaiting initial payment. Hidden from the user
+//               until the webhook flips it. Auto-cleaned after 24h if no pay.
+//   ACTIVE    : paid (or trialing), full access.
+//   SUSPENDED : payment failed past grace period OR a pre-billing org that
+//               hasn't subscribed yet — projects are read-only, banner asks
+//               the admin to renew.
+enum OrganizationStatus {
+  DRAFT
+  ACTIVE
+  SUSPENDED
+}
+
 model Organization {
-  id          String   @id @default(uuid())
+  id          String             @id @default(uuid())
   name        String
-  slug        String   @unique
-  logoUrl     String?  @map("logo_url")
-  createdById String   @map("created_by_id")
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
+  slug        String             @unique
+  logoUrl     String?            @map("logo_url")
+  createdById String             @map("created_by_id")
+  status      OrganizationStatus @default(DRAFT)
+  createdAt   DateTime           @default(now()) @map("created_at")
+  updatedAt   DateTime           @updatedAt @map("updated_at")
 
   // Relations
-  createdBy   User                 @relation(fields: [createdById], references: [id], onDelete: Cascade)
-  members     OrganizationMember[]
-  invitations TeamInvitation[]
-  projects    Project[]
+  createdBy    User                 @relation(fields: [createdById], references: [id], onDelete: Cascade)
+  members      OrganizationMember[]
+  invitations  TeamInvitation[]
+  projects     Project[]
+  subscription Subscription?
 
+  @@index([status])
   @@map("organizations")
 }
 
@@ -935,6 +951,121 @@ model FeatureFlag {
   @@map("feature_flags")
 }
 
+// ==================== SUBSCRIPTION / BILLING MODELS ====================
+
+enum BillingCycle {
+  MONTHLY
+  YEARLY
+}
+
+enum SubscriptionStatus {
+  PENDING_PAYMENT // checkout opened, waiting for first webhook
+  TRIALING // free-trial period (gated behind feature flag)
+  ACTIVE // paid, in current period
+  PAST_DUE // renewal failed, in grace period
+  CANCELLED // user-cancelled, access until currentPeriodEnd
+  SUSPENDED // grace period exceeded — read-only access
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCEEDED
+  FAILED
+  REFUNDED
+}
+
+// Plans are DB-backed and admin-editable so pricing/limits can change without
+// a code release. The `prices` Json keys by currency to leave room for XAF /
+// EUR / USD later — at launch we only seed XOF.
+//   Shape: { "XOF": { "monthly": 19900, "yearly": 119400 }, "EUR": ... }
+//   Stored as the actual transaction amount in the smallest unit accepted by
+//   the local payment processor — XOF has no minor unit, so 19900 = 19 900 F.
+//
+// `features` is a free-form string array (e.g. ["voice_memos","ia_magic"]).
+// `maxProjects` / `maxMembers` null = illimité (Agence/Entreprise).
+// `isCustom` plans (Entreprise) skip self-checkout and route to a contact
+// sales flow instead.
+model SubscriptionPlan {
+  id           String   @id @default(uuid())
+  slug         String   @unique // "team", "agency", "enterprise"
+  name         String // "Équipe", "Agence", "Entreprise"
+  description  String?
+  prices       Json // { "XOF": { monthly, yearly } }
+  maxProjects  Int?     @map("max_projects")
+  maxMembers   Int?     @map("max_members")
+  features     String[] @default([])
+  displayOrder Int      @default(0) @map("display_order")
+  isActive     Boolean  @default(true) @map("is_active")
+  isCustom     Boolean  @default(false) @map("is_custom")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  subscriptions Subscription[]
+
+  @@index([isActive, displayOrder])
+  @@map("subscription_plans")
+}
+
+// Subscription is org-scoped at launch (Solo workspace stays free for now).
+// One Subscription per Organization (1:1) — upgrade/downgrade mutates the
+// existing row rather than creating a new one. trialEndsAt drives the
+// TRIALING → ACTIVE transition; nextBillingAt drives the renewal cron.
+model Subscription {
+  id             String @id @default(uuid())
+  organizationId String @unique @map("organization_id")
+  planId         String @map("plan_id")
+
+  billingCycle BillingCycle       @map("billing_cycle")
+  currency     String             @default("XOF") // "XOF" | "EUR" | ...
+  status       SubscriptionStatus @default(PENDING_PAYMENT)
+
+  trialEndsAt        DateTime? @map("trial_ends_at")
+  currentPeriodStart DateTime? @map("current_period_start")
+  currentPeriodEnd   DateTime? @map("current_period_end")
+  nextBillingAt      DateTime? @map("next_billing_at")
+  cancelAtPeriodEnd  Boolean   @default(false) @map("cancel_at_period_end")
+  cancelledAt        DateTime? @map("cancelled_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  plan         SubscriptionPlan @relation(fields: [planId], references: [id])
+  payments     Payment[]
+
+  @@index([status])
+  @@index([nextBillingAt])
+  @@map("subscriptions")
+}
+
+// One row per Bictorys charge attempt (initial purchase, renewal, retry).
+// `bictorysChargeId` is unique → guarantees idempotence on webhook retries.
+// `paymentReference` is our own opaque ID we send to Bictorys — used as the
+// stable lookup key when the user returns from the hosted checkout.
+model Payment {
+  id             String @id @default(uuid())
+  subscriptionId String @map("subscription_id")
+
+  bictorysChargeId String? @unique @map("bictorys_charge_id")
+  paymentReference String  @unique @map("payment_reference")
+
+  amount        Int // XOF has no minor unit → 19900 means 19 900 F
+  currency      String // "XOF"
+  status        PaymentStatus @default(PENDING)
+  paymentMethod String?       @map("payment_method") // "orange_money" | "wave" | "card" | ...
+  failureReason String?       @map("failure_reason")
+
+  createdAt         DateTime  @default(now()) @map("created_at")
+  processedAt       DateTime? @map("processed_at")
+  webhookReceivedAt DateTime? @map("webhook_received_at")
+
+  subscription Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+
+  @@index([subscriptionId])
+  @@index([status])
+  @@map("payments")
+}
+
 model EmailTemplate {
   id          String   @id @default(uuid())
   name        String   @unique // "invitation" | "verify_email" | "password_reset" | ...
@@ -950,18 +1081,18 @@ model EmailTemplate {
 }
 
 model AIPromptTemplate {
-  id                  String   @id @default(uuid())
-  name                String   @unique // "brief_optimization" | "video_analysis" | ...
-  description         String?
-  model               String   @default("groq:llama-3.3-70b-versatile") // provider:model
-  systemPrompt        String?  @map("system_prompt") @db.Text
-  userPromptTemplate  String   @map("user_prompt_template") @db.Text
-  temperature         Float    @default(0.7)
-  maxTokens           Int?     @map("max_tokens")
-  responseFormat      String?  @map("response_format") // "json" | "text"
-  variables           String[] @default([])
-  createdAt           DateTime @default(now()) @map("created_at")
-  updatedAt           DateTime @updatedAt @map("updated_at")
+  id                 String   @id @default(uuid())
+  name               String   @unique // "brief_optimization" | "video_analysis" | ...
+  description        String?
+  model              String   @default("groq:llama-3.3-70b-versatile") // provider:model
+  systemPrompt       String?  @map("system_prompt") @db.Text
+  userPromptTemplate String   @map("user_prompt_template") @db.Text
+  temperature        Float    @default(0.7)
+  maxTokens          Int?     @map("max_tokens")
+  responseFormat     String?  @map("response_format") // "json" | "text"
+  variables          String[] @default([])
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
 
   @@map("ai_prompt_templates")
 }

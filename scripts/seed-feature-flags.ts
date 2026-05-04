@@ -41,6 +41,13 @@ const FLAGS: { name: string; description: string; enabled: boolean }[] = [
 
   // Observability
   { name: 'sentry_enabled', description: 'Envoi des erreurs à Sentry', enabled: true },
+
+  // Billing / subscriptions
+  {
+    name: 'subscription_free_trial_enabled',
+    description: 'Active le free trial (14 jours) avant le premier paiement Bictorys',
+    enabled: false,
+  },
 ];
 
 async function main() {

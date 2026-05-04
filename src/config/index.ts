@@ -53,4 +53,15 @@ export const config = {
 
   // Is Production
   isProduction: process.env.NODE_ENV === 'production',
+
+  // Bictorys (payment processor) — keys come from Cloud Run secrets in prod
+  // and from .env locally. apiUrl differs between sandbox (api.test...) and
+  // live; default to test so a misconfigured prod loudly hits sandbox rather
+  // than charging real cards.
+  bictorys: {
+    publicKey: process.env.BICTORYS_PUBLIC_KEY || '',
+    secretKey: process.env.BICTORYS_SECRET_KEY || '',
+    webhookSecret: process.env.BICTORYS_WEBHOOK_SECRET || '',
+    apiUrl: process.env.BICTORYS_API_URL || 'https://api.test.bictorys.com',
+  },
 };

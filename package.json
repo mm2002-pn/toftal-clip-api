@@ -32,7 +32,9 @@
     "seed:feature-flags:reset": "ts-node --transpile-only scripts/seed-feature-flags.ts --reset",
     "seed:email-templates": "ts-node --transpile-only scripts/seed-email-templates.ts",
     "seed:ai-prompts": "ts-node --transpile-only scripts/seed-ai-prompts.ts",
-    "seed:all": "npm run seed:feature-flags && npm run seed:email-templates && npm run seed:ai-prompts",
+    "seed:subscription-plans": "ts-node --transpile-only scripts/seed-subscription-plans.ts",
+    "seed:subscription-plans:reset": "ts-node --transpile-only scripts/seed-subscription-plans.ts --reset",
+    "seed:all": "npm run seed:feature-flags && npm run seed:email-templates && npm run seed:ai-prompts && npm run seed:subscription-plans",
     "backfill:all": "npm run backfill:metadata && npm run backfill:thumbnails && npm run backfill:cache-control && npm run backfill:audio-mime && npm run backfill:file-sizes"
   },
   "keywords": [

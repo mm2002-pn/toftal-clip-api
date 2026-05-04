@@ -103,6 +103,23 @@ export const createApp = async (): Promise<Application> => {
   });
 
   // ===================
+  // Bictorys webhook — must run BEFORE express.json so the handler can
+  // verify the HMAC signature against the raw request bytes. Defined here
+  // (instead of in routes/) precisely because of this middleware ordering
+  // requirement: once express.json parses the body, the original byte
+  // sequence is gone and the signature can't be validated. Auth is the
+  // signature itself, no JWT.
+  // ===================
+  const { handleBictorysWebhook } = await import(
+    './modules/subscriptions/controllers/webhook'
+  );
+  app.post(
+    '/api/v1/webhooks/bictorys',
+    express.raw({ type: 'application/json', limit: '1mb' }),
+    handleBictorysWebhook
+  );
+
+  // ===================
   // Parsing Middlewares
   // ===================
 
