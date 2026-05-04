@@ -164,6 +164,17 @@ export const createCheckoutSession = async (
     });
     if (!user) throw new NotFoundError('Utilisateur introuvable.');
 
+    // Bictorys requires a phone for mobile-money. We don't store one on User
+    // today, so we accept it from the body — the frontend prompts for it on
+    // the checkout page. Fall back to a placeholder (+221700000000) so the
+    // request shape stays valid; Bictorys will overwrite it on their hosted
+    // page when the customer actually picks an operator + number.
+    const phone =
+      typeof req.body?.phone === 'string' && req.body.phone.trim()
+        ? req.body.phone.trim()
+        : '+221700000000';
+    const country = typeof req.body?.country === 'string' ? req.body.country : 'SN';
+
     const paymentReference = newPaymentReference();
 
     // We create the Organization, OrganizationMember (admin), Subscription,
@@ -223,6 +234,8 @@ export const createCheckoutSession = async (
         customer: {
           name: user.name,
           email: user.email,
+          phone,
+          country,
         },
       });
 
