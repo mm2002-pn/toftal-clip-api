@@ -11,6 +11,7 @@ import * as membersController from '../controllers/members';
 import * as emailTemplatesController from '../controllers/emailTemplates';
 import * as aiPromptsController from '../controllers/aiPrompts';
 import * as plansController from '../controllers/plans';
+import * as subscriptionsController from '../controllers/subscriptions';
 
 const router = Router();
 
@@ -69,5 +70,9 @@ router.get('/plans', plansController.listAdminPlans);
 router.post('/plans', plansController.createAdminPlan);
 router.patch('/plans/:id', plansController.updateAdminPlan);
 router.delete('/plans/:id', plansController.deleteAdminPlan);
+
+// Subscriptions — read + cancel action
+router.get('/subscriptions', subscriptionsController.listAdminSubscriptions);
+router.post('/subscriptions/:id/cancel', subscriptionsController.cancelAdminSubscription);
 
 export default router;
