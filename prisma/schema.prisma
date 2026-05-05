@@ -1055,6 +1055,14 @@ model Payment {
   paymentMethod String?       @map("payment_method") // "orange_money" | "wave" | "card" | ...
   failureReason String?       @map("failure_reason")
 
+  // Bictorys hosted-checkout URL the user should be redirected to. Filled
+  // asynchronously after the inbound /subscriptions/checkout response is
+  // sent — the WAF rejects outbound calls fired while the inbound socket
+  // is still open, so we return { paymentReference } immediately and let
+  // the frontend poll /checkout/:reference/status until this column is
+  // populated. See bictorysService.ts header for the timing details.
+  checkoutUrl String? @map("checkout_url")
+
   createdAt         DateTime  @default(now()) @map("created_at")
   processedAt       DateTime? @map("processed_at")
   webhookReceivedAt DateTime? @map("webhook_received_at")

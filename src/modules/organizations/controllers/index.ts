@@ -160,6 +160,15 @@ export const sendTeamInvitations = async (
       return;
     }
 
+    // Subscription gate — refuses invites on suspended teams + enforces
+    // the plan's maxMembers cap. We use the raw email count as the upper
+    // bound; invitations that fail validation later don't refund the
+    // budget (close-enough for soft enforcement).
+    const { assertCanAddMember } = await import(
+      '../../../services/subscriptionLimitsService'
+    );
+    await assertCanAddMember(orgId, rawEmails.length);
+
     const inviter = await prisma.user.findUnique({
       where: { id: userId },
       select: { name: true, email: true },
@@ -422,6 +431,14 @@ export const acceptTeamInvitation = async (
     // Multi-org is allowed. The sidebar workspace switcher handles multiple
     // memberships — accepting a new invitation just adds the user to one more
     // team without affecting the others.
+
+    // Subscription gate — refuses acceptance if the org would exceed its
+    // plan's maxMembers cap or if the org isn't writable (suspended).
+    // The throw is caught by the outer try/catch and surfaced to the user.
+    const { assertCanAddMember } = await import(
+      '../../../services/subscriptionLimitsService'
+    );
+    await assertCanAddMember(invitation.organizationId, 1);
 
     await prisma.$transaction(async (tx) => {
       // upsert in case a previous attempt created the member but failed before

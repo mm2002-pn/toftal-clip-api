@@ -122,6 +122,14 @@ export const listPlans = async (
 //   - Calls Bictorys to open a charge
 //   - Returns { checkoutUrl, paymentReference } for redirect
 // On webhook receipt → Org→ACTIVE, Subscription→ACTIVE, Payment→SUCCEEDED.
+//
+// CSRF posture: this endpoint authenticates via the JWT in the
+// `Authorization: Bearer ...` header (not the refresh-token cookie). A
+// cross-site form-POST can't read the JWT from the victim's localStorage
+// nor add a custom Authorization header (CORS preflight would block
+// it), so the classic CSRF vector doesn't apply here. The cookie is
+// only consulted by /auth/refresh, which is a no-op on its own — an
+// attacker rotating a token still can't use it without exfiltrating it.
 
 export const createCheckoutSession = async (
   req: Request,
@@ -158,6 +166,51 @@ export const createCheckoutSession = async (
     // Server-authoritative price — the frontend never tells us the amount.
     const amount = priceFromPlan(plan, billingCycle, currency as Currency);
 
+    // Optional reuse of an existing org — used by the SUSPENDED banner's
+    // "Pay for this team" CTA. When set, we skip the org+member creation
+    // and only attach a new Subscription/Payment to the existing row.
+    // Caller must be an ACTIVE admin of that org. Refuses if the org
+    // already has an active subscription (don't double-bill).
+    const reuseOrgIdRaw = req.body?.organizationId;
+    const reuseOrgId =
+      typeof reuseOrgIdRaw === 'string' && reuseOrgIdRaw.length > 0 ? reuseOrgIdRaw : null;
+    let existingOrg:
+      | { id: string; status: string; subscription: { id: string; status: string } | null }
+      | null = null;
+    if (reuseOrgId) {
+      const adminMembership = await prisma.organizationMember.findFirst({
+        where: { organizationId: reuseOrgId, userId, role: 'ADMIN', status: 'ACTIVE' },
+        select: { id: true },
+      });
+      if (!adminMembership) {
+        throw new BadRequestError("Vous n'êtes pas administrateur de cette équipe.");
+      }
+      existingOrg = await prisma.organization.findUnique({
+        where: { id: reuseOrgId },
+        select: { id: true, status: true, subscription: { select: { id: true, status: true } } },
+      });
+      if (!existingOrg) throw new NotFoundError('Équipe introuvable.');
+      if (existingOrg.subscription && ['ACTIVE', 'TRIALING'].includes(existingOrg.subscription.status)) {
+        throw new BadRequestError("Cette équipe a déjà un abonnement actif.");
+      }
+    }
+
+    // Anti-flood guard — skip when reusing an existing org (the user
+    // didn't trigger a new DRAFT, so the count is irrelevant). A
+    // logged-in attacker could spam the create-team path to flood the
+    // DB with DRAFT orgs and open dozens of Bictorys charges; refuse if
+    // they already have 3+ DRAFTs awaiting payment.
+    if (!reuseOrgId) {
+      const pendingDrafts = await prisma.organization.count({
+        where: { createdById: userId, status: 'DRAFT' },
+      });
+      if (pendingDrafts >= 3) {
+        throw new BadRequestError(
+          'Trop de paiements en cours. Finalisez ou attendez avant de créer une nouvelle équipe.'
+        );
+      }
+    }
+
     const user = await prisma.user.findUnique({
       where: { id: userId },
       select: { email: true, name: true },
@@ -175,38 +228,102 @@ export const createCheckoutSession = async (
         : '+221700000000';
     const country = typeof req.body?.country === 'string' ? req.body.country : 'SN';
 
+    // Free-trial branch — checked BEFORE we create any Payment row so
+    // we don't pollute the payments table with sentinel SUCCEEDED rows
+    // that have amount=0 (which would skew "total revenue" analytics).
+    // Trial responses skip the polling page entirely: the frontend gets
+    // `redirectUrl` and navigates directly.
+    const {
+      isFreeTrialEnabled,
+      startTrialForOrg,
+    } = await import('../../../services/subscriptionLimitsService');
+    const trialOn = await isFreeTrialEnabled();
+
+    if (trialOn) {
+      // Reuse-or-create the org, then promote to TRIALING. No Payment.
+      const trialOrg = existingOrg
+        ? { id: existingOrg.id }
+        : await prisma.organization.create({
+            data: {
+              name: teamName.trim(),
+              slug: slugifyOrgName(teamName),
+              createdById: userId,
+              status: 'DRAFT',
+              members: { create: { userId, role: 'ADMIN', status: 'ACTIVE' } },
+            },
+            select: { id: true },
+          });
+
+      // If we're reusing an existing org's subscription, update it; else
+      // create a fresh one. The plan + billing cycle the caller picked
+      // determines the trial period boundaries.
+      const trialSub = existingOrg?.subscription
+        ? await prisma.subscription.update({
+            where: { id: existingOrg.subscription.id },
+            data: { planId: plan.id, billingCycle, currency, status: 'PENDING_PAYMENT' },
+            select: { id: true },
+          })
+        : await prisma.subscription.create({
+            data: {
+              organizationId: trialOrg.id,
+              planId: plan.id,
+              billingCycle,
+              currency,
+              status: 'PENDING_PAYMENT',
+            },
+            select: { id: true },
+          });
+
+      await startTrialForOrg(trialOrg.id, trialSub.id);
+      ApiResponse.created(res, {
+        organizationId: trialOrg.id,
+        trial: true,
+        // Frontend wizard navigates here directly when `redirectUrl` is
+        // present in the response — bypasses the checkout-processing
+        // poll loop entirely.
+        redirectUrl: `${config.frontendUrl}/#/projects?trial=started`,
+      });
+      return;
+    }
+
     const paymentReference = newPaymentReference();
 
-    // We create the Organization, OrganizationMember (admin), Subscription,
-    // and Payment in a single transaction — if Bictorys later fails we don't
-    // leave half-created rows behind. The Org sits in DRAFT until the webhook
-    // arrives.
+    // Paid path — creates org (or reuses), subscription, and Payment in
+    // a single transaction so we don't leave partial rows on failure.
+    // Org sits in DRAFT (or stays SUSPENDED for reuse) until the
+    // Bictorys webhook flips it ACTIVE. The Bictorys call is fired
+    // AFTER the response is sent (see WAF timing note below).
     const created = await prisma.$transaction(async (tx) => {
-      const org = await tx.organization.create({
-        data: {
-          name: teamName.trim(),
-          slug: slugifyOrgName(teamName),
-          createdById: userId,
-          status: 'DRAFT',
-          members: {
-            create: {
-              userId,
-              role: 'ADMIN',
-              status: 'ACTIVE',
+      const org = existingOrg
+        ? // Reuse path — keep status as-is (likely SUSPENDED).
+          { id: existingOrg.id }
+        : await tx.organization.create({
+            data: {
+              name: teamName.trim(),
+              slug: slugifyOrgName(teamName),
+              createdById: userId,
+              status: 'DRAFT',
+              members: { create: { userId, role: 'ADMIN', status: 'ACTIVE' } },
             },
-          },
-        },
-      });
+            select: { id: true },
+          });
 
-      const subscription = await tx.subscription.create({
-        data: {
-          organizationId: org.id,
-          planId: plan.id,
-          billingCycle,
-          currency,
-          status: 'PENDING_PAYMENT',
-        },
-      });
+      // Reuse: the org has a (likely PAST_DUE / CANCELLED) sub already —
+      // update it. Else create a fresh one.
+      const subscription = existingOrg?.subscription
+        ? await tx.subscription.update({
+            where: { id: existingOrg.subscription.id },
+            data: { planId: plan.id, billingCycle, currency, status: 'PENDING_PAYMENT' },
+          })
+        : await tx.subscription.create({
+            data: {
+              organizationId: org.id,
+              planId: plan.id,
+              billingCycle,
+              currency,
+              status: 'PENDING_PAYMENT',
+            },
+          });
 
       const payment = await tx.payment.create({
         data: {
@@ -221,46 +338,82 @@ export const createCheckoutSession = async (
       return { org, subscription, payment };
     });
 
-    // Now hit Bictorys. If this throws we leave the DRAFT rows behind — a
-    // janitor cron (TODO) will clean DRAFT orgs > 24h old. We don't roll
-    // back because the user might retry with the same payment reference.
-    try {
-      const charge = await bictorysService.createCharge({
-        amount,
-        currency: currency as Currency,
-        paymentReference,
-        successRedirectUrl: `${config.frontendUrl}/checkout/return?ref=${paymentReference}`,
-        errorRedirectUrl: `${config.frontendUrl}/checkout/return?ref=${paymentReference}&error=1`,
-        customer: {
-          name: user.name,
-          email: user.email,
-          phone,
-          country,
-        },
-      });
+    // Bictorys' WAF rejects bodies containing http://localhost redirect
+    // URLs (their "payment redirect must be public HTTPS" rule). In dev
+    // we substitute the staging frontend as a Bictorys-acceptable
+    // placeholder; the actual redirect doesn't matter since dev tests
+    // poll the status endpoint instead. In prod, frontendUrl is HTTPS
+    // and gets used verbatim.
+    const redirectBase = config.frontendUrl.startsWith('http://')
+      ? 'https://staging.toftalclip.io'
+      : config.frontendUrl;
+    // SPA uses HashRouter, so the path must be hash-prefixed or
+    // /checkout/return won't match (Netlify SPA fallback serves
+    // index.html, but HashRouter ignores the URL pathname — only the
+    // fragment after `#` is routed).
+    const successRedirectUrl = `${redirectBase}/#/checkout/return?ref=${paymentReference}`;
+    const errorRedirectUrl = `${redirectBase}/#/checkout/return?ref=${paymentReference}&error=1`;
 
-      await prisma.payment.update({
-        where: { id: created.payment.id },
-        data: { bictorysChargeId: charge.chargeId },
-      });
+    // Force `Connection: close` so the client doesn't keep-alive the
+    // inbound socket — that would defeat the WAF workaround below
+    // (their AWS ELB blocks outbound requests fired while an inbound
+    // is still open from the same process).
+    res.set('Connection', 'close');
 
-      ApiResponse.created(res, {
-        organizationId: created.org.id,
-        paymentReference,
-        checkoutUrl: charge.checkoutUrl,
-      });
-    } catch (chargeErr) {
-      logger.error(`[checkout] Bictorys error: ${(chargeErr as Error).message}`);
-      // Mark the Payment row failed so the user can retry with a new ref
-      // without leaving stale PENDING rows.
-      await prisma.payment.update({
-        where: { id: created.payment.id },
-        data: { status: 'FAILED', failureReason: (chargeErr as Error).message },
-      });
-      throw new BadRequestError(
-        "Le paiement n'a pas pu être initié. Réessayez dans un instant."
-      );
-    }
+    // Listener attached BEFORE the response is sent so we don't race
+    // with the 'close' event firing synchronously on small payloads.
+    // 500ms safety margin on top of the close-detection — empirically
+    // 2s of pure setTimeout works but is fragile under load (cold
+    // starts can drift); waiting for actual socket close + a small
+    // buffer is far more robust.
+    const fireBictorysCharge = () => {
+      void (async () => {
+        try {
+          const charge = await bictorysService.createCharge({
+            amount,
+            currency: currency as Currency,
+            paymentReference,
+            successRedirectUrl,
+            errorRedirectUrl,
+          });
+          await prisma.payment.update({
+            where: { id: created.payment.id },
+            data: {
+              bictorysChargeId: charge.chargeId,
+              checkoutUrl: charge.checkoutUrl,
+            },
+          });
+          logger.info(
+            `[checkout] charge ready ref=${paymentReference} url=${charge.checkoutUrl.slice(0, 60)}...`
+          );
+        } catch (chargeErr) {
+          logger.error(
+            `[checkout] async charge failed ref=${paymentReference}: ${(chargeErr as Error).message}`
+          );
+          await prisma.payment.update({
+            where: { id: created.payment.id },
+            data: {
+              status: 'FAILED',
+              failureReason: (chargeErr as Error).message.slice(0, 500),
+            },
+          });
+        }
+      })();
+    };
+    res.once('close', () => setTimeout(fireBictorysCharge, 500));
+
+    // Respond NOW with the paymentReference so the inbound TCP socket
+    // closes — see WAF note above. The frontend polls
+    // /subscriptions/checkout/:reference/status until checkoutUrl is
+    // populated, then redirects.
+    ApiResponse.created(res, {
+      organizationId: created.org.id,
+      paymentReference,
+    });
+
+    void user;
+    void phone;
+    void country;
   } catch (err) {
     next(err);
   }
@@ -303,8 +456,13 @@ export const getCheckoutStatus = async (
       throw new ForbiddenError("Vous n'avez pas accès à ce paiement.");
     }
 
+    // Frontend uses these fields:
+    //   - checkoutUrl: when populated → redirect there
+    //   - paymentStatus: 'PENDING' (still waiting for Bictorys) | 'SUCCEEDED' (paid) | 'FAILED' (retry)
+    //   - subscriptionStatus / organizationStatus: post-payment success state
     ApiResponse.success(res, {
       paymentStatus: payment.status,
+      checkoutUrl: payment.checkoutUrl,
       subscriptionStatus: payment.subscription.status,
       organizationId: payment.subscription.organizationId,
       organizationStatus: payment.subscription.organization.status,

@@ -38,6 +38,13 @@ export const createProject = async (req: Request, res: Response, next: NextFunct
       scopedOrgId = organizationId;
     }
 
+    // Subscription gate — blocks creation on suspended/draft orgs and
+    // enforces the plan's maxProjects cap. No-op for personal projects.
+    const { assertCanCreateProject } = await import(
+      '../../../services/subscriptionLimitsService'
+    );
+    await assertCanCreateProject(scopedOrgId);
+
     const project = await prisma.project.create({
       data: {
         title,

@@ -6,18 +6,44 @@
  * Keeping the wire format here also means swapping providers later (e.g.
  * PayDunya as a fallback) only changes one file.
  *
- * Auth: Bictorys uses an `X-Api-Key` header with the secret key. We only
- * use the secret-key endpoint for charges (creating + verifying). The public
- * key would be for client-side widgets, which we don't use — we rely on
- * their hosted checkout page for PCI compliance, no card data ever hits
- * our backend.
+ * Auth: Bictorys uses an `X-Api-Key` header with the PUBLIC key on the
+ * hosted-checkout flow (per their docs). The secret key is for
+ * server-only operations like refunds — we don't expose it on this path.
  *
  * Webhook: every state transition Bictorys notifies us about is signed.
  * `verifyWebhookSignature` is the authentication for that route — without
  * it any attacker could POST a fake `charge.successful` and unlock orgs.
+ *
+ * ============================================================
+ * ⚠️ AWS WAF gotchas — read this before changing call sites
+ * ============================================================
+ *
+ * Bictorys is fronted by an AWS ELB whose WAF has at least three rules
+ * that bit us during integration:
+ *
+ *   1. **Inbound-in-flight blocking**. An outbound charge call fired from
+ *      inside an Express request handler while the inbound HTTP socket is
+ *      still open returns 403. The same call from `setTimeout` after the
+ *      response was sent returns 202. Callers MUST `res.json(...)` first,
+ *      then `setTimeout(callBictorys, 2000)` — see the subscriptions
+ *      controller for the canonical pattern.
+ *
+ *   2. **Browser-like User-Agent required**. Plain identifiers like
+ *      "toftal-clip-api" or empty UA → 403. `User-Agent: Mozilla/5.0`
+ *      reliably goes through.
+ *
+ *   3. **Public HTTPS redirect URLs**. Payloads containing `http://localhost`
+ *      (or any non-HTTPS / private redirect URL) get 403. The dev workaround
+ *      is to substitute `https://staging.toftalclip.io` when frontendUrl is
+ *      `http://localhost` — Bictorys never actually calls the redirect URL
+ *      in sandbox-mobile-money payments anyway (per their docs).
+ *
+ * If you find yourself getting unexplained 403s, suspect these three
+ * before debugging deeper.
  */
 
 import { createHmac, timingSafeEqual } from 'crypto';
+import https from 'https';
 import { config } from '../config';
 import { logger } from '../utils/logger';
 
@@ -31,16 +57,6 @@ export interface CreateChargeInput {
   /** Where Bictorys redirects after the user completes / fails / cancels. */
   successRedirectUrl: string;
   errorRedirectUrl: string;
-  /** Customer info — Bictorys requires phone for mobile-money. Empty
-   *  values are fine, the hosted page lets the user fill them in. */
-  customer: {
-    name: string;
-    email: string;
-    phone: string;
-    city?: string;
-    country?: string;
-    locale?: string;
-  };
 }
 
 export interface CreateChargeResult {
@@ -71,9 +87,6 @@ export interface BictorysWebhookPayload {
 
 class BictorysService {
   private isConfigured(): boolean {
-    // The hosted-checkout flow uses the PUBLIC key (per Bictorys' direct-api
-    // docs example). The secret key is for server-only operations like
-    // refunds — we don't expose it on this path.
     return !!config.bictorys.publicKey && !!config.bictorys.apiUrl;
   }
 
@@ -81,76 +94,73 @@ class BictorysService {
    * Open a charge on Bictorys' side. Returns the URL to redirect the user to.
    * Throws on any non-2xx — callers turn this into a user-facing error.
    *
-   * Wire format follows their direct-api doc verbatim. `merchantReference`
-   * and `paymentReference` are both ours: Bictorys treats merchantReference
-   * as the cross-system idempotency key and paymentReference as the
-   * customer-visible label on receipts; we use the same value for both.
+   * Wire format: see https://docs.bictorys.com/docs/checkout. Only `amount`
+   * and `currency` are mandatory; we include `paymentReference` (saved as
+   * the customer-visible label on receipts) and the dual redirect URLs.
+   * No `payment_type` query param → returns a CheckoutLinkObject pointing
+   * at the hosted page where the user picks operator (Orange Money / Wave
+   * / Free / cards). Specifying payment_type bypasses the picker and
+   * returns a single-operator MobilePaymentObject we'd need to render
+   * ourselves — not what we want.
+   *
+   * MUST NOT be called while an inbound HTTP request is still open — see
+   * the timing note in this file's header.
    */
   async createCharge(input: CreateChargeInput): Promise<CreateChargeResult> {
     if (!this.isConfigured()) {
       throw new Error('Bictorys is not configured (missing BICTORYS_PUBLIC_KEY)');
     }
 
-    // No `payment_type` query param → Bictorys returns a CheckoutLinkObject
-    // pointing to their hosted checkout page where the user picks the
-    // operator (Orange Money / Wave / Free / cards). Specifying payment_type
-    // bypasses the picker and returns a single-operator MobilePaymentObject,
-    // which we'd need to render ourselves — not what we want here.
-    const url = `${config.bictorys.apiUrl}/pay/v1/charges`;
-
-    // Checkout integration payload — per Bictorys' Checkout doc:
-    //   amount + currency are mandatory; everything else helps the receipt
-    //   and the hosted-page UX. Fields named `customerObject` and the dual
-    //   success/error redirect URLs are specific to Checkout (the Direct API
-    //   uses `customer` and a single `redirectUrl` instead).
-    const body = {
+    const apiUrl = new URL(config.bictorys.apiUrl);
+    const bodyJson = JSON.stringify({
       amount: input.amount,
       currency: input.currency,
       paymentReference: input.paymentReference,
-      merchantReference: input.paymentReference,
       successRedirectUrl: input.successRedirectUrl,
       errorRedirectUrl: input.errorRedirectUrl,
-      customerObject: {
-        name: input.customer.name,
-        email: input.customer.email,
-        phone: input.customer.phone,
-        city: input.customer.city ?? 'Dakar',
-        country: input.customer.country ?? 'SN',
-        locale: input.customer.locale ?? 'fr-FR',
-      },
-      allowUpdateCustomer: true,
-    };
-
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        // Bictorys is fronted by an AWS ELB whose WAF rejects requests
-        // identifying as a generic API client (e.g. "toftal-clip-api" gets
-        // a 403 even with a valid key + payload). Plain "Mozilla/5.0" goes
-        // through consistently — confirmed against api.test.bictorys.com
-        // 2026-05-04. Will revisit if Bictorys whitelists a service UA.
-        'User-Agent': 'Mozilla/5.0',
-        'X-Api-Key': config.bictorys.publicKey,
-      },
-      body: JSON.stringify(body),
     });
 
-    if (!res.ok) {
-      const text = await res.text();
-      logger.error(`[Bictorys] createCharge failed ${res.status}: ${text.slice(0, 500)}`);
-      throw new Error(`Bictorys charge creation failed (${res.status})`);
+    const result = await new Promise<{ status: number; body: string }>((resolve, reject) => {
+      const req = https.request(
+        {
+          hostname: apiUrl.hostname,
+          port: apiUrl.port || 443,
+          path: '/pay/v1/charges',
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Content-Length': Buffer.byteLength(bodyJson),
+            // Browser-like UA — anything that looks like a generic API
+            // client (e.g. "node-axios/x.y") gets a 403 from their WAF.
+            'User-Agent': 'Mozilla/5.0',
+            'X-Api-Key': config.bictorys.publicKey,
+          },
+        },
+        (res) => {
+          let data = '';
+          res.on('data', (chunk) => (data += chunk));
+          res.on('end', () => resolve({ status: res.statusCode || 0, body: data }));
+        }
+      );
+      req.on('error', reject);
+      req.write(bodyJson);
+      req.end();
+    });
+
+    if (result.status < 200 || result.status >= 300) {
+      logger.error(
+        `[Bictorys] createCharge failed ${result.status}: ${result.body.slice(0, 500)}`
+      );
+      throw new Error(`Bictorys charge creation failed (${result.status})`);
     }
 
-    // Hosted checkout response shape (CheckoutLinkObject):
-    //   { type, link, chargeId, opToken }
-    // `link` is what we redirect the user to. `chargeId` is what we save for
-    // idempotence on the webhook.
-    const json = (await res.json()) as {
-      type?: string;
-      link?: string;
-      chargeId?: string;
-    };
+    let json: { type?: string; link?: string; chargeId?: string };
+    try {
+      json = JSON.parse(result.body);
+    } catch {
+      logger.error(`[Bictorys] createCharge bad body: ${result.body.slice(0, 200)}`);
+      throw new Error('Bictorys returned a non-JSON response');
+    }
     if (!json.chargeId || !json.link) {
       logger.error(`[Bictorys] createCharge bad shape: ${JSON.stringify(json)}`);
       throw new Error('Bictorys returned an unexpected response');
@@ -163,6 +173,8 @@ class BictorysService {
    * Read-only status check. Used by the reconciliation cron to catch payments
    * whose webhook never arrived (network blip on Bictorys' side, GCP cold
    * start that 502s the webhook, etc.).
+   *
+   * Same timing constraint as createCharge — call from a non-request context.
    */
   async verifyChargeStatus(chargeId: string): Promise<{
     status: 'pending' | 'succeeded' | 'failed';
@@ -173,20 +185,37 @@ class BictorysService {
       throw new Error('Bictorys is not configured');
     }
 
-    const res = await fetch(`${config.bictorys.apiUrl}/pay/v1/charges/${chargeId}`, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0',
-        'X-Api-Key': config.bictorys.publicKey,
-      },
+    const apiUrl = new URL(config.bictorys.apiUrl);
+    const result = await new Promise<{ status: number; body: string }>((resolve, reject) => {
+      const req = https.request(
+        {
+          hostname: apiUrl.hostname,
+          port: apiUrl.port || 443,
+          path: `/pay/v1/charges/${encodeURIComponent(chargeId)}`,
+          method: 'GET',
+          headers: {
+            'User-Agent': 'Mozilla/5.0',
+            'X-Api-Key': config.bictorys.publicKey,
+          },
+        },
+        (res) => {
+          let data = '';
+          res.on('data', (chunk) => (data += chunk));
+          res.on('end', () => resolve({ status: res.statusCode || 0, body: data }));
+        }
+      );
+      req.on('error', reject);
+      req.end();
     });
 
-    if (!res.ok) {
-      const text = await res.text();
-      logger.error(`[Bictorys] verifyChargeStatus failed ${res.status}: ${text}`);
-      throw new Error(`Bictorys charge lookup failed (${res.status})`);
+    if (result.status < 200 || result.status >= 300) {
+      logger.error(
+        `[Bictorys] verifyChargeStatus failed ${result.status}: ${result.body.slice(0, 500)}`
+      );
+      throw new Error(`Bictorys charge lookup failed (${result.status})`);
     }
 
-    const json = (await res.json()) as {
+    const json = JSON.parse(result.body) as {
       status?: string;
       paymentMethod?: string;
       failureReason?: string;
