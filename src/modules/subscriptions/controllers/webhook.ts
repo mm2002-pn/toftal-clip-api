@@ -1,14 +1,19 @@
 /**
  * Bictorys webhook handler.
  *
- * Public route (no JWT) — auth is the HMAC signature on the raw body. Any
- * route mounted here MUST receive the raw body buffer; the `bictorysWebhook`
- * route in app.ts uses `express.raw({ type: 'application/json' })` to skip
- * the JSON middleware. We parse manually after signature verification.
+ * Public route (no JWT) — auth is the secret echoed in `X-Secret-Key`,
+ * compared against `BICTORYS_WEBHOOK_SECRET`. The route in app.ts mounts
+ * `express.raw({ type: 'application/json' })` so we still receive the raw
+ * bytes; we parse manually after the secret check (no HMAC, but keeping
+ * raw lets us safely log payloads if needed).
  *
- * Idempotence: keyed on `bictorysChargeId`. Bictorys retries on any non-2xx,
- * so a duplicate `charge.successful` for an already-completed payment is a
- * no-op (returns 200).
+ * Bictorys payload is FLAT — `{ id, paymentReference, status, pspName, ... }`,
+ * not enveloped in `{ event, data }`. The state transition is conveyed by
+ * the lowercase `status` field. See bictorysService.ts for the full shape.
+ *
+ * Idempotence: keyed on Payment.status. A duplicate `succeeded` for a row
+ * already in SUCCEEDED is a no-op (200) so Bictorys' retry policy doesn't
+ * thrash us.
  */
 
 import { Request, Response, NextFunction } from 'express';
@@ -38,14 +43,14 @@ export const handleBictorysWebhook = async (
 ): Promise<void> => {
   try {
     const rawBody = req.body instanceof Buffer ? req.body.toString('utf8') : '';
-    const signature = (req.headers['x-bictorys-signature'] || req.headers['X-Bictorys-Signature']) as
+    const headerSecret = (req.headers['x-secret-key'] || req.headers['X-Secret-Key']) as
       | string
       | undefined;
 
-    if (!bictorysService.verifyWebhookSignature(rawBody, signature)) {
-      logger.warn('[bictorys-webhook] signature verification failed');
+    if (!bictorysService.verifyWebhookSecret(headerSecret)) {
+      logger.warn('[bictorys-webhook] secret verification failed');
       // 401 not 403 — the request is unauthenticated, not forbidden.
-      res.status(401).json({ error: 'Invalid signature' });
+      res.status(401).json({ error: 'Invalid secret' });
       return;
     }
 
@@ -57,22 +62,17 @@ export const handleBictorysWebhook = async (
       return;
     }
 
-    const event = payload.event;
-    const data = payload.data;
-    if (!data?.chargeId || !data?.paymentReference) {
-      res.status(400).json({ error: 'Missing chargeId or paymentReference' });
+    if (!payload?.id || !payload?.paymentReference) {
+      res.status(400).json({ error: 'Missing id or paymentReference' });
       return;
     }
 
-    // Find the Payment via its reference (set by us). The chargeId from
-    // Bictorys may not be set yet if the network call to register it after
-    // creation got interrupted — fall back to paymentReference.
     const payment = await prisma.payment.findUnique({
-      where: { paymentReference: data.paymentReference },
+      where: { paymentReference: payload.paymentReference },
       include: { subscription: true },
     });
     if (!payment) {
-      logger.warn(`[bictorys-webhook] no payment for reference ${data.paymentReference}`);
+      logger.warn(`[bictorys-webhook] no payment for reference ${payload.paymentReference}`);
       // 200 so Bictorys doesn't retry forever for a row we don't have.
       res.status(200).json({ received: true, note: 'no matching payment' });
       return;
@@ -85,8 +85,14 @@ export const handleBictorysWebhook = async (
     }
 
     const sub = payment.subscription;
+    // Normalise — Bictorys docs say lowercase but we've also seen
+    // `SUCCEEDED` in some sandbox payloads, so be permissive.
+    const status = (payload.status || '').toLowerCase();
+    const isSuccess = status === 'succeeded' || status === 'success' || status === 'authorized';
+    const isFailure = status === 'failed' || status === 'cancelled' || status === 'rejected';
+    const isPending = status === 'pending' || status === 'processing';
 
-    if (event === 'charge.successful') {
+    if (isSuccess) {
       // Finalise: mark Payment SUCCEEDED, Subscription ACTIVE, Org ACTIVE,
       // compute period boundaries. Single transaction so a partial failure
       // (e.g. Org update fails) rolls back the Payment update — we'd rather
@@ -101,8 +107,8 @@ export const handleBictorysWebhook = async (
             status: 'SUCCEEDED',
             processedAt: now,
             webhookReceivedAt: now,
-            bictorysChargeId: data.chargeId,
-            paymentMethod: data.paymentMethod ?? null,
+            bictorysChargeId: payload.id,
+            paymentMethod: payload.pspName ?? null,
           },
         }),
         prisma.subscription.update({
@@ -121,44 +127,44 @@ export const handleBictorysWebhook = async (
       ]);
 
       logger.info(
-        `[bictorys-webhook] paid: org=${sub.organizationId} sub=${sub.id} amount=${payment.amount} ${payment.currency}`
+        `[bictorys-webhook] paid: org=${sub.organizationId} sub=${sub.id} amount=${payment.amount} ${payment.currency} via=${payload.pspName ?? 'n/a'}`
       );
 
       res.status(200).json({ received: true });
       return;
     }
 
-    if (event === 'charge.failed') {
+    if (isFailure) {
       await prisma.payment.update({
         where: { id: payment.id },
         data: {
           status: 'FAILED',
           webhookReceivedAt: new Date(),
-          bictorysChargeId: data.chargeId,
-          failureReason: data.failureReason ?? 'unknown',
+          bictorysChargeId: payload.id,
+          failureReason: payload.failureReason ?? status,
         },
       });
       // Subscription stays PENDING_PAYMENT — the user can retry by going
       // through checkout again (which generates a fresh paymentReference).
       logger.info(
-        `[bictorys-webhook] failed: payment=${payment.id} reason=${data.failureReason ?? 'n/a'}`
+        `[bictorys-webhook] failed: payment=${payment.id} reason=${payload.failureReason ?? status}`
       );
       res.status(200).json({ received: true });
       return;
     }
 
-    if (event === 'charge.pending') {
+    if (isPending) {
       await prisma.payment.update({
         where: { id: payment.id },
-        data: { webhookReceivedAt: new Date(), bictorysChargeId: data.chargeId },
+        data: { webhookReceivedAt: new Date(), bictorysChargeId: payload.id },
       });
       res.status(200).json({ received: true });
       return;
     }
 
-    // Unknown event — log and ack so Bictorys doesn't retry.
-    logger.warn(`[bictorys-webhook] unknown event: ${event}`);
-    res.status(200).json({ received: true, note: 'unknown event' });
+    // Unknown status — log and ack so Bictorys doesn't retry forever.
+    logger.warn(`[bictorys-webhook] unknown status: ${payload.status}`);
+    res.status(200).json({ received: true, note: 'unknown status' });
   } catch (err) {
     next(err);
   }

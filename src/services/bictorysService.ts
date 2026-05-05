@@ -10,9 +10,11 @@
  * hosted-checkout flow (per their docs). The secret key is for
  * server-only operations like refunds — we don't expose it on this path.
  *
- * Webhook: every state transition Bictorys notifies us about is signed.
- * `verifyWebhookSignature` is the authentication for that route — without
- * it any attacker could POST a fake `charge.successful` and unlock orgs.
+ * Webhook auth: Bictorys does NOT use HMAC. They echo the configured
+ * webhook secret in the `X-Secret-Key` header in plain text. We compare
+ * it to `BICTORYS_WEBHOOK_SECRET` via `verifyWebhookSecret` (timing-safe).
+ * Without this check, anyone hitting the public route could fake a
+ * `succeeded` payload and unlock orgs for free.
  *
  * ============================================================
  * ⚠️ AWS WAF gotchas — read this before changing call sites
@@ -42,7 +44,7 @@
  * before debugging deeper.
  */
 
-import { createHmac, timingSafeEqual } from 'crypto';
+import { timingSafeEqual } from 'crypto';
 import https from 'https';
 import { config } from '../config';
 import { logger } from '../utils/logger';
@@ -66,23 +68,38 @@ export interface CreateChargeResult {
   checkoutUrl: string;
 }
 
-export type BictorysWebhookEvent =
-  | 'charge.successful'
-  | 'charge.failed'
-  | 'charge.pending';
-
+/**
+ * Bictorys webhook payload — flat object, NOT enveloped in `{event, data}`.
+ * The transition is conveyed by `status` ("succeeded" / "failed" / "pending"),
+ * not by an event-name field. `id` is Bictorys' chargeId, `pspName` is the
+ * actual rail used (card / wave_money / orange_money / …).
+ *
+ * Source: https://docs.bictorys.com (webhook validation page) — flag any
+ * shape regression here when their docs evolve. They warn that fields can
+ * be added without notice; do not strict-validate on unknown keys.
+ */
 export interface BictorysWebhookPayload {
-  event: BictorysWebhookEvent;
-  data: {
-    chargeId: string;
-    paymentReference: string;
-    amount: number;
-    currency: string;
-    status: string;
-    paymentMethod?: string;
-    failureReason?: string;
-    customer?: { email?: string; phone?: string; name?: string };
+  /** Bictorys-assigned transaction id. We persist it on payments.bictorys_charge_id. */
+  id: string;
+  /** Echo of the `paymentReference` we sent at charge creation. Our lookup key. */
+  paymentReference: string;
+  /** Lowercase status string — `succeeded` / `failed` / `pending` / `cancelled`. */
+  status: string;
+  amount?: number;
+  currency?: string;
+  /** PSP rail (card, wave_money, orange_money, …). */
+  pspName?: string;
+  paymentMeans?: string;
+  merchantReference?: string;
+  customerObject?: {
+    name?: string;
+    email?: string;
+    phone?: string;
+    country?: string;
+    locale?: string;
   };
+  failureReason?: string;
+  timestamp?: string;
 }
 
 class BictorysService {
@@ -237,27 +254,21 @@ class BictorysService {
   }
 
   /**
-   * Verify the HMAC signature of a webhook delivery.
+   * Verify a webhook delivery's authenticity.
    *
-   * Bictorys signs the raw request body with the webhook secret (HMAC-SHA256)
-   * and sends the hex digest in `X-Bictorys-Signature`. We recompute and
-   * timing-safe-compare. Without this check, anyone who guesses the route
-   * URL can POST a fake `charge.successful` and unlock an org for free.
+   * Bictorys does NOT sign the body with HMAC — they echo back the secret
+   * configured on their dashboard in the `X-Secret-Key` header in plain text.
+   * We compare it to the secret stored in our env. Timing-safe to avoid
+   * leaking it through response-time differences.
    *
-   * Note: pass the *raw* request body string, not the parsed JSON, because
-   * even key reordering changes the hash.
+   * Without this check, anyone who guesses the route URL can POST a fake
+   * "succeeded" payload and unlock an org for free.
    */
-  verifyWebhookSignature(rawBody: string, signature: string | undefined): boolean {
-    if (!signature || !config.bictorys.webhookSecret) {
-      return false;
-    }
+  verifyWebhookSecret(headerSecret: string | undefined): boolean {
+    const expected = config.bictorys.webhookSecret;
+    if (!headerSecret || !expected) return false;
 
-    const expected = createHmac('sha256', config.bictorys.webhookSecret)
-      .update(rawBody, 'utf8')
-      .digest('hex');
-
-    // timingSafeEqual throws on length mismatch — guard first.
-    const a = Buffer.from(signature, 'utf8');
+    const a = Buffer.from(headerSecret, 'utf8');
     const b = Buffer.from(expected, 'utf8');
     if (a.length !== b.length) return false;
 
