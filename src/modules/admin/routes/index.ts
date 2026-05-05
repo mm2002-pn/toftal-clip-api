@@ -71,8 +71,9 @@ router.post('/plans', plansController.createAdminPlan);
 router.patch('/plans/:id', plansController.updateAdminPlan);
 router.delete('/plans/:id', plansController.deleteAdminPlan);
 
-// Subscriptions — read + cancel action
+// Subscriptions — read + cancel + admin manual mark-paid override
 router.get('/subscriptions', subscriptionsController.listAdminSubscriptions);
 router.post('/subscriptions/:id/cancel', subscriptionsController.cancelAdminSubscription);
+router.post('/subscriptions/:id/mark-paid', subscriptionsController.markAdminPaymentPaid);
 
 export default router;

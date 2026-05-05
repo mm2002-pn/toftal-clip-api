@@ -21,6 +21,7 @@ import { prisma } from '../../../config/database';
 import { ApiResponse } from '../../../utils/apiResponse';
 import { auditLogFromRequest } from '../../../services/auditLogger';
 import { logger } from '../../../utils/logger';
+import { finalizePaymentSucceeded } from '../../subscriptions/services/finalizePayment';
 
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 200;
@@ -204,6 +205,102 @@ export const cancelAdminSubscription = async (
 
     const updated = await prisma.subscription.findUnique({ where: { id } });
     ApiResponse.success(res, updated, 'Abonnement annulé');
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * POST /api/v1/admin/subscriptions/:id/mark-paid
+ * Body: { paymentMethod?: string, note?: string }
+ *
+ * Admin manual override: marks the latest PENDING payment as SUCCEEDED
+ * and activates the org without calling Bictorys. Used when:
+ *   - Bictorys' webhook never fired (common in sandbox)
+ *   - Their `GET /charges/:id` returns 500 (also seen in sandbox)
+ *   - The admin has visually confirmed the payment on the Bictorys
+ *     dashboard and wants to unblock the customer immediately.
+ *
+ * Audit-logged with the optional `note` so we can trace back why an
+ * admin bypassed the Bictorys verification step. The note is the only
+ * field that admin operators should fill in — every other detail is
+ * derived server-side from the existing payment row.
+ */
+export const markAdminPaymentPaid = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const { id } = req.params as { id: string };
+    const { paymentMethod, note } = req.body as {
+      paymentMethod?: string;
+      note?: string;
+    };
+
+    const sub = await prisma.subscription.findUnique({
+      where: { id },
+      include: {
+        organization: { select: { id: true, name: true } },
+        payments: {
+          where: { status: 'PENDING' },
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+        },
+      },
+    });
+    if (!sub) {
+      ApiResponse.notFound(res, 'Subscription introuvable');
+      return;
+    }
+    const payment = sub.payments[0];
+    if (!payment) {
+      ApiResponse.badRequest(res, 'Aucun paiement en attente sur cette subscription');
+      return;
+    }
+
+    const activated = await finalizePaymentSucceeded({
+      paymentId: payment.id,
+      subscriptionId: sub.id,
+      organizationId: sub.organizationId,
+      billingCycle: sub.billingCycle,
+      // If Bictorys never gave us a chargeId, use a sentinel so the
+      // unique constraint on bictorys_charge_id stays consistent.
+      bictorysChargeId: payment.bictorysChargeId || `manual_${payment.id}`,
+      paymentMethod: paymentMethod || payment.paymentMethod || 'manual',
+      observedAt: new Date(),
+    });
+
+    auditLogFromRequest(req, 'PAYMENT_MANUAL_MARK_PAID' as any, {
+      targetType: 'payment' as any,
+      targetId: payment.id,
+      metadata: {
+        subscriptionId: sub.id,
+        organizationId: sub.organizationId,
+        organizationName: sub.organization.name,
+        bictorysChargeId: payment.bictorysChargeId ?? null,
+        paymentReference: payment.paymentReference,
+        amount: payment.amount,
+        currency: payment.currency,
+        note: note?.trim() || null,
+        wasAlreadyPaid: !activated,
+      },
+    });
+
+    logger.info(
+      `[admin-mark-paid] sub=${sub.id} org=${sub.organization.name} payment=${payment.id} activated=${activated}`
+    );
+
+    const updated = await prisma.subscription.findUnique({
+      where: { id },
+      include: { plan: { select: { name: true, slug: true } } },
+    });
+
+    ApiResponse.success(
+      res,
+      { subscription: updated, activated },
+      activated ? 'Paiement marqué comme payé' : 'Paiement déjà finalisé'
+    );
   } catch (err) {
     next(err);
   }
