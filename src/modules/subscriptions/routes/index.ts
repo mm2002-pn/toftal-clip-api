@@ -15,6 +15,7 @@ import {
   createCheckoutSession,
   getCheckoutStatus,
   getMySubscription,
+  listOrgPayments,
 } from '../controllers';
 
 export const plansRouter = Router();
@@ -26,5 +27,6 @@ router.use(authenticate);
 router.post('/checkout', createCheckoutSession);
 router.get('/checkout/:reference/status', getCheckoutStatus);
 router.get('/me/:orgId', getMySubscription);
+router.get('/:orgId/payments', listOrgPayments);
 
 export default router;

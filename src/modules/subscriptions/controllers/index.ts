@@ -637,3 +637,77 @@ export const getMySubscription = async (
     next(err);
   }
 };
+
+// ---------------------------------------------------------------------------
+// GET /api/v1/subscriptions/:orgId/payments  (auth, ADMIN only)
+// ---------------------------------------------------------------------------
+//
+// Returns the org's billing history — succeeded, failed, refunded and
+// in-flight payments. Restricted to org ADMINs since this leaks amounts
+// and payment methods; matches Stripe / Notion / Linear conventions.
+//
+// Pagination: offset-based (limit + offset) — billing history per org
+// is naturally bounded by the renewal cadence, so cursor pagination
+// would be premature here.
+
+const PAYMENTS_DEFAULT_LIMIT = 50;
+const PAYMENTS_MAX_LIMIT = 200;
+
+export const listOrgPayments = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const userId = req.user!.id;
+    const orgId = String(req.params.orgId);
+    const limit = Math.min(
+      PAYMENTS_MAX_LIMIT,
+      Number(req.query.limit) || PAYMENTS_DEFAULT_LIMIT
+    );
+    const offset = Math.max(0, Number(req.query.offset) || 0);
+
+    const membership = await prisma.organizationMember.findFirst({
+      where: { organizationId: orgId, userId, status: 'ACTIVE' },
+      select: { role: true },
+    });
+    if (!membership) throw new ForbiddenError('Non membre de cette équipe.');
+    if (membership.role !== 'ADMIN') {
+      throw new ForbiddenError("Seuls les admins de l'équipe voient l'historique des paiements.");
+    }
+
+    const subscription = await prisma.subscription.findUnique({
+      where: { organizationId: orgId },
+      select: { id: true },
+    });
+    if (!subscription) {
+      ApiResponse.success(res, { items: [], total: 0, limit, offset });
+      return;
+    }
+
+    const [total, payments] = await prisma.$transaction([
+      prisma.payment.count({ where: { subscriptionId: subscription.id } }),
+      prisma.payment.findMany({
+        where: { subscriptionId: subscription.id },
+        orderBy: { createdAt: 'desc' },
+        take: limit,
+        skip: offset,
+        select: {
+          id: true,
+          paymentReference: true,
+          status: true,
+          amount: true,
+          currency: true,
+          paymentMethod: true,
+          failureReason: true,
+          createdAt: true,
+          processedAt: true,
+        },
+      }),
+    ]);
+
+    ApiResponse.success(res, { items: payments, total, limit, offset });
+  } catch (err) {
+    next(err);
+  }
+};
