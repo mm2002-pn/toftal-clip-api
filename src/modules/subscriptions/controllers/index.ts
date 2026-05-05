@@ -29,6 +29,10 @@ import {
 } from '../../../utils/errors';
 import { bictorysService } from '../../../services/bictorysService';
 import { logger } from '../../../utils/logger';
+import {
+  finalizePaymentSucceeded,
+  finalizePaymentFailed,
+} from '../services/finalizePayment';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -426,6 +430,42 @@ export const createCheckoutSession = async (
 // The frontend polls this after the redirect from Bictorys. We don't trust
 // the URL params — we look up the Payment, and only return the org info
 // when the row is owned by the caller.
+//
+// **Active fallback for an unreliable webhook**: Bictorys' sandbox often
+// doesn't deliver webhooks at all, and even in prod they sometimes lag /
+// retry. Rather than blocking the user on `PENDING` until the webhook
+// lands, this endpoint ALSO asks Bictorys directly for the charge state
+// when our DB row is still PENDING. If Bictorys says "succeeded" we run
+// the same finalisation transaction the webhook would have run; the user
+// gets unblocked in their next poll.
+//
+// To avoid spamming Bictorys' API: per-payment throttle (1 verify call
+// per ~1.5s — same cadence as the frontend polling). Once we transition
+// out of PENDING, we never call Bictorys again for that ref. This caps
+// a single checkout at ~20 Bictorys verify calls (30s polling window)
+// and at zero once the state is terminal.
+//
+// The webhook stays the fast path: when Bictorys does deliver, it flips
+// the row in <1s and subsequent polls just read the DB.
+
+// In-memory throttle for Bictorys verify calls. Keyed by paymentReference,
+// value = last call timestamp (ms). Survives the lifetime of the Cloud Run
+// instance — multi-instance fleets multiply this by the instance count
+// in the worst case, which is still negligible vs. the webhook path.
+const lastBictorysVerifyAt = new Map<string, number>();
+const BICTORYS_VERIFY_THROTTLE_MS = 1500;
+
+/**
+ * Garbage-collect entries older than 10 min so the Map can't grow without
+ * bound under sustained traffic. Cheap because we only care about active
+ * checkouts (most resolve in <30s).
+ */
+function pruneVerifyCache() {
+  const cutoff = Date.now() - 10 * 60 * 1000;
+  for (const [k, ts] of lastBictorysVerifyAt) {
+    if (ts < cutoff) lastBictorysVerifyAt.delete(k);
+  }
+}
 
 export const getCheckoutStatus = async (
   req: Request,
@@ -436,7 +476,7 @@ export const getCheckoutStatus = async (
     const userId = req.user!.id;
     const reference = String(req.params.reference || '');
 
-    const payment = await prisma.payment.findUnique({
+    let payment = await prisma.payment.findUnique({
       where: { paymentReference: reference },
       include: {
         subscription: {
@@ -456,18 +496,83 @@ export const getCheckoutStatus = async (
       throw new ForbiddenError("Vous n'avez pas accès à ce paiement.");
     }
 
+    // ACTIVE FALLBACK — only fire when:
+    //   - the payment is still pending (terminal states need no probing)
+    //   - Bictorys has assigned a chargeId (set by the async charge call;
+    //     null in the very first ~2s after checkout creation)
+    //   - we haven't probed in the last 1.5s for this ref (throttle)
+    const now = Date.now();
+    const last = lastBictorysVerifyAt.get(reference) ?? 0;
+    const shouldProbe =
+      payment.status === 'PENDING' &&
+      !!payment.bictorysChargeId &&
+      now - last >= BICTORYS_VERIFY_THROTTLE_MS;
+
+    if (shouldProbe) {
+      lastBictorysVerifyAt.set(reference, now);
+      pruneVerifyCache();
+      try {
+        const remote = await bictorysService.verifyChargeStatus(payment.bictorysChargeId!);
+        if (remote.status === 'succeeded') {
+          await finalizePaymentSucceeded({
+            paymentId: payment.id,
+            subscriptionId: payment.subscription.id,
+            organizationId: payment.subscription.organizationId,
+            billingCycle: payment.subscription.billingCycle,
+            bictorysChargeId: payment.bictorysChargeId!,
+            paymentMethod: remote.paymentMethod ?? null,
+            observedAt: new Date(),
+          });
+          logger.info(
+            `[checkout-status] activated via polling: ref=${reference} org=${payment.subscription.organizationId}`
+          );
+        } else if (remote.status === 'failed') {
+          await finalizePaymentFailed({
+            paymentId: payment.id,
+            bictorysChargeId: payment.bictorysChargeId!,
+            failureReason: remote.failureReason ?? 'failed',
+            observedAt: new Date(),
+          });
+          logger.info(
+            `[checkout-status] marked failed via polling: ref=${reference}`
+          );
+        }
+        // 'pending' → leave as-is, the frontend will poll again
+
+        // If we mutated the DB, re-read so the response reflects it.
+        if (remote.status === 'succeeded' || remote.status === 'failed') {
+          payment = await prisma.payment.findUnique({
+            where: { paymentReference: reference },
+            include: {
+              subscription: {
+                include: {
+                  organization: { include: { members: { where: { userId } } } },
+                },
+              },
+            },
+          }) as typeof payment;
+        }
+      } catch (err) {
+        // Bictorys API hiccup — log and fall through with the existing DB
+        // state. The next poll tick will retry.
+        logger.warn(
+          `[checkout-status] verifyChargeStatus failed ref=${reference}: ${(err as Error).message}`
+        );
+      }
+    }
+
     // Frontend uses these fields:
     //   - checkoutUrl: when populated → redirect there
     //   - paymentStatus: 'PENDING' (still waiting for Bictorys) | 'SUCCEEDED' (paid) | 'FAILED' (retry)
     //   - subscriptionStatus / organizationStatus: post-payment success state
     ApiResponse.success(res, {
-      paymentStatus: payment.status,
-      checkoutUrl: payment.checkoutUrl,
-      subscriptionStatus: payment.subscription.status,
-      organizationId: payment.subscription.organizationId,
-      organizationStatus: payment.subscription.organization.status,
-      paymentMethod: payment.paymentMethod,
-      failureReason: payment.failureReason,
+      paymentStatus: payment!.status,
+      checkoutUrl: payment!.checkoutUrl,
+      subscriptionStatus: payment!.subscription.status,
+      organizationId: payment!.subscription.organizationId,
+      organizationStatus: payment!.subscription.organization.status,
+      paymentMethod: payment!.paymentMethod,
+      failureReason: payment!.failureReason,
     });
   } catch (err) {
     next(err);
