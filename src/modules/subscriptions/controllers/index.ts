@@ -436,8 +436,15 @@ export const createCheckoutSession = async (
 // retry. Rather than blocking the user on `PENDING` until the webhook
 // lands, this endpoint ALSO asks Bictorys directly for the charge state
 // when our DB row is still PENDING. If Bictorys says "succeeded" we run
-// the same finalisation transaction the webhook would have run; the user
-// gets unblocked in their next poll.
+// the same finalisation transaction the webhook would have run.
+//
+// **WAF gotcha — fire-and-forget pattern**: Bictorys' WAF rejects any
+// outbound call made while an inbound HTTP socket is still open from the
+// same process (see bictorysService.ts header). So we DON'T block the
+// poll on `verifyChargeStatus` — we send the response with the current
+// DB state immediately, then run the verify after the inbound socket
+// has closed (`res.once('close')` + 500ms safety margin). The result of
+// the verify lands in the DB and is read by the *next* poll, ~1.5s later.
 //
 // To avoid spamming Bictorys' API: per-payment throttle (1 verify call
 // per ~1.5s — same cadence as the frontend polling). Once we transition
@@ -476,7 +483,7 @@ export const getCheckoutStatus = async (
     const userId = req.user!.id;
     const reference = String(req.params.reference || '');
 
-    let payment = await prisma.payment.findUnique({
+    const payment = await prisma.payment.findUnique({
       where: { paymentReference: reference },
       include: {
         subscription: {
@@ -496,7 +503,7 @@ export const getCheckoutStatus = async (
       throw new ForbiddenError("Vous n'avez pas accès à ce paiement.");
     }
 
-    // ACTIVE FALLBACK — only fire when:
+    // ACTIVE FALLBACK — only schedule a verify when:
     //   - the payment is still pending (terminal states need no probing)
     //   - Bictorys has assigned a chargeId (set by the async charge call;
     //     null in the very first ~2s after checkout creation)
@@ -509,70 +516,89 @@ export const getCheckoutStatus = async (
       now - last >= BICTORYS_VERIFY_THROTTLE_MS;
 
     if (shouldProbe) {
+      // Reserve the throttle slot BEFORE scheduling so concurrent polls
+      // see the bump and skip. The actual call fires only after the
+      // inbound socket closes (WAF requirement).
       lastBictorysVerifyAt.set(reference, now);
       pruneVerifyCache();
-      try {
-        const remote = await bictorysService.verifyChargeStatus(payment.bictorysChargeId!);
-        if (remote.status === 'succeeded') {
-          await finalizePaymentSucceeded({
-            paymentId: payment.id,
-            subscriptionId: payment.subscription.id,
-            organizationId: payment.subscription.organizationId,
-            billingCycle: payment.subscription.billingCycle,
-            bictorysChargeId: payment.bictorysChargeId!,
-            paymentMethod: remote.paymentMethod ?? null,
-            observedAt: new Date(),
-          });
-          logger.info(
-            `[checkout-status] activated via polling: ref=${reference} org=${payment.subscription.organizationId}`
-          );
-        } else if (remote.status === 'failed') {
-          await finalizePaymentFailed({
-            paymentId: payment.id,
-            bictorysChargeId: payment.bictorysChargeId!,
-            failureReason: remote.failureReason ?? 'failed',
-            observedAt: new Date(),
-          });
-          logger.info(
-            `[checkout-status] marked failed via polling: ref=${reference}`
-          );
-        }
-        // 'pending' → leave as-is, the frontend will poll again
 
-        // If we mutated the DB, re-read so the response reflects it.
-        if (remote.status === 'succeeded' || remote.status === 'failed') {
-          payment = await prisma.payment.findUnique({
-            where: { paymentReference: reference },
-            include: {
-              subscription: {
-                include: {
-                  organization: { include: { members: { where: { userId } } } },
-                },
-              },
-            },
-          }) as typeof payment;
-        }
-      } catch (err) {
-        // Bictorys API hiccup — log and fall through with the existing DB
-        // state. The next poll tick will retry.
-        logger.warn(
-          `[checkout-status] verifyChargeStatus failed ref=${reference}: ${(err as Error).message}`
-        );
-      }
+      // Snapshot what the async closure needs — `payment` is local but the
+      // closure runs after the handler returns, so capture the IDs.
+      const snapshot = {
+        paymentId: payment.id,
+        subscriptionId: payment.subscription.id,
+        organizationId: payment.subscription.organizationId,
+        billingCycle: payment.subscription.billingCycle,
+        bictorysChargeId: payment.bictorysChargeId!,
+      };
+
+      const fireVerify = () => {
+        void (async () => {
+          try {
+            const remote = await bictorysService.verifyChargeStatus(
+              snapshot.bictorysChargeId
+            );
+            if (remote.status === 'succeeded') {
+              const activated = await finalizePaymentSucceeded({
+                ...snapshot,
+                paymentMethod: remote.paymentMethod ?? null,
+                observedAt: new Date(),
+              });
+              if (activated) {
+                logger.info(
+                  `[checkout-status] activated via polling: ref=${reference} org=${snapshot.organizationId}`
+                );
+              }
+            } else if (remote.status === 'failed') {
+              const marked = await finalizePaymentFailed({
+                paymentId: snapshot.paymentId,
+                bictorysChargeId: snapshot.bictorysChargeId,
+                failureReason: remote.failureReason ?? 'failed',
+                observedAt: new Date(),
+              });
+              if (marked) {
+                logger.info(
+                  `[checkout-status] marked failed via polling: ref=${reference}`
+                );
+              }
+            }
+            // 'pending' → leave as-is, the next poll will retry the verify
+          } catch (err) {
+            // Bictorys API hiccup — log and exit. The throttle resets on
+            // the next poll (1.5s later) and the verify will retry. We
+            // keep the slot reserved here so a 1-off failure doesn't open
+            // an immediate retry storm.
+            logger.warn(
+              `[checkout-status] verifyChargeStatus failed ref=${reference}: ${(err as Error).message}`
+            );
+          }
+        })();
+      };
+
+      // Force `Connection: close` and wait for the actual TCP close before
+      // firing — same WAF workaround as createCharge. The 500ms margin on
+      // top of the close event compensates for cold-start drift in Cloud
+      // Run; pure setTimeout fires too early under load.
+      res.set('Connection', 'close');
+      res.once('close', () => setTimeout(fireVerify, 500));
     }
 
     // Frontend uses these fields:
     //   - checkoutUrl: when populated → redirect there
     //   - paymentStatus: 'PENDING' (still waiting for Bictorys) | 'SUCCEEDED' (paid) | 'FAILED' (retry)
     //   - subscriptionStatus / organizationStatus: post-payment success state
+    //
+    // We respond with whatever's currently in the DB. If the verify above
+    // was scheduled, its result will land before the next poll (~1.5s),
+    // so the user sees activation on the following tick at the latest.
     ApiResponse.success(res, {
-      paymentStatus: payment!.status,
-      checkoutUrl: payment!.checkoutUrl,
-      subscriptionStatus: payment!.subscription.status,
-      organizationId: payment!.subscription.organizationId,
-      organizationStatus: payment!.subscription.organization.status,
-      paymentMethod: payment!.paymentMethod,
-      failureReason: payment!.failureReason,
+      paymentStatus: payment.status,
+      checkoutUrl: payment.checkoutUrl,
+      subscriptionStatus: payment.subscription.status,
+      organizationId: payment.subscription.organizationId,
+      organizationStatus: payment.subscription.organization.status,
+      paymentMethod: payment.paymentMethod,
+      failureReason: payment.failureReason,
     });
   } catch (err) {
     next(err);
