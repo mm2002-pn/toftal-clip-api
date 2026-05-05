@@ -10,6 +10,7 @@ import * as storageController from '../controllers/storage';
 import * as membersController from '../controllers/members';
 import * as emailTemplatesController from '../controllers/emailTemplates';
 import * as aiPromptsController from '../controllers/aiPrompts';
+import * as plansController from '../controllers/plans';
 
 const router = Router();
 
@@ -62,5 +63,11 @@ router.post('/email-templates/:id/preview', emailTemplatesController.previewEmai
 
 // AI prompt templates — edit
 router.patch('/ai-prompts/:id', aiPromptsController.updateAIPrompt);
+
+// Subscription plans — full CRUD (list incl. inactive + create/update/delete)
+router.get('/plans', plansController.listAdminPlans);
+router.post('/plans', plansController.createAdminPlan);
+router.patch('/plans/:id', plansController.updateAdminPlan);
+router.delete('/plans/:id', plansController.deleteAdminPlan);
 
 export default router;
