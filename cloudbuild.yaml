@@ -107,7 +107,7 @@ steps:
       - 'gcr.io/${PROJECT_ID}/${_SERVICE_NAME}:${COMMIT_SHA}'
       - '--region'
       - '${_REGION}'
-      - '--add-cloudsql-instances'
+      - '--set-cloudsql-instances'
       - '${_INSTANCE_CONNECTION_NAME}'
       - '--command'
       - 'node'
