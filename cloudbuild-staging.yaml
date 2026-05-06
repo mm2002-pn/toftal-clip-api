@@ -82,7 +82,7 @@ steps:
       # any manually-added var gets wiped on the next deploy unless
       # listed here). See `availableSecrets` below for creation refs.
       - '--set-secrets'
-      - 'DATABASE_URL=DATABASE_URL_STAGING:latest,JWT_SECRET=JWT_SECRET:latest,JWT_REFRESH_SECRET=JWT_REFRESH_SECRET:latest,EMAIL_PASSWORD=EMAIL_PASSWORD:latest,GROQ_API_KEY=GROQ_API_KEY:latest,UPSTASH_REDIS_REST_TOKEN=UPSTASH_REDIS_REST_TOKEN:latest,REDIS_TCP_URL=REDIS_TCP_URL:latest,BICTORYS_PUBLIC_KEY=BICTORYS_PUBLIC_KEY_STAGING:latest,BICTORYS_SECRET_KEY=BICTORYS_SECRET_KEY_STAGING:latest,BICTORYS_WEBHOOK_SECRET=BICTORYS_WEBHOOK_SECRET_STAGING:latest'
+      - 'DATABASE_URL=DATABASE_URL_STAGING:latest,JWT_SECRET=JWT_SECRET:latest,JWT_REFRESH_SECRET=JWT_REFRESH_SECRET:latest,EMAIL_PASSWORD=EMAIL_PASSWORD:latest,GROQ_API_KEY=GROQ_API_KEY:latest,UPSTASH_REDIS_REST_TOKEN=UPSTASH_REDIS_REST_TOKEN:latest,REDIS_TCP_URL=REDIS_TCP_URL:latest,BICTORYS_PUBLIC_KEY=BICTORYS_PUBLIC_KEY_STAGING:latest,BICTORYS_SECRET_KEY=BICTORYS_SECRET_KEY_STAGING:latest,BICTORYS_WEBHOOK_SECRET=BICTORYS_WEBHOOK_SECRET_STAGING:latest,INTERNAL_API_SECRET=INTERNAL_API_SECRET_STAGING:latest'
       - '--min-instances'
       - '2'
       - '--max-instances'
@@ -128,9 +128,9 @@ steps:
       - '--execution-environment'
       - 'gen2'
       - '--set-env-vars'
-      - 'NODE_ENV=staging,GCS_BUCKET_NAME=toftal-clip-media,GCP_PROJECT_ID=toftal-clip-api,GCP_REGION=${_REGION},MEDIA_PUBLIC_BASE_URL=https://media.staging.toftalclip.io/,UPSTASH_REDIS_REST_URL=https://mint-polecat-37123.upstash.io'
+      - 'NODE_ENV=staging,GCS_BUCKET_NAME=toftal-clip-media,GCP_PROJECT_ID=toftal-clip-api,GCP_REGION=${_REGION},MEDIA_PUBLIC_BASE_URL=https://media.staging.toftalclip.io/,UPSTASH_REDIS_REST_URL=https://mint-polecat-37123.upstash.io,INTERNAL_API_BASE_URL=https://api.staging.toftalclip.io'
       - '--set-secrets'
-      - 'DATABASE_URL=DATABASE_URL_STAGING:latest,UPSTASH_REDIS_REST_TOKEN=UPSTASH_REDIS_REST_TOKEN:latest,REDIS_TCP_URL=REDIS_TCP_URL:latest'
+      - 'DATABASE_URL=DATABASE_URL_STAGING:latest,UPSTASH_REDIS_REST_TOKEN=UPSTASH_REDIS_REST_TOKEN:latest,REDIS_TCP_URL=REDIS_TCP_URL:latest,INTERNAL_API_SECRET=INTERNAL_API_SECRET_STAGING:latest'
 
 images:
   - 'gcr.io/${PROJECT_ID}/${_SERVICE_NAME}:${COMMIT_SHA}'

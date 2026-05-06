@@ -93,4 +93,18 @@ export const config = {
       process.env.MEDIA_PUBLIC_BASE_URL ||
       `https://storage.googleapis.com/${process.env.GCS_BUCKET_NAME || 'toftal-clip-media'}/`,
   },
+
+  // Internal service-to-service auth — used by the faststart worker
+  // (Cloud Run Job, separate process) to ask the API to emit a Socket.IO
+  // event to project rooms. The Job has no in-memory access to the io
+  // instance, so it POSTs `/api/v1/internal/version-ready` with the
+  // shared secret in `X-Internal-Secret`. The API validates and re-emits.
+  //
+  // The secret is mounted from Secret Manager on both the API service
+  // and the Job; it must be the same value for the auth to pass.
+  // `apiBaseUrl` is set on the Job only (worker → API direction).
+  internal: {
+    apiSecret: process.env.INTERNAL_API_SECRET || '',
+    apiBaseUrl: process.env.INTERNAL_API_BASE_URL || '',
+  },
 };

@@ -41,12 +41,13 @@ import { promisify } from 'util';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import * as os from 'os';
+import * as https from 'https';
+import { URL } from 'url';
 import { v4 as uuidv4 } from 'uuid';
 import { Storage } from '@google-cloud/storage';
 import { prisma } from '../config/database';
 import { config } from '../config';
 import { logger } from '../utils/logger';
-import { socketService } from '../services/socketService';
 
 const execAsync = promisify(exec);
 
@@ -66,6 +67,67 @@ function gcsPathFromUrl(url: string): string | null {
     return decodeURIComponent(url.slice(config.media.publicBaseUrl.length).split('?')[0]);
   }
   return null;
+}
+
+/**
+ * POST `/api/v1/internal/version-ready` to ask the API to broadcast a
+ * `version:playback-ready` Socket.IO event to the project room. Auth
+ * via the shared `INTERNAL_API_SECRET`, sent in `X-Internal-Secret`.
+ *
+ * Throws on non-2xx so the caller can log; never throws on failure
+ * (caller catches). Uses raw `https.request` to avoid pulling axios
+ * into the Job's bundle.
+ */
+async function notifyApiVersionReady(payload: {
+  projectId: string;
+  deliverableId: string;
+  versionId: string;
+  videoUrl: string;
+}): Promise<void> {
+  const baseUrl = config.internal.apiBaseUrl;
+  const secret = config.internal.apiSecret;
+  if (!baseUrl || !secret) {
+    logger.warn(
+      '[faststart] INTERNAL_API_BASE_URL or INTERNAL_API_SECRET missing, skipping socket notify'
+    );
+    return;
+  }
+
+  const url = new URL('/api/v1/internal/version-ready', baseUrl);
+  const body = JSON.stringify(payload);
+
+  await new Promise<void>((resolve, reject) => {
+    const req = https.request(
+      {
+        hostname: url.hostname,
+        port: url.port || 443,
+        path: url.pathname,
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(body),
+          'X-Internal-Secret': secret,
+        },
+      },
+      (res) => {
+        let data = '';
+        res.on('data', (c) => (data += c));
+        res.on('end', () => {
+          if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
+            resolve();
+          } else {
+            reject(
+              new Error(`API responded ${res.statusCode}: ${data.slice(0, 200)}`)
+            );
+          }
+        });
+      }
+    );
+    req.on('error', reject);
+    req.setTimeout(10_000, () => req.destroy(new Error('notify timeout')));
+    req.write(body);
+    req.end();
+  });
 }
 
 async function processFaststart(versionId: string): Promise<void> {
@@ -160,21 +222,24 @@ async function processFaststart(versionId: string): Promise<void> {
       data: { videoUrl: newPublicUrl },
     });
 
-    // 7. Notify any open client. Same pattern as the thumbnail emit.
+    // 7. Notify the API so it can re-emit `version:playback-ready` to
+    // the project's Socket.IO room. We can't emit directly from here —
+    // the Job is a separate process with no in-memory io instance —
+    // so we POST to the internal endpoint with a shared secret.
+    // Non-fatal: a failed POST just means the user must refresh to see
+    // the swap (the DB row is already updated).
     const projectId = version.deliverable?.project?.id;
     if (projectId) {
-      try {
-        socketService.emitToProject(projectId, 'version:playback-ready', {
-          versionId,
-          deliverableId: version.deliverableId,
-          videoUrl: newPublicUrl,
-        } as any);
-      } catch (emitErr) {
-        // Non-fatal — the next page load will fetch the new URL.
+      await notifyApiVersionReady({
+        projectId,
+        deliverableId: version.deliverableId,
+        versionId,
+        videoUrl: newPublicUrl,
+      }).catch((err) => {
         logger.warn(
-          `[faststart] socket emit failed for ${versionId}: ${(emitErr as Error).message}`
+          `[faststart] notify failed for ${versionId}: ${(err as Error).message}`
         );
-      }
+      });
     }
 
     logger.info(`[faststart] ✅ done ${versionId} → ${playablePath}`);

@@ -25,6 +25,7 @@ import adminRoutes from '../modules/admin/routes';
 import deviceTokensRoutes from '../modules/device-tokens/routes';
 import organizationsRoutes from '../modules/organizations/routes';
 import subscriptionsRoutes, { plansRouter } from '../modules/subscriptions/routes';
+import internalRoutes from '../modules/internal/routes';
 
 const router = Router();
 
@@ -93,5 +94,6 @@ router.use('/device-tokens', deviceTokensRoutes);
 router.use('/organizations', organizationsRoutes);
 router.use('/plans', plansRouter);
 router.use('/subscriptions', subscriptionsRoutes);
+router.use('/internal', internalRoutes);
 
 export default router;
