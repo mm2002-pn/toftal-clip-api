@@ -75,7 +75,7 @@ steps:
       - '--add-cloudsql-instances'
       - '${_INSTANCE_CONNECTION_NAME}'
       - '--set-env-vars'
-      - 'TRUST_PROXY=true,CORS_ORIGIN=https://toftalclip.io;https://www.toftalclip.io;https://app.toftalclip.io,NODE_ENV=production,FRONTEND_URL=https://toftalclip.io,EMAIL_SERVICE=gmail,EMAIL_USER=toftalpodium@gmail.com,EMAIL_FROM=Toftal Clip toftalpodium@gmail.com,RATE_LIMIT_MAX=1000,DB_CONNECTION_LIMIT=10,DB_POOL_TIMEOUT=30,GCS_BUCKET_NAME=toftal-clip-media,GCP_PROJECT_ID=toftal-clip-api,UPSTASH_REDIS_REST_URL=https://mint-polecat-37123.upstash.io,BICTORYS_API_URL=https://api.bictorys.com'
+      - 'TRUST_PROXY=true,CORS_ORIGIN=https://toftalclip.io;https://www.toftalclip.io;https://app.toftalclip.io,NODE_ENV=production,FRONTEND_URL=https://toftalclip.io,EMAIL_SERVICE=gmail,EMAIL_USER=toftalpodium@gmail.com,EMAIL_FROM=Toftal Clip toftalpodium@gmail.com,RATE_LIMIT_MAX=1000,DB_CONNECTION_LIMIT=10,DB_POOL_TIMEOUT=30,GCS_BUCKET_NAME=toftal-clip-media,GCP_PROJECT_ID=toftal-clip-api,GCP_REGION=${_REGION},UPSTASH_REDIS_REST_URL=https://mint-polecat-37123.upstash.io,BICTORYS_API_URL=https://api.bictorys.com,MEDIA_PUBLIC_BASE_URL=https://media.toftalclip.io/,FASTSTART_JOB_NAME=faststart-worker'
       # Secrets — Bictorys live keys live in Secret Manager. Same caveat
       # as staging: gcloud --set-secrets REPLACES, so any manually-added
       # secret gets wiped on the next deploy unless declared here.
@@ -92,6 +92,41 @@ steps:
       - '--timeout'
       - '3600'
       - '--session-affinity'
+
+  # Deploy faststart-worker as a Cloud Run Job (PROD).
+  # Reuses the same image as the API but overrides the entrypoint.
+  # gen2 execution required for SSD-backed scratch (long videos).
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args:
+      - 'run'
+      - 'jobs'
+      - 'deploy'
+      - 'faststart-worker'
+      - '--image'
+      - 'gcr.io/${PROJECT_ID}/${_SERVICE_NAME}:${COMMIT_SHA}'
+      - '--region'
+      - '${_REGION}'
+      - '--add-cloudsql-instances'
+      - '${_INSTANCE_CONNECTION_NAME}'
+      - '--command'
+      - 'node'
+      - '--args'
+      - 'dist/workers/faststart.js'
+      - '--memory'
+      - '8Gi'
+      - '--cpu'
+      - '2'
+      - '--max-retries'
+      - '2'
+      - '--task-timeout'
+      - '1800s'
+      - '--execution-environment'
+      - 'gen2'
+      - '--set-env-vars'
+      - 'NODE_ENV=production,GCS_BUCKET_NAME=toftal-clip-media,GCP_PROJECT_ID=toftal-clip-api,GCP_REGION=${_REGION},MEDIA_PUBLIC_BASE_URL=https://media.toftalclip.io/,UPSTASH_REDIS_REST_URL=https://mint-polecat-37123.upstash.io'
+      - '--set-secrets'
+      - 'DATABASE_URL=DATABASE_URL:latest,UPSTASH_REDIS_REST_TOKEN=UPSTASH_REDIS_REST_TOKEN:latest,REDIS_TCP_URL=REDIS_TCP_URL:latest'
 
 images:
   - 'gcr.io/${PROJECT_ID}/${_SERVICE_NAME}:${COMMIT_SHA}'

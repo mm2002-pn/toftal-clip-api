@@ -6,6 +6,7 @@ import { sendEmail, emailTemplates } from '../../../config/email';
 import { socketService } from '../../../services/socketService';
 import { extractVideoMetadata } from '../../../services/VideoMetadataService';
 import { generateVideoThumbnail } from '../../../services/VideoThumbnailService';
+import { triggerFaststartJob } from '../../../services/faststartTrigger';
 import { bucket, BUCKET_NAME } from '../../../config/gcs';
 import { renderEmailFromDB } from '../../../services/templateResolver';
 
@@ -493,6 +494,15 @@ export const addVersion = async (req: Request, res: Response, next: NextFunction
       } catch (err) {
         console.warn('Thumbnail persist failed:', err);
       }
+    });
+
+    // Fire-and-forget: kick off the faststart remux job. Decouples a
+    // potentially long ffmpeg pass (mostly I/O for `-c copy`, but the
+    // source can be 5–20 GB) from the inbound HTTP response. Emits
+    // `version:playback-ready` when the playable.mp4 is live; the
+    // frontend swaps src instantly. See workers/faststart.ts.
+    setImmediate(() => {
+      void triggerFaststartJob(version.id);
     });
 
     // Update deliverable status to VALIDATION with progress 75%

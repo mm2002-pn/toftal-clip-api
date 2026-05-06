@@ -49,6 +49,7 @@
   "type": "commonjs",
   "dependencies": {
     "@apollo/server": "^4.13.0",
+    "@google-cloud/run": "^3.2.1",
     "@google-cloud/storage": "^7.19.0",
     "@google/generative-ai": "^0.24.1",
     "@graphql-tools/merge": "^9.1.7",

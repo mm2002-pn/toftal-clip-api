@@ -64,4 +64,33 @@ export const config = {
     webhookSecret: process.env.BICTORYS_WEBHOOK_SECRET || '',
     apiUrl: process.env.BICTORYS_API_URL || 'https://api.test.bictorys.com',
   },
+
+  // Google Cloud — project / region / Cloud Run Jobs settings.
+  // `region` defaults to europe-west1 because that's where our Cloud Run
+  // services live; if we ever multi-region, the Job must run in the same
+  // region as the GCS bucket to keep egress free.
+  gcp: {
+    projectId: process.env.GCP_PROJECT_ID || '',
+    region: process.env.GCP_REGION || 'europe-west1',
+    /**
+     * Name of the Cloud Run Job that runs the faststart remux pipeline.
+     * Different per environment so staging never triggers prod's Job and
+     * vice-versa. Set in cloudbuild yamls.
+     */
+    faststartJobName: process.env.FASTSTART_JOB_NAME || 'faststart-worker',
+  },
+
+  // Media URLs — served via Cloud CDN once the load balancer is in place.
+  // Worker writes this base into Version.videoUrl for new remuxed files
+  // so playback hits the CDN. Falls back to direct GCS in dev.
+  media: {
+    bucketName: process.env.GCS_BUCKET_NAME || 'toftal-clip-media',
+    /**
+     * Public base URL for serving media. With CDN: `https://media.staging.toftalclip.io/`.
+     * Without CDN: `https://storage.googleapis.com/<bucket>/`. MUST end with `/`.
+     */
+    publicBaseUrl:
+      process.env.MEDIA_PUBLIC_BASE_URL ||
+      `https://storage.googleapis.com/${process.env.GCS_BUCKET_NAME || 'toftal-clip-media'}/`,
+  },
 };
