@@ -109,11 +109,16 @@ function buildFfmpegCommand(input: string, tmpDir: string): string {
   return [
     `ffmpeg -y -i "${input}"`,
     // Split the decoded video into 4 streams once; downscale per rung.
+    // `force_divisible_by=2` rounds dimensions to the nearest even
+    // number — h264 requires even width/height, otherwise libx264
+    // refuses with "width not divisible by 2". Particularly bites
+    // vertical / 9:16 sources (TikTok-style) where the auto-computed
+    // scaled width lands on odd values like 405 for a 720p target.
     `-filter_complex "[0:v]split=4[v1][v2][v3][v4];`,
-    `[v1]scale=w=1920:h=1080:force_original_aspect_ratio=decrease[v1out];`,
-    `[v2]scale=w=1280:h=720:force_original_aspect_ratio=decrease[v2out];`,
-    `[v3]scale=w=854:h=480:force_original_aspect_ratio=decrease[v3out];`,
-    `[v4]scale=w=426:h=240:force_original_aspect_ratio=decrease[v4out]"`,
+    `[v1]scale=w=1920:h=1080:force_original_aspect_ratio=decrease:force_divisible_by=2[v1out];`,
+    `[v2]scale=w=1280:h=720:force_original_aspect_ratio=decrease:force_divisible_by=2[v2out];`,
+    `[v3]scale=w=854:h=480:force_original_aspect_ratio=decrease:force_divisible_by=2[v3out];`,
+    `[v4]scale=w=426:h=240:force_original_aspect_ratio=decrease:force_divisible_by=2[v4out]"`,
     // Video encoders — h264 with `preset=fast` for a 2× speedup vs
     // `medium` at ~5% larger file (acceptable trade-off).
     `-map "[v1out]" -c:v:0 libx264 -preset fast -crf 23 -b:v:0 5000k -maxrate:v:0 5350k -bufsize:v:0 7500k`,
