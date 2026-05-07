@@ -76,7 +76,7 @@ steps:
       - '--add-cloudsql-instances'
       - '${_INSTANCE_CONNECTION_NAME}'
       - '--set-env-vars'
-      - 'TRUST_PROXY=true,CORS_ORIGIN=https://toftalclip.io;https://staging.toftalclip.io;https://toftal-clip.netlify.app;https://toftal-clip-test.netlify.app,NODE_ENV=staging,FRONTEND_URL=https://staging.toftalclip.io,EMAIL_SERVICE=gmail,EMAIL_USER=toftalpodium@gmail.com,EMAIL_FROM=Toftal Clip toftalpodium@gmail.com,RATE_LIMIT_MAX=1000,DB_CONNECTION_LIMIT=10,DB_POOL_TIMEOUT=30,GCS_BUCKET_NAME=toftal-clip-media,GCP_PROJECT_ID=toftal-clip-api,GCP_REGION=${_REGION},UPSTASH_REDIS_REST_URL=https://mint-polecat-37123.upstash.io,BICTORYS_API_URL=https://api.test.bictorys.com,MEDIA_PUBLIC_BASE_URL=https://media.staging.toftalclip.io/,FASTSTART_JOB_NAME=faststart-worker-staging'
+      - 'TRUST_PROXY=true,CORS_ORIGIN=https://toftalclip.io;https://staging.toftalclip.io;https://toftal-clip.netlify.app;https://toftal-clip-test.netlify.app,NODE_ENV=staging,FRONTEND_URL=https://staging.toftalclip.io,EMAIL_SERVICE=gmail,EMAIL_USER=toftalpodium@gmail.com,EMAIL_FROM=Toftal Clip toftalpodium@gmail.com,RATE_LIMIT_MAX=1000,DB_CONNECTION_LIMIT=10,DB_POOL_TIMEOUT=30,GCS_BUCKET_NAME=toftal-clip-media,GCP_PROJECT_ID=toftal-clip-api,GCP_REGION=${_REGION},UPSTASH_REDIS_REST_URL=https://mint-polecat-37123.upstash.io,BICTORYS_API_URL=https://api.test.bictorys.com,MEDIA_PUBLIC_BASE_URL=https://media.staging.toftalclip.io/,FASTSTART_JOB_NAME=faststart-worker-staging,HLS_JOB_NAME=hls-worker-staging'
       # Secrets — Bictorys keys live in Secret Manager so they survive
       # `--set-secrets` re-applications (gcloud replaces, not merges, so
       # any manually-added var gets wiped on the next deploy unless
@@ -125,6 +125,47 @@ steps:
       - '2'
       - '--task-timeout'
       - '1800s'
+      - '--execution-environment'
+      - 'gen2'
+      - '--set-env-vars'
+      - 'NODE_ENV=staging,GCS_BUCKET_NAME=toftal-clip-media,GCP_PROJECT_ID=toftal-clip-api,GCP_REGION=${_REGION},MEDIA_PUBLIC_BASE_URL=https://media.staging.toftalclip.io/,UPSTASH_REDIS_REST_URL=https://mint-polecat-37123.upstash.io,INTERNAL_API_BASE_URL=https://api.staging.toftalclip.io'
+      - '--set-secrets'
+      - 'DATABASE_URL=DATABASE_URL_STAGING:latest,UPSTASH_REDIS_REST_TOKEN=UPSTASH_REDIS_REST_TOKEN:latest,REDIS_TCP_URL=REDIS_TCP_URL:latest,INTERNAL_API_SECRET=INTERNAL_API_SECRET_STAGING:latest'
+
+  # Deploy hls-worker as a Cloud Run Job (STAGING) — Phase 2 ABR
+  # encoding pipeline. Same image as the API/faststart, different
+  # entry point (dist/workers/hls.js). Sized larger than faststart
+  # because this is real x264 re-encode work, not just a remux.
+  #
+  # 4 vCPU and 8 GB RAM keep the libx264 threads fed; 120 min timeout
+  # covers a 2h source at preset=fast (~30-60 min on 4 vCPU). gen2
+  # for SSD scratch — large source + 4 variant outputs + thousands
+  # of segment .ts files chew up disk, not RAM.
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args:
+      - 'run'
+      - 'jobs'
+      - 'deploy'
+      - 'hls-worker-staging'
+      - '--image'
+      - 'gcr.io/${PROJECT_ID}/${_SERVICE_NAME}:${COMMIT_SHA}'
+      - '--region'
+      - '${_REGION}'
+      - '--set-cloudsql-instances'
+      - '${_INSTANCE_CONNECTION_NAME}'
+      - '--command'
+      - 'node'
+      - '--args'
+      - 'dist/workers/hls.js'
+      - '--memory'
+      - '8Gi'
+      - '--cpu'
+      - '4'
+      - '--max-retries'
+      - '1'
+      - '--task-timeout'
+      - '7200s'
       - '--execution-environment'
       - 'gen2'
       - '--set-env-vars'

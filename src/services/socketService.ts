@@ -44,7 +44,8 @@ export type SocketEvent =
   | 'feedback:read'
   | 'feedback:reaction'
   | 'version:thumbnail'
-  | 'version:playback-ready';
+  | 'version:playback-ready'
+  | 'version:hls-ready';
 
 // Payload types for each event
 export interface NotificationPayload {

@@ -85,4 +85,51 @@ router.post('/version-ready', (req: Request, res: Response): void => {
   }
 });
 
+/**
+ * POST /api/v1/internal/hls-ready
+ * Headers: X-Internal-Secret: <shared secret>
+ * Body: { projectId, deliverableId, versionId, masterUrl }
+ *
+ * Re-emits `version:hls-ready` so connected clients can switch to
+ * adaptive bitrate playback (hls.js / native HLS) without refreshing.
+ */
+router.post('/hls-ready', (req: Request, res: Response): void => {
+  const headerSecret = (req.headers['x-internal-secret'] || req.headers['X-Internal-Secret']) as
+    | string
+    | undefined;
+
+  if (!verifyInternalSecret(headerSecret)) {
+    logger.warn('[internal] hls-ready: invalid secret');
+    res.status(401).json({ error: 'Invalid internal secret' });
+    return;
+  }
+
+  const { projectId, deliverableId, versionId, masterUrl } = (req.body || {}) as {
+    projectId?: string;
+    deliverableId?: string;
+    versionId?: string;
+    masterUrl?: string;
+  };
+
+  if (!projectId || !deliverableId || !versionId || !masterUrl) {
+    res.status(400).json({
+      error: 'Missing fields: projectId, deliverableId, versionId, masterUrl',
+    });
+    return;
+  }
+
+  try {
+    socketService.emitToProject(projectId, 'version:hls-ready' as any, {
+      versionId,
+      deliverableId,
+      masterUrl,
+    } as any);
+    logger.info(`[internal] re-emitted version:hls-ready for ${versionId}`);
+    res.json({ ok: true });
+  } catch (err) {
+    logger.error(`[internal] socket emit failed: ${(err as Error).message}`);
+    res.status(500).json({ error: 'Emit failed' });
+  }
+});
+
 export default router;

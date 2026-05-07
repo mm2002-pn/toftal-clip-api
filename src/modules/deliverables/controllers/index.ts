@@ -7,6 +7,7 @@ import { socketService } from '../../../services/socketService';
 import { extractVideoMetadata } from '../../../services/VideoMetadataService';
 import { generateVideoThumbnail } from '../../../services/VideoThumbnailService';
 import { triggerFaststartJob } from '../../../services/faststartTrigger';
+import { triggerHlsJob } from '../../../services/hlsTrigger';
 import { bucket, BUCKET_NAME } from '../../../config/gcs';
 import { renderEmailFromDB } from '../../../services/templateResolver';
 
@@ -503,6 +504,15 @@ export const addVersion = async (req: Request, res: Response, next: NextFunction
     // frontend swaps src instantly. See workers/faststart.ts.
     setImmediate(() => {
       void triggerFaststartJob(version.id);
+    });
+
+    // Fire-and-forget: kick off the HLS multi-quality encode job in
+    // parallel. Takes 2–60 min (CPU-bound, full re-encode). When done,
+    // sets versions.alternative_qualities.master and emits
+    // `version:hls-ready` so the frontend swaps to adaptive bitrate
+    // playback via hls.js (or native HLS on Safari). See workers/hls.ts.
+    setImmediate(() => {
+      void triggerHlsJob(version.id);
     });
 
     // Update deliverable status to VALIDATION with progress 75%

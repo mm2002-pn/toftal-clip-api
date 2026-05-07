@@ -75,7 +75,7 @@ steps:
       - '--add-cloudsql-instances'
       - '${_INSTANCE_CONNECTION_NAME}'
       - '--set-env-vars'
-      - 'TRUST_PROXY=true,CORS_ORIGIN=https://toftalclip.io;https://www.toftalclip.io;https://app.toftalclip.io,NODE_ENV=production,FRONTEND_URL=https://toftalclip.io,EMAIL_SERVICE=gmail,EMAIL_USER=toftalpodium@gmail.com,EMAIL_FROM=Toftal Clip toftalpodium@gmail.com,RATE_LIMIT_MAX=1000,DB_CONNECTION_LIMIT=10,DB_POOL_TIMEOUT=30,GCS_BUCKET_NAME=toftal-clip-media,GCP_PROJECT_ID=toftal-clip-api,GCP_REGION=${_REGION},UPSTASH_REDIS_REST_URL=https://mint-polecat-37123.upstash.io,BICTORYS_API_URL=https://api.bictorys.com,MEDIA_PUBLIC_BASE_URL=https://media.toftalclip.io/,FASTSTART_JOB_NAME=faststart-worker'
+      - 'TRUST_PROXY=true,CORS_ORIGIN=https://toftalclip.io;https://www.toftalclip.io;https://app.toftalclip.io,NODE_ENV=production,FRONTEND_URL=https://toftalclip.io,EMAIL_SERVICE=gmail,EMAIL_USER=toftalpodium@gmail.com,EMAIL_FROM=Toftal Clip toftalpodium@gmail.com,RATE_LIMIT_MAX=1000,DB_CONNECTION_LIMIT=10,DB_POOL_TIMEOUT=30,GCS_BUCKET_NAME=toftal-clip-media,GCP_PROJECT_ID=toftal-clip-api,GCP_REGION=${_REGION},UPSTASH_REDIS_REST_URL=https://mint-polecat-37123.upstash.io,BICTORYS_API_URL=https://api.bictorys.com,MEDIA_PUBLIC_BASE_URL=https://media.toftalclip.io/,FASTSTART_JOB_NAME=faststart-worker,HLS_JOB_NAME=hls-worker'
       # Secrets — Bictorys live keys live in Secret Manager. Same caveat
       # as staging: gcloud --set-secrets REPLACES, so any manually-added
       # secret gets wiped on the next deploy unless declared here.
@@ -121,6 +121,41 @@ steps:
       - '2'
       - '--task-timeout'
       - '1800s'
+      - '--execution-environment'
+      - 'gen2'
+      - '--set-env-vars'
+      - 'NODE_ENV=production,GCS_BUCKET_NAME=toftal-clip-media,GCP_PROJECT_ID=toftal-clip-api,GCP_REGION=${_REGION},MEDIA_PUBLIC_BASE_URL=https://media.toftalclip.io/,UPSTASH_REDIS_REST_URL=https://mint-polecat-37123.upstash.io,INTERNAL_API_BASE_URL=https://api.toftalclip.io'
+      - '--set-secrets'
+      - 'DATABASE_URL=DATABASE_URL:latest,UPSTASH_REDIS_REST_TOKEN=UPSTASH_REDIS_REST_TOKEN:latest,REDIS_TCP_URL=REDIS_TCP_URL:latest,INTERNAL_API_SECRET=INTERNAL_API_SECRET:latest'
+
+  # Deploy hls-worker as a Cloud Run Job (PROD). See staging yaml for
+  # the rationale on sizing (4 vCPU / 8 GB / 120 min for full x264
+  # re-encode of up to 2h sources).
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args:
+      - 'run'
+      - 'jobs'
+      - 'deploy'
+      - 'hls-worker'
+      - '--image'
+      - 'gcr.io/${PROJECT_ID}/${_SERVICE_NAME}:${COMMIT_SHA}'
+      - '--region'
+      - '${_REGION}'
+      - '--set-cloudsql-instances'
+      - '${_INSTANCE_CONNECTION_NAME}'
+      - '--command'
+      - 'node'
+      - '--args'
+      - 'dist/workers/hls.js'
+      - '--memory'
+      - '8Gi'
+      - '--cpu'
+      - '4'
+      - '--max-retries'
+      - '1'
+      - '--task-timeout'
+      - '7200s'
       - '--execution-environment'
       - 'gen2'
       - '--set-env-vars'

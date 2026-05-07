@@ -78,6 +78,12 @@ export const config = {
      * vice-versa. Set in cloudbuild yamls.
      */
     faststartJobName: process.env.FASTSTART_JOB_NAME || 'faststart-worker',
+    /**
+     * Name of the Cloud Run Job that runs the HLS multi-quality encode
+     * pipeline. Tuned with more CPU/RAM/timeout than faststart since
+     * ffmpeg here actually re-encodes (CPU-bound, not just remux).
+     */
+    hlsJobName: process.env.HLS_JOB_NAME || 'hls-worker',
   },
 
   // Media URLs — served via Cloud CDN once the load balancer is in place.
