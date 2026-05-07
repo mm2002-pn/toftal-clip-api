@@ -49,6 +49,14 @@ export const handleBictorysWebhook = async (
     const headerTimestamp = (req.headers['x-webhook-timestamp'] ||
       req.headers['X-Webhook-Timestamp']) as string | undefined;
 
+    // Entry log — fires unconditionally so we can prove Bictorys is
+    // actually hitting us (or not) without grep'ing every other layer.
+    // We log the body length (not content) and which auth headers are
+    // present (not values) — secrets stay out of Cloud Logging.
+    logger.info(
+      `[bictorys-webhook] HIT ip=${req.ip ?? 'n/a'} ua=${(req.headers['user-agent'] || '').slice(0, 60)} bodyLen=${rawBody.length} hmac=${!!headerSignature} static=${!!headerSecret}`
+    );
+
     if (
       !bictorysService.verifyWebhook({
         rawBody,
@@ -58,7 +66,7 @@ export const handleBictorysWebhook = async (
       })
     ) {
       logger.warn(
-        `[bictorys-webhook] auth failed (hmac=${!!headerSignature} static=${!!headerSecret})`
+        `[bictorys-webhook] auth failed (hmac=${!!headerSignature} static=${!!headerSecret}) — body preview: ${rawBody.slice(0, 200)}`
       );
       // Per the Bictorys guide we should still 200 to avoid their retry
       // storm — but a hard 401 surfaces config issues faster in dev/staging.
@@ -71,9 +79,17 @@ export const handleBictorysWebhook = async (
     try {
       payload = JSON.parse(rawBody) as BictorysWebhookPayload;
     } catch {
+      logger.warn(`[bictorys-webhook] non-JSON body: ${rawBody.slice(0, 200)}`);
       res.status(400).json({ error: 'Invalid JSON body' });
       return;
     }
+
+    // Authenticated body parsed — log the key fields so we have a full
+    // audit trail on every legit delivery (helps debug the inevitable
+    // mismatch between what Bictorys sends and what their docs say).
+    logger.info(
+      `[bictorys-webhook] PARSED ref=${payload.paymentReference} id=${payload.id} status=${payload.status} amount=${payload.amount ?? 'n/a'} currency=${payload.currency ?? 'n/a'} pspName=${payload.pspName ?? 'n/a'}`
+    );
 
     if (!payload?.id || !payload?.paymentReference) {
       res.status(400).json({ error: 'Missing id or paymentReference' });
