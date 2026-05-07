@@ -8,6 +8,30 @@ const PROJECT_ID = process.env.GCP_PROJECT_ID || 'toftal-clip-api';
 const KEY_FILE = process.env.GCS_KEY_FILE;
 const IS_CLOUD_RUN = process.env.NODE_ENV === 'production' || process.env.NODE_ENV === 'staging';
 
+/**
+ * Public base URL the frontend should use to fetch media. Set to the
+ * Cloud CDN domain in staging/prod (`https://media.staging.toftalclip.io/`),
+ * falls back to direct GCS in dev.
+ *
+ * Why we don't just `storage.googleapis.com/...` everywhere
+ * ────────────────────────────────────────────────────────
+ * Direct GCS = no CDN, no edge cache, ~200-300 ms first-byte latency
+ * from West Africa to Google's EU/US data centers. On a 1h video the
+ * browser issues hundreds of range requests during seek + buffer
+ * fill, multiplying that latency. Routing through Cloud CDN cuts
+ * tail latency by ~80% on first hit and to near-zero on cache hits.
+ *
+ * Returning the CDN URL from the upload pipeline means the very
+ * first playback after upload already benefits from the CDN, before
+ * the faststart worker has even run.
+ */
+const MEDIA_PUBLIC_BASE_URL =
+  process.env.MEDIA_PUBLIC_BASE_URL || `https://storage.googleapis.com/${BUCKET_NAME}/`;
+
+function buildPublicUrl(fileName: string): string {
+  return `${MEDIA_PUBLIC_BASE_URL}${fileName}`;
+}
+
 // Initialize storage
 // In Cloud Run (production/staging), use Application Default Credentials
 // In development, use service account key file
@@ -61,7 +85,7 @@ export const uploadToGCS = async (
   const [metadata] = await file.getMetadata();
 
   // Generate signed URL (valid for 7 days) or public URL
-  const publicUrl = `https://storage.googleapis.com/${BUCKET_NAME}/${fileName}`;
+  const publicUrl = buildPublicUrl(fileName);
 
   return {
     url: publicUrl,
@@ -209,7 +233,7 @@ export const getUploadSignedUrl = async (
     contentType: contentType,
   });
 
-  const publicUrl = `https://storage.googleapis.com/${BUCKET_NAME}/${uniqueFileName}`;
+  const publicUrl = buildPublicUrl(uniqueFileName);
 
   return {
     signedUrl,
