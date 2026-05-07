@@ -74,21 +74,32 @@ interface SourceProbe {
   width: number;
   height: number;
   duration: number;
+  hasAudio: boolean;
 }
 
-/** ffprobe → grab source resolution + duration. */
+/**
+ * ffprobe → grab source resolution + duration + audio presence.
+ *
+ * Audio detection matters because some sources (screen recordings,
+ * silent edits) ship without an audio track. ffmpeg's `-map a:0`
+ * fails hard with "Stream map 'a:0' matches no streams" on those —
+ * we detect upfront and build a video-only command when needed.
+ */
 async function probe(input: string): Promise<SourceProbe> {
   const { stdout } = await execAsync(
-    `ffprobe -v error -select_streams v:0 -show_entries stream=width,height -show_entries format=duration -of json "${input}"`,
+    `ffprobe -v error -show_streams -show_entries format=duration -of json "${input}"`,
     { maxBuffer: 4 * 1024 * 1024 }
   );
   const json = JSON.parse(stdout);
-  const stream = json.streams?.[0] ?? {};
+  const streams: any[] = json.streams ?? [];
+  const videoStream = streams.find((s) => s.codec_type === 'video') ?? {};
+  const audioStream = streams.find((s) => s.codec_type === 'audio');
   const fmt = json.format ?? {};
   return {
-    width: Number(stream.width || 0),
-    height: Number(stream.height || 0),
+    width: Number(videoStream.width || 0),
+    height: Number(videoStream.height || 0),
     duration: Number(fmt.duration || 0),
+    hasAudio: !!audioStream,
   };
 }
 
@@ -102,11 +113,8 @@ async function probe(input: string): Promise<SourceProbe> {
  * quality (1080p/, 720p/, 480p/, 240p/) since ffmpeg's
  * `hls_segment_filename` template doesn't auto-mkdir.
  */
-function buildFfmpegCommand(input: string, tmpDir: string): string {
-  // -loglevel info keeps the per-segment progress quiet but surfaces
-  // anything that goes wrong. The %v variable expands to the variant
-  // name (1080p / 720p / ...) per `var_stream_map`.
-  return [
+function buildFfmpegCommand(input: string, tmpDir: string, hasAudio: boolean): string {
+  const parts: string[] = [
     `ffmpeg -y -i "${input}"`,
     // Split the decoded video into 4 streams once; downscale per rung.
     // `force_divisible_by=2` rounds dimensions to the nearest even
@@ -125,11 +133,26 @@ function buildFfmpegCommand(input: string, tmpDir: string): string {
     `-map "[v2out]" -c:v:1 libx264 -preset fast -crf 23 -b:v:1 2500k -maxrate:v:1 2675k -bufsize:v:1 3750k`,
     `-map "[v3out]" -c:v:2 libx264 -preset fast -crf 23 -b:v:2 1200k -maxrate:v:2 1284k -bufsize:v:2 1800k`,
     `-map "[v4out]" -c:v:3 libx264 -preset fast -crf 28 -b:v:3 400k -maxrate:v:3 428k -bufsize:v:3 600k`,
-    // Audio — re-encode once at the highest rate, dupe to other rungs.
-    `-map a:0 -c:a:0 aac -b:a:0 128k -ar 48000 -ac 2`,
-    `-map a:0 -c:a:1 aac -b:a:1 128k -ar 48000 -ac 2`,
-    `-map a:0 -c:a:2 aac -b:a:2 96k -ar 48000 -ac 2`,
-    `-map a:0 -c:a:3 aac -b:a:3 64k -ar 48000 -ac 2`,
+  ];
+
+  // Audio — only included when the source has an audio track. Some
+  // sources (silent screen recordings, certain phone exports) ship
+  // without one; the ffmpeg `-map a:0` would otherwise fail with
+  // "Stream map 'a:0' matches no streams". The var_stream_map below
+  // also drops `a:N` to keep the manifest valid.
+  if (hasAudio) {
+    parts.push(
+      `-map a:0 -c:a:0 aac -b:a:0 128k`,
+      `-map a:0 -c:a:1 aac -b:a:1 128k`,
+      `-map a:0 -c:a:2 aac -b:a:2 96k`,
+      `-map a:0 -c:a:3 aac -b:a:3 64k`,
+      // Apply ar/ac once globally — per-stream duplicates trigger
+      // "Multiple -ac/-ar options" warnings (cosmetic but noisy).
+      `-ar 48000 -ac 2`
+    );
+  }
+
+  parts.push(
     // Force keyframes every 2s so segment boundaries are clean (avoids
     // the player having to seek back when switching qualities).
     `-g 48 -keyint_min 48 -sc_threshold 0`,
@@ -140,9 +163,15 @@ function buildFfmpegCommand(input: string, tmpDir: string): string {
     `-hls_list_size 0`,
     `-master_pl_name master.m3u8`,
     `-hls_segment_filename "${tmpDir}/%v/seg_%03d.ts"`,
-    `-var_stream_map "v:0,a:0,name:1080p v:1,a:1,name:720p v:2,a:2,name:480p v:3,a:3,name:240p"`,
-    `"${tmpDir}/%v/playlist.m3u8"`,
-  ].join(' ');
+    `-var_stream_map "${
+      hasAudio
+        ? 'v:0,a:0,name:1080p v:1,a:1,name:720p v:2,a:2,name:480p v:3,a:3,name:240p'
+        : 'v:0,name:1080p v:1,name:720p v:2,name:480p v:3,name:240p'
+    }"`,
+    `"${tmpDir}/%v/playlist.m3u8"`
+  );
+
+  return parts.join(' ');
 }
 
 /**
@@ -345,6 +374,13 @@ async function processHls(versionId: string): Promise<void> {
     return;
   }
 
+  // Disconnect Prisma before the long download/encode/upload phase.
+  // Cloud SQL idle-session timeout would otherwise kill the connection
+  // mid-encode, the UPDATE below would throw, Job retries, infinite
+  // loop. The `version` object stays in JS memory, no DB needed until
+  // the final UPDATE which auto-reconnects.
+  await prisma.$disconnect();
+
   const ext = path.extname(gcsPath);
   const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'hls-'));
   const tmpInput = path.join(tmp, `in-${uuidv4()}${ext}`);
@@ -363,15 +399,17 @@ async function processHls(versionId: string): Promise<void> {
     await bucket.file(gcsPath).download({ destination: tmpInput });
     logger.info(`[hls] downloaded in ${Math.round((Date.now() - dlStart) / 1000)}s`);
 
-    // 2. Probe — useful for the log line + future "skip variants
-    // larger than source" optimisation.
+    // 2. Probe — useful for the log line + audio-presence detection
+    // so we can skip the audio map on silent sources.
     const meta = await probe(tmpInput);
-    logger.info(`[hls] source ${meta.width}x${meta.height} dur=${Math.round(meta.duration)}s`);
+    logger.info(
+      `[hls] source ${meta.width}x${meta.height} dur=${Math.round(meta.duration)}s audio=${meta.hasAudio}`
+    );
 
     // 3. Encode.
     logger.info(`[hls] encoding 4 variants…`);
     const ffStart = Date.now();
-    const cmd = buildFfmpegCommand(tmpInput, tmpOut);
+    const cmd = buildFfmpegCommand(tmpInput, tmpOut, meta.hasAudio);
     await runFfmpeg(cmd, 110 * 60 * 1000); // 110 min — Job timeout is 120
     logger.info(`[hls] encoded in ${Math.round((Date.now() - ffStart) / 1000)}s`);
 

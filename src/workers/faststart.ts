@@ -159,6 +159,14 @@ async function processFaststart(versionId: string): Promise<void> {
     return;
   }
 
+  // Disconnect Prisma before the long download/encode/upload phase.
+  // Cloud SQL kills idle connections after ~60 s; if we kept this one
+  // open during the 4K download, the final UPDATE below would throw,
+  // the Job would retry, and we'd loop forever. The `version` object
+  // is in memory — we can still read it. The next prisma query
+  // (.update at the end) auto-opens a fresh connection.
+  await prisma.$disconnect();
+
   // 2. Build paths.
   const ext = path.extname(gcsPath); // .mp4 / .mov / ...
   const stem = gcsPath.slice(0, gcsPath.length - ext.length);
