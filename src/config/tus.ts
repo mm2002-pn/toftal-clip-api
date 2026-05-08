@@ -77,6 +77,11 @@ console.log('☁️ TUS using GCSStore (chunks → gs://' + BUCKET_NAME + ' dire
  * IS the GCS object path — `videos/<uuid>.<ext>` lands the upload at
  * exactly the same layout as the signed-URL multipart pipeline, so
  * downstream workers (faststart/preview/HLS) need no special handling.
+ *
+ * NOTE: the id contains a `/`, which means the default `@tus/server`
+ * URL→id regex (last segment only) would parse it back as just
+ * `<uuid>.<ext>` and miss `videos/`. We pair this with a custom
+ * `getFileIdFromRequest` below so the slash round-trips intact.
  */
 const namingFunction = (
   _req: unknown,
@@ -85,6 +90,26 @@ const namingFunction = (
   const filename = metadata?.filename || '';
   const ext = path.extname(filename).toLowerCase() || '.mp4';
   return `videos/${uuidv4()}${ext}`;
+};
+
+/**
+ * Custom URL→id parser. Default `/([^/]+)\/?$/` only grabs the last
+ * path segment, so our `videos/<uuid>.<ext>` ids would lose the
+ * `videos/` prefix on every PATCH/HEAD/DELETE and the GCS lookup
+ * would 404. We strip the configured path prefix and treat the
+ * remainder (slashes included) as the id.
+ */
+const getFileIdFromRequest = (req: any): string | undefined => {
+  const url: string = req?.url || '';
+  const prefix = `${TUS_CONFIG.path}/`;
+  if (!url.startsWith(prefix)) return undefined;
+  const raw = url.slice(prefix.length).split('?')[0].replace(/\/$/, '');
+  if (!raw) return undefined;
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return raw;
+  }
 };
 
 /**
@@ -260,6 +285,7 @@ export const createTusServer = (): Server => {
       'X-Upload-Id',
     ],
     namingFunction,
+    getFileIdFromRequest,
     onUploadCreate,
     onUploadFinish,
   });
