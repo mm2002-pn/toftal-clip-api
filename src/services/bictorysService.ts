@@ -29,27 +29,23 @@
  * ⚠️ AWS WAF gotchas — read this before changing call sites
  * ============================================================
  *
- * Bictorys is fronted by an AWS ELB whose WAF has at least three rules
- * that bit us during integration:
+ * Bictorys is fronted by an AWS ELB whose WAF has bitten us twice
+ * during integration. (A third rule — "inbound-in-flight blocking",
+ * where an outbound fired from an open Express handler returned 403 —
+ * was retested in May 2026 and no longer triggers. Sync calls from
+ * inside controllers are now safe.)
  *
- *   1. **Inbound-in-flight blocking**. An outbound charge call fired from
- *      inside an Express request handler while the inbound HTTP socket is
- *      still open returns 403. The same call from `setTimeout` after the
- *      response was sent returns 202. Callers MUST `res.json(...)` first,
- *      then `setTimeout(callBictorys, 2000)` — see the subscriptions
- *      controller for the canonical pattern.
- *
- *   2. **Browser-like User-Agent required**. Plain identifiers like
+ *   1. **Browser-like User-Agent required**. Plain identifiers like
  *      "toftal-clip-api" or empty UA → 403. `User-Agent: Mozilla/5.0`
  *      reliably goes through.
  *
- *   3. **Public HTTPS redirect URLs**. Payloads containing `http://localhost`
+ *   2. **Public HTTPS redirect URLs**. Payloads containing `http://localhost`
  *      (or any non-HTTPS / private redirect URL) get 403. The dev workaround
  *      is to substitute `https://staging.toftalclip.io` when frontendUrl is
  *      `http://localhost` — Bictorys never actually calls the redirect URL
  *      in sandbox-mobile-money payments anyway (per their docs).
  *
- * If you find yourself getting unexplained 403s, suspect these three
+ * If you find yourself getting unexplained 403s, suspect these two
  * before debugging deeper.
  */
 
@@ -147,8 +143,6 @@ class BictorysService {
    * and returns a single-operator MobilePaymentObject we'd need to render
    * ourselves — not what we want.
    *
-   * MUST NOT be called while an inbound HTTP request is still open — see
-   * the timing note in this file's header.
    */
   async createCharge(input: CreateChargeInput): Promise<CreateChargeResult> {
     if (!this.isConfigured()) {

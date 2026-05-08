@@ -354,61 +354,56 @@ export const createCheckoutSession = async (
     const successRedirectUrl = `${redirectBase}/#/checkout/return?ref=${paymentReference}`;
     const errorRedirectUrl = `${redirectBase}/#/checkout/return?ref=${paymentReference}&error=1`;
 
-    // Force `Connection: close` so the client doesn't keep-alive the
-    // inbound socket — that would defeat the WAF workaround below
-    // (their AWS ELB blocks outbound requests fired while an inbound
-    // is still open from the same process).
-    res.set('Connection', 'close');
+    // Synchronous Bictorys call. Their WAF used to reject outbound
+    // requests fired while the inbound socket was still open — we kept
+    // a heavy `res.once('close') + setTimeout(500)` workaround for a
+    // long time. WAF behaviour was retested and the inbound-in-flight
+    // pattern now passes cleanly, so we issue the request inline,
+    // persist the result, and respond with the checkoutUrl in a single
+    // round-trip. The frontend redirects directly — no more polling
+    // page waiting on `checkoutUrl` to land.
+    let charge;
+    try {
+      charge = await bictorysService.createCharge({
+        amount,
+        currency: currency as Currency,
+        paymentReference,
+        successRedirectUrl,
+        errorRedirectUrl,
+      });
+    } catch (chargeErr) {
+      logger.error(
+        `[checkout] charge failed ref=${paymentReference}: ${(chargeErr as Error).message}`
+      );
+      // Mark Payment FAILED so a future retry on the same checkout
+      // can reuse the org without orphaning a PENDING row.
+      await prisma.payment.update({
+        where: { id: created.payment.id },
+        data: {
+          status: 'FAILED',
+          failureReason: (chargeErr as Error).message.slice(0, 500),
+        },
+      });
+      throw new BadRequestError(
+        "Le service de paiement est momentanément indisponible. Réessayez dans quelques instants."
+      );
+    }
 
-    // Listener attached BEFORE the response is sent so we don't race
-    // with the 'close' event firing synchronously on small payloads.
-    // 500ms safety margin on top of the close-detection — empirically
-    // 2s of pure setTimeout works but is fragile under load (cold
-    // starts can drift); waiting for actual socket close + a small
-    // buffer is far more robust.
-    const fireBictorysCharge = () => {
-      void (async () => {
-        try {
-          const charge = await bictorysService.createCharge({
-            amount,
-            currency: currency as Currency,
-            paymentReference,
-            successRedirectUrl,
-            errorRedirectUrl,
-          });
-          await prisma.payment.update({
-            where: { id: created.payment.id },
-            data: {
-              bictorysChargeId: charge.chargeId,
-              checkoutUrl: charge.checkoutUrl,
-            },
-          });
-          logger.info(
-            `[checkout] charge ready ref=${paymentReference} url=${charge.checkoutUrl.slice(0, 60)}...`
-          );
-        } catch (chargeErr) {
-          logger.error(
-            `[checkout] async charge failed ref=${paymentReference}: ${(chargeErr as Error).message}`
-          );
-          await prisma.payment.update({
-            where: { id: created.payment.id },
-            data: {
-              status: 'FAILED',
-              failureReason: (chargeErr as Error).message.slice(0, 500),
-            },
-          });
-        }
-      })();
-    };
-    res.once('close', () => setTimeout(fireBictorysCharge, 500));
+    await prisma.payment.update({
+      where: { id: created.payment.id },
+      data: {
+        bictorysChargeId: charge.chargeId,
+        checkoutUrl: charge.checkoutUrl,
+      },
+    });
+    logger.info(
+      `[checkout] charge ready ref=${paymentReference} url=${charge.checkoutUrl.slice(0, 60)}...`
+    );
 
-    // Respond NOW with the paymentReference so the inbound TCP socket
-    // closes — see WAF note above. The frontend polls
-    // /subscriptions/checkout/:reference/status until checkoutUrl is
-    // populated, then redirects.
     ApiResponse.created(res, {
       organizationId: created.org.id,
       paymentReference,
+      checkoutUrl: charge.checkoutUrl,
     });
 
     void user;
