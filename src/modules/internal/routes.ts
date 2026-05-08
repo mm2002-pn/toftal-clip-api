@@ -132,4 +132,51 @@ router.post('/hls-ready', (req: Request, res: Response): void => {
   }
 });
 
+/**
+ * POST /api/v1/internal/preview-ready
+ * Headers: X-Internal-Secret: <shared secret>
+ * Body: { projectId, deliverableId, versionId, previewUrl }
+ *
+ * Re-emits `version:preview-ready` so connected clients can switch to
+ * the lightweight 480p mobile-friendly MP4 while HLS still encodes.
+ */
+router.post('/preview-ready', (req: Request, res: Response): void => {
+  const headerSecret = (req.headers['x-internal-secret'] || req.headers['X-Internal-Secret']) as
+    | string
+    | undefined;
+
+  if (!verifyInternalSecret(headerSecret)) {
+    logger.warn('[internal] preview-ready: invalid secret');
+    res.status(401).json({ error: 'Invalid internal secret' });
+    return;
+  }
+
+  const { projectId, deliverableId, versionId, previewUrl } = (req.body || {}) as {
+    projectId?: string;
+    deliverableId?: string;
+    versionId?: string;
+    previewUrl?: string;
+  };
+
+  if (!projectId || !deliverableId || !versionId || !previewUrl) {
+    res.status(400).json({
+      error: 'Missing fields: projectId, deliverableId, versionId, previewUrl',
+    });
+    return;
+  }
+
+  try {
+    socketService.emitToProject(projectId, 'version:preview-ready' as any, {
+      versionId,
+      deliverableId,
+      previewUrl,
+    } as any);
+    logger.info(`[internal] re-emitted version:preview-ready for ${versionId}`);
+    res.json({ ok: true });
+  } catch (err) {
+    logger.error(`[internal] socket emit failed: ${(err as Error).message}`);
+    res.status(500).json({ error: 'Emit failed' });
+  }
+});
+
 export default router;

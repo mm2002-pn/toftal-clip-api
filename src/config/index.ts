@@ -84,6 +84,13 @@ export const config = {
      * ffmpeg here actually re-encodes (CPU-bound, not just remux).
      */
     hlsJobName: process.env.HLS_JOB_NAME || 'hls-worker',
+    /**
+     * Name of the Cloud Run Job that produces the lightweight 480p
+     * mobile-friendly preview MP4. Highest CPU sizing of the three
+     * because its job is to be the FIRST artefact ready, not the
+     * highest quality.
+     */
+    previewJobName: process.env.PREVIEW_JOB_NAME || 'preview-worker',
   },
 
   // Media URLs — served via Cloud CDN once the load balancer is in place.

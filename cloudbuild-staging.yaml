@@ -76,7 +76,7 @@ steps:
       - '--add-cloudsql-instances'
       - '${_INSTANCE_CONNECTION_NAME}'
       - '--set-env-vars'
-      - 'TRUST_PROXY=true,CORS_ORIGIN=https://toftalclip.io;https://staging.toftalclip.io;https://toftal-clip.netlify.app;https://toftal-clip-test.netlify.app,NODE_ENV=staging,FRONTEND_URL=https://staging.toftalclip.io,EMAIL_SERVICE=gmail,EMAIL_USER=toftalpodium@gmail.com,EMAIL_FROM=Toftal Clip toftalpodium@gmail.com,RATE_LIMIT_MAX=1000,DB_CONNECTION_LIMIT=10,DB_POOL_TIMEOUT=30,GCS_BUCKET_NAME=toftal-clip-media,GCP_PROJECT_ID=toftal-clip-api,GCP_REGION=${_REGION},UPSTASH_REDIS_REST_URL=https://mint-polecat-37123.upstash.io,BICTORYS_API_URL=https://api.test.bictorys.com,MEDIA_PUBLIC_BASE_URL=https://media.staging.toftalclip.io/,FASTSTART_JOB_NAME=faststart-worker-staging,HLS_JOB_NAME=hls-worker-staging'
+      - 'TRUST_PROXY=true,CORS_ORIGIN=https://toftalclip.io;https://staging.toftalclip.io;https://toftal-clip.netlify.app;https://toftal-clip-test.netlify.app,NODE_ENV=staging,FRONTEND_URL=https://staging.toftalclip.io,EMAIL_SERVICE=gmail,EMAIL_USER=toftalpodium@gmail.com,EMAIL_FROM=Toftal Clip toftalpodium@gmail.com,RATE_LIMIT_MAX=1000,DB_CONNECTION_LIMIT=10,DB_POOL_TIMEOUT=30,GCS_BUCKET_NAME=toftal-clip-media,GCP_PROJECT_ID=toftal-clip-api,GCP_REGION=${_REGION},UPSTASH_REDIS_REST_URL=https://mint-polecat-37123.upstash.io,BICTORYS_API_URL=https://api.test.bictorys.com,MEDIA_PUBLIC_BASE_URL=https://media.staging.toftalclip.io/,FASTSTART_JOB_NAME=faststart-worker-staging,HLS_JOB_NAME=hls-worker-staging,PREVIEW_JOB_NAME=preview-worker-staging'
       # Secrets — Bictorys keys live in Secret Manager so they survive
       # `--set-secrets` re-applications (gcloud replaces, not merges, so
       # any manually-added var gets wiped on the next deploy unless
@@ -166,6 +166,44 @@ steps:
       - '1'
       - '--task-timeout'
       - '7200s'
+      - '--execution-environment'
+      - 'gen2'
+      - '--set-env-vars'
+      - 'NODE_ENV=staging,GCS_BUCKET_NAME=toftal-clip-media,GCP_PROJECT_ID=toftal-clip-api,GCP_REGION=${_REGION},MEDIA_PUBLIC_BASE_URL=https://media.staging.toftalclip.io/,UPSTASH_REDIS_REST_URL=https://mint-polecat-37123.upstash.io,INTERNAL_API_BASE_URL=https://api.staging.toftalclip.io'
+      - '--set-secrets'
+      - 'DATABASE_URL=DATABASE_URL_STAGING:latest,UPSTASH_REDIS_REST_TOKEN=UPSTASH_REDIS_REST_TOKEN:latest,REDIS_TCP_URL=REDIS_TCP_URL:latest,INTERNAL_API_SECRET=INTERNAL_API_SECRET_STAGING:latest'
+
+  # Deploy preview-worker as a Cloud Run Job (STAGING) — the third leg
+  # of the post-upload pipeline. Runs in parallel with faststart and
+  # hls; produces a small 480p ultrafast MP4 meant to be the FIRST
+  # stream-friendly artefact (mobile-friendly, lightweight). 8 vCPU
+  # because its job is to be FAST, not big — and ultrafast preset
+  # scales near-linearly with cores until I/O becomes the bottleneck.
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args:
+      - 'run'
+      - 'jobs'
+      - 'deploy'
+      - 'preview-worker-staging'
+      - '--image'
+      - 'gcr.io/${PROJECT_ID}/${_SERVICE_NAME}:${COMMIT_SHA}'
+      - '--region'
+      - '${_REGION}'
+      - '--set-cloudsql-instances'
+      - '${_INSTANCE_CONNECTION_NAME}'
+      - '--command'
+      - 'node'
+      - '--args'
+      - 'dist/workers/preview.js'
+      - '--memory'
+      - '16Gi'
+      - '--cpu'
+      - '8'
+      - '--max-retries'
+      - '1'
+      - '--task-timeout'
+      - '900s'
       - '--execution-environment'
       - 'gen2'
       - '--set-env-vars'

@@ -8,6 +8,7 @@ import { extractVideoMetadata } from '../../../services/VideoMetadataService';
 import { generateVideoThumbnail } from '../../../services/VideoThumbnailService';
 import { triggerFaststartJob } from '../../../services/faststartTrigger';
 import { triggerHlsJob } from '../../../services/hlsTrigger';
+import { triggerPreviewJob } from '../../../services/previewTrigger';
 import { bucket, BUCKET_NAME } from '../../../config/gcs';
 import { renderEmailFromDB } from '../../../services/templateResolver';
 
@@ -513,6 +514,16 @@ export const addVersion = async (req: Request, res: Response, next: NextFunction
     // playback via hls.js (or native HLS on Safari). See workers/hls.ts.
     setImmediate(() => {
       void triggerHlsJob(version.id);
+    });
+
+    // Fire-and-forget: kick off the preview encode job in parallel.
+    // Lightweight 480p ultrafast MP4 — meant to be the FIRST stream-
+    // friendly artefact ready for the user (~30s for short clips,
+    // ~5-10 min for long 4K). Bridges the gap between faststart
+    // (which is too heavy on big sources) and HLS (which takes long
+    // on long sources). See workers/preview.ts.
+    setImmediate(() => {
+      void triggerPreviewJob(version.id);
     });
 
     // Update deliverable status to VALIDATION with progress 75%
