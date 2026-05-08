@@ -96,19 +96,29 @@ const namingFunction = (
  * Custom URL→id parser. Default `/([^/]+)\/?$/` only grabs the last
  * path segment, so our `videos/<uuid>.<ext>` ids would lose the
  * `videos/` prefix on every PATCH/HEAD/DELETE and the GCS lookup
- * would 404. We strip the configured path prefix and treat the
- * remainder (slashes included) as the id.
+ * would 404.
+ *
+ * @tus/server passes a fetch-API Request here, so `req.url` is the
+ * full absolute URL (`https://host/api/v1/tus/...`), not just the
+ * path — extract the pathname before stripping the prefix.
  */
 const getFileIdFromRequest = (req: any): string | undefined => {
-  const url: string = req?.url || '';
-  const prefix = `${TUS_CONFIG.path}/`;
-  if (!url.startsWith(prefix)) return undefined;
-  const raw = url.slice(prefix.length).split('?')[0].replace(/\/$/, '');
+  const raw: string = req?.url || '';
   if (!raw) return undefined;
+  let pathname: string;
   try {
-    return decodeURIComponent(raw);
+    pathname = new URL(raw, 'http://placeholder').pathname;
   } catch {
-    return raw;
+    pathname = raw;
+  }
+  const prefix = `${TUS_CONFIG.path}/`;
+  if (!pathname.startsWith(prefix)) return undefined;
+  const id = pathname.slice(prefix.length).replace(/\/$/, '');
+  if (!id) return undefined;
+  try {
+    return decodeURIComponent(id);
+  } catch {
+    return id;
   }
 };
 
