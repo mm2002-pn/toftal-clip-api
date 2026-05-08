@@ -22,6 +22,10 @@ import fs from 'fs';
 import { unlinkSync, existsSync } from 'fs';
 import cacheService from '../services/cacheService';
 import { generateVideoThumbnail } from '../services/VideoThumbnailService';
+import { triggerFaststartJob } from '../services/faststartTrigger';
+import { triggerPreviewJob } from '../services/previewTrigger';
+import { triggerHlsJob } from '../services/hlsTrigger';
+import { config } from '../config';
 
 const prisma = new PrismaClient();
 
@@ -383,8 +387,10 @@ const transferToGcsInBackground = async (uploadId: string, upload: Upload) => {
       console.warn('⚠️ Failed to cleanup local file:', cleanupError);
     }
 
-    // Generate public URL
-    const videoUrl = `https://storage.googleapis.com/${BUCKET_NAME}/${finalGcsPath}`;
+    // Generate public URL — same MEDIA_PUBLIC_BASE_URL the REST upload
+    // pipeline returns (Cloud CDN domain in staging/prod, direct GCS
+    // in dev). Workers' gcsPathFromUrl helpers accept either prefix.
+    const videoUrl = `${config.media.publicBaseUrl}${finalGcsPath}`;
 
     // If deliverableId is provided, create/update version in database
     if (deliverableId && userId) {
@@ -419,6 +425,20 @@ const transferToGcsInBackground = async (uploadId: string, upload: Upload) => {
         } catch (err) {
           console.warn('Thumbnail persist failed (TUS):', err);
         }
+      });
+
+      // Fire-and-forget the three video-pipeline workers, mirroring
+      // the REST upload path in modules/deliverables/controllers.
+      // Without these, a TUS-uploaded version would only ever have
+      // its source MP4 — no faststart, no preview, no HLS.
+      setImmediate(() => {
+        void triggerFaststartJob(version.id);
+      });
+      setImmediate(() => {
+        void triggerPreviewJob(version.id);
+      });
+      setImmediate(() => {
+        void triggerHlsJob(version.id);
       });
     }
   } catch (error: any) {
