@@ -14,11 +14,16 @@
  *   - Method 1 (preferred when present): HMAC-SHA256 of `<timestamp>.<body>`
  *     in `X-Webhook-Signature`, with `X-Webhook-Timestamp` for replay
  *     protection (5 min window).
- *   - Method 2 (fallback): static `X-Secret-Key` header echoing the
- *     configured webhook secret in plain text.
+ *   - Method 2 (fallback, what they actually send): static `X-Secret-Key`
+ *     header echoing the configured webhook secret in plain text.
  * `verifyWebhook` accepts either; both use timing-safe compare. Without
  * this check, anyone hitting the public route could fake a `succeeded`
  * payload and unlock orgs for free.
+ *
+ * **No status-check endpoint**. Bictorys confirmed `GET /pay/v1/charges/{id}`
+ * does not exist as a real API — the 500s we saw were not a sandbox quirk,
+ * just an absent route. Webhook is the only source of truth for terminal
+ * payment state.
  *
  * ============================================================
  * ⚠️ AWS WAF gotchas — read this before changing call sites
@@ -43,11 +48,6 @@
  *      is to substitute `https://staging.toftalclip.io` when frontendUrl is
  *      `http://localhost` — Bictorys never actually calls the redirect URL
  *      in sandbox-mobile-money payments anyway (per their docs).
- *
- *   4. **Sandbox quirks** (per their integration guide):
- *      - `GET /pay/v1/charges/{id}` returns 500 in sandbox. Status check
- *        is reliable in production only — fall back to webhooks in sandbox.
- *      - Webhooks must be configured separately for test vs prod modes.
  *
  * If you find yourself getting unexplained 403s, suspect these three
  * before debugging deeper.
@@ -223,81 +223,6 @@ class BictorysService {
     }
 
     return { chargeId: json.chargeId, checkoutUrl: json.link };
-  }
-
-  /**
-   * Read-only status check. Used by the reconciliation cron to catch payments
-   * whose webhook never arrived (network blip on Bictorys' side, GCP cold
-   * start that 502s the webhook, etc.).
-   *
-   * ⚠️ Sandbox returns 500 on this endpoint (per Bictorys integration guide
-   * March 2026 — known issue). Reliable only in production. Callers should
-   * treat 500 as a transient and fall back to the webhook signal in test.
-   *
-   * Same timing constraint as createCharge — call from a non-request context.
-   */
-  async verifyChargeStatus(chargeId: string): Promise<{
-    status: 'pending' | 'succeeded' | 'failed';
-    paymentMethod?: string;
-    failureReason?: string;
-  }> {
-    if (!this.isConfigured()) {
-      throw new Error('Bictorys is not configured');
-    }
-
-    const apiUrl = new URL(config.bictorys.apiUrl);
-    const result = await new Promise<{ status: number; body: string }>((resolve, reject) => {
-      const req = https.request(
-        {
-          hostname: apiUrl.hostname,
-          port: apiUrl.port || 443,
-          path: `/pay/v1/charges/${encodeURIComponent(chargeId)}`,
-          method: 'GET',
-          headers: {
-            'User-Agent': 'Mozilla/5.0',
-            'X-Api-Key': config.bictorys.publicKey,
-          },
-        },
-        (res) => {
-          let data = '';
-          res.on('data', (chunk) => (data += chunk));
-          res.on('end', () => resolve({ status: res.statusCode || 0, body: data }));
-        }
-      );
-      req.on('error', reject);
-      req.end();
-    });
-
-    if (result.status < 200 || result.status >= 300) {
-      logger.error(
-        `[Bictorys] verifyChargeStatus failed ${result.status}: ${result.body.slice(0, 500)}`
-      );
-      throw new Error(`Bictorys charge lookup failed (${result.status})`);
-    }
-
-    const json = JSON.parse(result.body) as {
-      status?: string;
-      paymentMethod?: string;
-      failureReason?: string;
-    };
-
-    // Map Bictorys status strings to our small enum. Anything unknown is
-    // treated as pending so we don't accidentally finalise a payment we
-    // don't understand. `authorized` ≈ paid (pre-capture for cards) per
-    // their guide, so we lump it with succeeded.
-    const raw = (json.status || '').toLowerCase();
-    let status: 'pending' | 'succeeded' | 'failed' = 'pending';
-    if (raw === 'succeeded' || raw === 'success' || raw === 'completed' || raw === 'authorized') {
-      status = 'succeeded';
-    } else if (raw === 'failed' || raw === 'cancelled' || raw === 'rejected' || raw === 'reversed') {
-      status = 'failed';
-    }
-
-    return {
-      status,
-      paymentMethod: json.paymentMethod,
-      failureReason: json.failureReason,
-    };
   }
 
   /**

@@ -29,10 +29,6 @@ import {
 } from '../../../utils/errors';
 import { bictorysService } from '../../../services/bictorysService';
 import { logger } from '../../../utils/logger';
-import {
-  finalizePaymentSucceeded,
-  finalizePaymentFailed,
-} from '../services/finalizePayment';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -431,48 +427,15 @@ export const createCheckoutSession = async (
 // the URL params — we look up the Payment, and only return the org info
 // when the row is owned by the caller.
 //
-// **Active fallback for an unreliable webhook**: Bictorys' sandbox often
-// doesn't deliver webhooks at all, and even in prod they sometimes lag /
-// retry. Rather than blocking the user on `PENDING` until the webhook
-// lands, this endpoint ALSO asks Bictorys directly for the charge state
-// when our DB row is still PENDING. If Bictorys says "succeeded" we run
-// the same finalisation transaction the webhook would have run.
+// Source of truth = the webhook. Bictorys explicitly told us
+// `GET /pay/v1/charges/{id}` doesn't exist as a real endpoint (the 500s
+// we saw in sandbox were not "broken sandbox" — there's just no API to
+// poll). Webhook delivers `succeeded` → handler flips the Payment row →
+// the next /status poll reads ACTIVE and the frontend redirects.
 //
-// **WAF gotcha — fire-and-forget pattern**: Bictorys' WAF rejects any
-// outbound call made while an inbound HTTP socket is still open from the
-// same process (see bictorysService.ts header). So we DON'T block the
-// poll on `verifyChargeStatus` — we send the response with the current
-// DB state immediately, then run the verify after the inbound socket
-// has closed (`res.once('close')` + 500ms safety margin). The result of
-// the verify lands in the DB and is read by the *next* poll, ~1.5s later.
-//
-// To avoid spamming Bictorys' API: per-payment throttle (1 verify call
-// per ~1.5s — same cadence as the frontend polling). Once we transition
-// out of PENDING, we never call Bictorys again for that ref. This caps
-// a single checkout at ~20 Bictorys verify calls (30s polling window)
-// and at zero once the state is terminal.
-//
-// The webhook stays the fast path: when Bictorys does deliver, it flips
-// the row in <1s and subsequent polls just read the DB.
-
-// In-memory throttle for Bictorys verify calls. Keyed by paymentReference,
-// value = last call timestamp (ms). Survives the lifetime of the Cloud Run
-// instance — multi-instance fleets multiply this by the instance count
-// in the worst case, which is still negligible vs. the webhook path.
-const lastBictorysVerifyAt = new Map<string, number>();
-const BICTORYS_VERIFY_THROTTLE_MS = 1500;
-
-/**
- * Garbage-collect entries older than 10 min so the Map can't grow without
- * bound under sustained traffic. Cheap because we only care about active
- * checkouts (most resolve in <30s).
- */
-function pruneVerifyCache() {
-  const cutoff = Date.now() - 10 * 60 * 1000;
-  for (const [k, ts] of lastBictorysVerifyAt) {
-    if (ts < cutoff) lastBictorysVerifyAt.delete(k);
-  }
-}
+// If the webhook ever fails to land for some reason, the admin
+// /admin/subscriptions "Marquer comme payé" override + a future
+// reconciliation cron are the two backstops. No active polling here.
 
 export const getCheckoutStatus = async (
   req: Request,
@@ -503,94 +466,10 @@ export const getCheckoutStatus = async (
       throw new ForbiddenError("Vous n'avez pas accès à ce paiement.");
     }
 
-    // ACTIVE FALLBACK — only schedule a verify when:
-    //   - the payment is still pending (terminal states need no probing)
-    //   - Bictorys has assigned a chargeId (set by the async charge call;
-    //     null in the very first ~2s after checkout creation)
-    //   - we haven't probed in the last 1.5s for this ref (throttle)
-    const now = Date.now();
-    const last = lastBictorysVerifyAt.get(reference) ?? 0;
-    const shouldProbe =
-      payment.status === 'PENDING' &&
-      !!payment.bictorysChargeId &&
-      now - last >= BICTORYS_VERIFY_THROTTLE_MS;
-
-    if (shouldProbe) {
-      // Reserve the throttle slot BEFORE scheduling so concurrent polls
-      // see the bump and skip. The actual call fires only after the
-      // inbound socket closes (WAF requirement).
-      lastBictorysVerifyAt.set(reference, now);
-      pruneVerifyCache();
-
-      // Snapshot what the async closure needs — `payment` is local but the
-      // closure runs after the handler returns, so capture the IDs.
-      const snapshot = {
-        paymentId: payment.id,
-        subscriptionId: payment.subscription.id,
-        organizationId: payment.subscription.organizationId,
-        billingCycle: payment.subscription.billingCycle,
-        bictorysChargeId: payment.bictorysChargeId!,
-      };
-
-      const fireVerify = () => {
-        void (async () => {
-          try {
-            const remote = await bictorysService.verifyChargeStatus(
-              snapshot.bictorysChargeId
-            );
-            if (remote.status === 'succeeded') {
-              const activated = await finalizePaymentSucceeded({
-                ...snapshot,
-                paymentMethod: remote.paymentMethod ?? null,
-                observedAt: new Date(),
-              });
-              if (activated) {
-                logger.info(
-                  `[checkout-status] activated via polling: ref=${reference} org=${snapshot.organizationId}`
-                );
-              }
-            } else if (remote.status === 'failed') {
-              const marked = await finalizePaymentFailed({
-                paymentId: snapshot.paymentId,
-                bictorysChargeId: snapshot.bictorysChargeId,
-                failureReason: remote.failureReason ?? 'failed',
-                observedAt: new Date(),
-              });
-              if (marked) {
-                logger.info(
-                  `[checkout-status] marked failed via polling: ref=${reference}`
-                );
-              }
-            }
-            // 'pending' → leave as-is, the next poll will retry the verify
-          } catch (err) {
-            // Bictorys API hiccup — log and exit. The throttle resets on
-            // the next poll (1.5s later) and the verify will retry. We
-            // keep the slot reserved here so a 1-off failure doesn't open
-            // an immediate retry storm.
-            logger.warn(
-              `[checkout-status] verifyChargeStatus failed ref=${reference}: ${(err as Error).message}`
-            );
-          }
-        })();
-      };
-
-      // Force `Connection: close` and wait for the actual TCP close before
-      // firing — same WAF workaround as createCharge. The 500ms margin on
-      // top of the close event compensates for cold-start drift in Cloud
-      // Run; pure setTimeout fires too early under load.
-      res.set('Connection', 'close');
-      res.once('close', () => setTimeout(fireVerify, 500));
-    }
-
     // Frontend uses these fields:
     //   - checkoutUrl: when populated → redirect there
     //   - paymentStatus: 'PENDING' (still waiting for Bictorys) | 'SUCCEEDED' (paid) | 'FAILED' (retry)
     //   - subscriptionStatus / organizationStatus: post-payment success state
-    //
-    // We respond with whatever's currently in the DB. If the verify above
-    // was scheduled, its result will land before the next poll (~1.5s),
-    // so the user sees activation on the following tick at the latest.
     ApiResponse.success(res, {
       paymentStatus: payment.status,
       checkoutUrl: payment.checkoutUrl,
