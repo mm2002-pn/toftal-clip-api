@@ -45,13 +45,21 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements-docs.txt
 
-      - name: Build site
+      - name: Inject site_url for GitHub Pages
         env:
           # GitHub Pages serves the project at https://<owner>.github.io/<repo>/.
-          # We pass it explicitly so internal links resolve correctly when
-          # served from that sub-path.
+          # mkdocs build has no --site-url flag, so we patch mkdocs.yml in
+          # place. The yaml has `site_url: ""` locally so `mkdocs serve`
+          # works at root; here we replace it with the real URL so internal
+          # links resolve under the sub-path.
           SITE_URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/
-        run: mkdocs build --strict --site-dir _site --site-url "$SITE_URL"
+        run: |
+          sed -i "s|^site_url: .*|site_url: $SITE_URL|" mkdocs.yml
+          echo "Patched mkdocs.yml site_url:"
+          grep '^site_url:' mkdocs.yml
+
+      - name: Build site
+        run: mkdocs build --strict --site-dir _site
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
