@@ -490,6 +490,13 @@ export const createTusServer = (): Server => {
     datastore: fileStore,
     maxSize: TUS_CONFIG.maxSize,
     locker: new MemoryLocker(),
+    // Behind Cloud Run / Google Cloud Load Balancer the inbound TLS is
+    // terminated upstream — the request that hits Node arrives on
+    // plain HTTP with `X-Forwarded-Proto: https` set by the LB.
+    // Without this flag, @tus/server builds the `Location` URL from
+    // the raw req.headers.host + http://, which the browser then
+    // rejects as "mixed content" when the page itself is on HTTPS.
+    respectForwardedHeaders: true,
     // Allow clients to delete uploads
     allowedHeaders: [
       'Authorization',
