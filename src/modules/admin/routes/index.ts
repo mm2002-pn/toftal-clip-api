@@ -13,6 +13,7 @@ import * as aiPromptsController from '../controllers/aiPrompts';
 import * as plansController from '../controllers/plans';
 import * as subscriptionsController from '../controllers/subscriptions';
 import * as videoBackfillController from '../controllers/videoBackfill';
+import * as bictorysDebugController from '../controllers/bictorysDebug';
 
 const router = Router();
 
@@ -81,5 +82,8 @@ router.post('/subscriptions/:id/mark-paid', subscriptionsController.markAdminPay
 router.get('/videos/backfill-status', videoBackfillController.getBackfillStatus);
 router.post('/videos/backfill-faststart', videoBackfillController.backfillFaststart);
 router.post('/videos/backfill-hls', videoBackfillController.backfillHls);
+
+// Debug — probe Bictorys WAF behaviour without our fire-and-forget workaround
+router.post('/debug/bictorys-test-charge', bictorysDebugController.debugBictorysTestCharge);
 
 export default router;
