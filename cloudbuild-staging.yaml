@@ -93,7 +93,6 @@ steps:
       - '1'
       - '--timeout'
       - '3600'
-      - '--session-affinity'
 
   # Deploy faststart-worker as a Cloud Run Job (STAGING).
   # Reuses the same image as the API but overrides the entrypoint to run
