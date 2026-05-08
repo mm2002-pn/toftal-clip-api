@@ -35,9 +35,12 @@ coverage/
 *.test.ts
 *.spec.ts
 
-# Documentation
+# Documentation (MkDocs site never ships in the runtime image)
 *.md
 !README.md
+docs/
+mkdocs.yml
+site/
 
 # Misc
 *.tmp

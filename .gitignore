@@ -44,9 +44,14 @@ deployment-info.txt
 firebase-service-account.json
 
 
-# les fichiers .md
+# Markdown notes à la racine restent ignorés (rapports brouillons,
+# changelogs perso, etc.) — sauf README.md qu'on veut versionner.
 *.md
-
+!README.md
+!mkdocs.yml
+# Toute la documentation MkDocs sous docs/ est versionnée.
+!docs/
+!docs/**/*.md
 
 # exclure le dosser jmeter
 jmeter/
@@ -57,6 +62,4 @@ load-test-*.log
 load-test-results/
 load-test-results.json
 load-test-results-*.json
-
-*.md
 
