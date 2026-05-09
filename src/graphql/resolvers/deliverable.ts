@@ -78,7 +78,7 @@ export const deliverableResolvers = {
         include: {
           deliverable: true,
           uploadedBy: true,
-          feedbacks: { include: { revisionTasks: true, author: true, reads: { select: { userId: true, readAt: true } }, reactions: { select: { id: true, userId: true, emoji: true, createdAt: true }, orderBy: { createdAt: 'asc' } } }, orderBy: { createdAt: 'asc' } },
+          feedbacks: { include: { revisionTasks: true, author: true, reads: { select: { userId: true, readAt: true } }, reactions: { select: { id: true, userId: true, guestEmail: true, guestName: true, emoji: true, createdAt: true }, orderBy: { createdAt: 'asc' } } }, orderBy: { createdAt: 'asc' } },
         },
       });
     },
@@ -90,7 +90,7 @@ export const deliverableResolvers = {
         orderBy: { versionNumber: 'desc' },
         include: {
           uploadedBy: true,
-          feedbacks: { include: { revisionTasks: true, author: true, reads: { select: { userId: true, readAt: true } }, reactions: { select: { id: true, userId: true, emoji: true, createdAt: true }, orderBy: { createdAt: 'asc' } } }, orderBy: { createdAt: 'asc' } },
+          feedbacks: { include: { revisionTasks: true, author: true, reads: { select: { userId: true, readAt: true } }, reactions: { select: { id: true, userId: true, guestEmail: true, guestName: true, emoji: true, createdAt: true }, orderBy: { createdAt: 'asc' } } }, orderBy: { createdAt: 'asc' } },
         },
       });
     },
@@ -173,7 +173,7 @@ export const deliverableResolvers = {
           author: true,
           revisionTasks: true,
           reads: { select: { userId: true, readAt: true } },
-          reactions: { select: { id: true, userId: true, emoji: true, createdAt: true }, orderBy: { createdAt: 'asc' } },
+          reactions: { select: { id: true, userId: true, guestEmail: true, guestName: true, emoji: true, createdAt: true }, orderBy: { createdAt: 'asc' } },
           replyingTo: {
             select: {
               id: true,
@@ -230,7 +230,7 @@ export const deliverableResolvers = {
               revisionTasks: true,
               author: true,
               reads: { select: { userId: true, readAt: true } },
-              reactions: { select: { id: true, userId: true, emoji: true, createdAt: true }, orderBy: { createdAt: 'asc' } },
+              reactions: { select: { id: true, userId: true, guestEmail: true, guestName: true, emoji: true, createdAt: true }, orderBy: { createdAt: 'asc' } },
               replyingTo: {
                 select: {
                   id: true,
@@ -377,7 +377,7 @@ export const deliverableResolvers = {
           revisionTasks: true,
           author: true,
           reads: { select: { userId: true, readAt: true } },
-          reactions: { select: { id: true, userId: true, emoji: true, createdAt: true }, orderBy: { createdAt: 'asc' } },
+          reactions: { select: { id: true, userId: true, guestEmail: true, guestName: true, emoji: true, createdAt: true }, orderBy: { createdAt: 'asc' } },
           replyingTo: {
             select: {
               id: true,

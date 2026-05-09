@@ -422,20 +422,33 @@ model FeedbackRead {
   @@map("feedback_reads")
 }
 
-// Emoji reactions on feedback (WhatsApp/Linear-style)
+// Emoji reactions on feedback (WhatsApp/Linear-style).
+// Supports both authenticated users (userId set, guest fields null)
+// and guests reacting through a share link (userId null, guestEmail
+// set). Exactly one of these two identity columns is populated per
+// row — the controllers enforce that.
 model FeedbackReaction {
   id         String   @id @default(uuid())
   feedbackId String   @map("feedback_id")
-  userId     String   @map("user_id")
+  userId     String?  @map("user_id")
+  guestEmail String?  @map("guest_email")
+  guestName  String?  @map("guest_name")
   emoji      String
   createdAt  DateTime @default(now()) @map("created_at")
 
   feedback Feedback @relation(fields: [feedbackId], references: [id], onDelete: Cascade)
-  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user     User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  // Postgres treats NULL values as DISTINCT in a UNIQUE constraint by
+  // default, so this only enforces uniqueness on (feedbackId, userId)
+  // for authenticated reactions — exactly what we want. Guest
+  // uniqueness on (feedbackId, guestEmail) is enforced by the
+  // controller (findFirst-then-act) since Prisma doesn't expose
+  // partial unique indexes for compound keys without raw SQL.
   @@unique([feedbackId, userId])
   @@index([feedbackId])
   @@index([userId])
+  @@index([feedbackId, guestEmail])
   @@map("feedback_reactions")
 }
 

@@ -277,10 +277,20 @@ export const toggleFeedbackReaction = async (
       action = 'changed';
     }
 
-    // Return the fresh reactions list so the client can reconcile optimistic state
+    // Return the fresh reactions list so the client can reconcile optimistic state.
+    // Includes guest fields so the same payload covers both auth and share
+    // sources — the client matches "is this mine?" on userId for auth users
+    // and on guestEmail for guests.
     const reactions = await prisma.feedbackReaction.findMany({
       where: { feedbackId },
-      select: { id: true, userId: true, emoji: true, createdAt: true },
+      select: {
+        id: true,
+        userId: true,
+        guestEmail: true,
+        guestName: true,
+        emoji: true,
+        createdAt: true,
+      },
       orderBy: { createdAt: 'asc' },
     });
 

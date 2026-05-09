@@ -120,7 +120,11 @@ export const deliverableTypeDefs = gql`
 
   type FeedbackReaction {
     id: ID!
-    userId: ID!
+    # userId is null when the reaction was posted by a guest via a share link.
+    # In that case guestEmail/guestName are populated instead.
+    userId: ID
+    guestEmail: String
+    guestName: String
     emoji: String!
     createdAt: DateTime!
   }

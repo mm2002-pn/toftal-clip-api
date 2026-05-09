@@ -440,6 +440,17 @@ router.get('/:token', async (req: Request, res: Response) => {
                       },
                     },
                     revisionTasks: true,
+                    reactions: {
+                      select: {
+                        id: true,
+                        userId: true,
+                        guestEmail: true,
+                        guestName: true,
+                        emoji: true,
+                        createdAt: true,
+                      },
+                      orderBy: { createdAt: 'asc' },
+                    },
                   },
                 },
               },
@@ -724,6 +735,17 @@ router.get('/:token/version/:versionId/feedbacks', async (req: Request, res: Res
             author: { select: { id: true, name: true } },
             guestName: true,
           },
+        },
+        reactions: {
+          select: {
+            id: true,
+            userId: true,
+            guestEmail: true,
+            guestName: true,
+            emoji: true,
+            createdAt: true,
+          },
+          orderBy: { createdAt: 'asc' },
         },
       },
     });
@@ -1412,6 +1434,120 @@ router.delete('/:token/feedback/:feedbackId', async (req: Request, res: Response
   } catch (error: any) {
     console.error('Delete feedback via share link error:', error);
     res.status(500).json({ error: error.message || 'Failed to delete feedback' });
+  }
+});
+
+/**
+ * POST /api/v1/deliverable-share/:token/feedback/:feedbackId/reactions
+ * Toggle an emoji reaction as a guest via share link.
+ *
+ * Mirrors the auth controller's contract (same emoji → remove, different
+ * emoji → replace, none → add) but keys reactions on `guestEmail`
+ * instead of `userId`. Returns the fresh reaction list so the optimistic
+ * frontend state can reconcile.
+ */
+router.post('/:token/feedback/:feedbackId/reactions', async (req: Request, res: Response) => {
+  try {
+    const token = String(req.params.token);
+    const feedbackId = String(req.params.feedbackId);
+    const { emoji, guestEmail, guestName } = req.body || {};
+
+    if (typeof emoji !== 'string' || emoji.length === 0 || emoji.length > 16) {
+      return res.status(400).json({ error: 'emoji must be a short non-empty string' });
+    }
+    if (!guestEmail || typeof guestEmail !== 'string') {
+      return res.status(400).json({ error: 'guestEmail is required for guest reactions' });
+    }
+
+    const shareLink = await prisma.deliverableShareLink.findUnique({
+      where: { token },
+      include: {
+        deliverable: {
+          include: {
+            project: { select: { id: true } },
+            versions: { select: { id: true } },
+          },
+        },
+      },
+    });
+
+    if (!shareLink) return res.status(404).json({ error: 'Invalid share link' });
+    if (!shareLink.isActive) return res.status(403).json({ error: 'This share link has been disabled' });
+    if (shareLink.expiresAt && shareLink.expiresAt < new Date()) {
+      return res.status(403).json({ error: 'This share link has expired' });
+    }
+    if (shareLink.permission === 'view') {
+      return res.status(403).json({ error: 'This share link does not allow reactions' });
+    }
+
+    const versionIds = shareLink.deliverable.versions.map(v => v.id);
+    const feedback = await prisma.feedback.findFirst({
+      where: { id: feedbackId, versionId: { in: versionIds } },
+      select: { id: true, versionId: true, version: { select: { deliverableId: true } } },
+    });
+    if (!feedback) return res.status(404).json({ error: 'Feedback not found' });
+
+    // Guest uniqueness on (feedbackId, guestEmail) is enforced here
+    // since Prisma can't model partial-unique compound keys without
+    // raw SQL. findFirst-then-act keeps the toggle/replace/add flow
+    // identical to the authenticated path.
+    const existing = await prisma.feedbackReaction.findFirst({
+      where: { feedbackId, userId: null, guestEmail },
+    });
+
+    let action: 'added' | 'removed' | 'changed';
+    if (!existing) {
+      await prisma.feedbackReaction.create({
+        data: {
+          feedbackId,
+          userId: null,
+          guestEmail,
+          guestName: typeof guestName === 'string' ? guestName : null,
+          emoji,
+        },
+      });
+      action = 'added';
+    } else if (existing.emoji === emoji) {
+      await prisma.feedbackReaction.delete({ where: { id: existing.id } });
+      action = 'removed';
+    } else {
+      await prisma.feedbackReaction.update({
+        where: { id: existing.id },
+        data: { emoji, createdAt: new Date() },
+      });
+      action = 'changed';
+    }
+
+    const reactions = await prisma.feedbackReaction.findMany({
+      where: { feedbackId },
+      select: {
+        id: true,
+        userId: true,
+        guestEmail: true,
+        guestName: true,
+        emoji: true,
+        createdAt: true,
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    const deliverableId = feedback.version?.deliverableId;
+    if (deliverableId) {
+      socketService.emitToDeliverable(deliverableId, 'feedback:reaction', {
+        feedbackId,
+        userId: null,
+        guestEmail,
+        emoji,
+        action,
+        deliverableId,
+        reactions,
+      });
+    }
+
+    res.json({ success: true, data: { action, reactions } });
+  } catch (error: any) {
+    console.error('Toggle feedback reaction via share link error:', error);
+    res.status(500).json({ error: error.message || 'Failed to toggle reaction' });
   }
 });
 
