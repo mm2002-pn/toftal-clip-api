@@ -7,6 +7,7 @@ import { socketService } from '../../services/socketService';
 import { cacheService, CACHE_KEYS, CACHE_TTL } from '../../services/cacheService';
 import { EmailService } from '../../services/EmailService';
 import { PermissionService } from '../../services/PermissionService';
+import { shareDownscaleLimiter } from '../../middlewares/rateLimiter';
 import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
@@ -1256,7 +1257,7 @@ router.patch('/:token/feedback/:feedbackId/resolve', async (req: Request, res: R
  * Downscale video via share link (PUBLIC - no auth required)
  * Requires 'download' permission
  */
-router.post('/:token/version/:versionId/downscale', async (req: Request, res: Response) => {
+router.post('/:token/version/:versionId/downscale', shareDownscaleLimiter, async (req: Request, res: Response) => {
   try {
     const token = String(req.params.token);
     const versionId = String(req.params.versionId);
