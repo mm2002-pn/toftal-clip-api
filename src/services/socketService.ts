@@ -16,6 +16,7 @@ export type SocketEvent =
   | 'version:deleted'
   | 'feedback:new'
   | 'feedback:updated'
+  | 'feedback:deleted'
   | 'feedback:resolved'
   | 'mention:new'
   | 'project:new'

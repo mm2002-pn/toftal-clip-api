@@ -1253,6 +1253,169 @@ router.patch('/:token/feedback/:feedbackId/resolve', async (req: Request, res: R
 });
 
 /**
+ * PUT /api/v1/deliverable-share/:token/feedback/:feedbackId
+ * Edit a guest's own feedback via share link (PUBLIC - no auth required).
+ * Requires 'comment' or 'download' permission. Guest authorship is
+ * verified by matching the request's guestEmail against the feedback's
+ * stored guestEmail — same identification scheme used by /feedback POST.
+ */
+router.put('/:token/feedback/:feedbackId', async (req: Request, res: Response) => {
+  try {
+    const token = String(req.params.token);
+    const feedbackId = String(req.params.feedbackId);
+    const { rawText, structuredText, guestEmail } = req.body;
+
+    if (!rawText && !structuredText) {
+      return res.status(400).json({ error: 'rawText or structuredText is required' });
+    }
+    if (!guestEmail || typeof guestEmail !== 'string') {
+      return res.status(400).json({ error: 'guestEmail is required for guest edits' });
+    }
+
+    const shareLink = await prisma.deliverableShareLink.findUnique({
+      where: { token },
+      include: {
+        deliverable: {
+          include: {
+            project: { select: { id: true } },
+            versions: { select: { id: true } },
+          },
+        },
+      },
+    });
+
+    if (!shareLink) return res.status(404).json({ error: 'Invalid share link' });
+    if (!shareLink.isActive) return res.status(403).json({ error: 'This share link has been disabled' });
+    if (shareLink.expiresAt && shareLink.expiresAt < new Date()) {
+      return res.status(403).json({ error: 'This share link has expired' });
+    }
+    if (shareLink.permission === 'view') {
+      return res.status(403).json({ error: 'This share link does not allow editing comments' });
+    }
+
+    const versionIds = shareLink.deliverable.versions.map(v => v.id);
+    const feedback = await prisma.feedback.findFirst({
+      where: { id: feedbackId, versionId: { in: versionIds } },
+    });
+
+    if (!feedback) return res.status(404).json({ error: 'Feedback not found' });
+
+    // Guest authorship check — only the guest who originally posted can
+    // edit. Authenticated-user feedbacks (authorId set, guestEmail null)
+    // are off-limits to share-link callers.
+    if (!feedback.guestEmail || feedback.guestEmail !== guestEmail) {
+      return res.status(403).json({ error: 'You can only edit your own comments' });
+    }
+
+    const updatedFeedback = await prisma.feedback.update({
+      where: { id: feedbackId },
+      data: {
+        rawText: rawText ?? feedback.rawText,
+        structuredText: structuredText ?? feedback.structuredText,
+        editedAt: new Date(),
+      },
+      include: {
+        author: { select: { id: true, name: true, avatarUrl: true } },
+        revisionTasks: true,
+        replyingTo: {
+          select: {
+            id: true,
+            rawText: true,
+            structuredText: true,
+            author: { select: { id: true, name: true } },
+            guestName: true,
+          },
+        },
+      },
+    });
+
+    await cacheService.invalidateFeedbacks(feedback.versionId);
+
+    const projectId = shareLink.deliverable.project.id;
+    socketService.emitToProject(projectId, 'feedback:updated', {
+      id: updatedFeedback.id,
+      versionId: feedback.versionId,
+      rawText: updatedFeedback.rawText,
+      structuredText: updatedFeedback.structuredText,
+      editedAt: updatedFeedback.editedAt,
+      projectId,
+    });
+
+    res.json({ success: true, data: updatedFeedback });
+  } catch (error: any) {
+    console.error('Edit feedback via share link error:', error);
+    res.status(500).json({ error: error.message || 'Failed to edit feedback' });
+  }
+});
+
+/**
+ * DELETE /api/v1/deliverable-share/:token/feedback/:feedbackId
+ * Delete a guest's own feedback via share link (PUBLIC - no auth required).
+ * Same authorisation pattern as PUT — guestEmail must match.
+ */
+router.delete('/:token/feedback/:feedbackId', async (req: Request, res: Response) => {
+  try {
+    const token = String(req.params.token);
+    const feedbackId = String(req.params.feedbackId);
+    // DELETE bodies are awkward across HTTP clients, so accept the
+    // identity from a query param too. Either works.
+    const guestEmail = (req.body?.guestEmail || req.query?.guestEmail) as string | undefined;
+
+    if (!guestEmail || typeof guestEmail !== 'string') {
+      return res.status(400).json({ error: 'guestEmail is required for guest deletes' });
+    }
+
+    const shareLink = await prisma.deliverableShareLink.findUnique({
+      where: { token },
+      include: {
+        deliverable: {
+          include: {
+            project: { select: { id: true } },
+            versions: { select: { id: true } },
+          },
+        },
+      },
+    });
+
+    if (!shareLink) return res.status(404).json({ error: 'Invalid share link' });
+    if (!shareLink.isActive) return res.status(403).json({ error: 'This share link has been disabled' });
+    if (shareLink.expiresAt && shareLink.expiresAt < new Date()) {
+      return res.status(403).json({ error: 'This share link has expired' });
+    }
+    if (shareLink.permission === 'view') {
+      return res.status(403).json({ error: 'This share link does not allow deleting comments' });
+    }
+
+    const versionIds = shareLink.deliverable.versions.map(v => v.id);
+    const feedback = await prisma.feedback.findFirst({
+      where: { id: feedbackId, versionId: { in: versionIds } },
+    });
+
+    if (!feedback) return res.status(404).json({ error: 'Feedback not found' });
+
+    if (!feedback.guestEmail || feedback.guestEmail !== guestEmail) {
+      return res.status(403).json({ error: 'You can only delete your own comments' });
+    }
+
+    const versionId = feedback.versionId;
+    await prisma.feedback.delete({ where: { id: feedbackId } });
+    await cacheService.invalidateFeedbacks(versionId);
+
+    const projectId = shareLink.deliverable.project.id;
+    socketService.emitToProject(projectId, 'feedback:deleted', {
+      id: feedbackId,
+      versionId,
+      projectId,
+    });
+
+    res.json({ success: true, data: null });
+  } catch (error: any) {
+    console.error('Delete feedback via share link error:', error);
+    res.status(500).json({ error: error.message || 'Failed to delete feedback' });
+  }
+});
+
+/**
  * POST /api/v1/deliverable-share/:token/version/:versionId/downscale
  * Downscale video via share link (PUBLIC - no auth required)
  * Requires 'download' permission
