@@ -1245,8 +1245,10 @@ router.patch('/:token/feedback/:feedbackId/resolve', async (req: Request, res: R
       return res.status(403).json({ error: 'This share link has expired' });
     }
 
-    // Check permission - must be 'comment' or 'download' to resolve
-    if (shareLink.permission === 'view') {
+    // Resolving a feedback is an editor-level action — only share
+    // links granted `download` permission can mark threads resolved.
+    // 'view' and 'comment' are read/comment-only at this level.
+    if (shareLink.permission !== 'download') {
       return res.status(403).json({ error: 'This share link does not allow resolving comments' });
     }
 
