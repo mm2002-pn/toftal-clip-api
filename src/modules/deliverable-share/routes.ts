@@ -1348,6 +1348,20 @@ router.put('/:token/feedback/:feedbackId', async (req: Request, res: Response) =
             guestName: true,
           },
         },
+        // Without this the rebound feedback would render with an empty
+        // reactions array and the existing pills would visually vanish
+        // until the next list refresh.
+        reactions: {
+          select: {
+            id: true,
+            userId: true,
+            guestEmail: true,
+            guestName: true,
+            emoji: true,
+            createdAt: true,
+          },
+          orderBy: { createdAt: 'asc' },
+        },
       },
     });
 
@@ -1530,6 +1544,12 @@ router.post('/:token/feedback/:feedbackId/reactions', async (req: Request, res: 
       },
       orderBy: { createdAt: 'asc' },
     });
+
+    // Invalidate the cached deliverable payload — without this the
+    // GET /:token cache (1 min TTL) keeps returning the stale
+    // reactions list, so a guest who reacts then refreshes loses
+    // their pill until the cache expires.
+    await cacheService.invalidateFeedbacks(feedback.versionId);
 
     const deliverableId = feedback.version?.deliverableId;
     if (deliverableId) {
