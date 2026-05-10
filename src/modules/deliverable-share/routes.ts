@@ -451,6 +451,16 @@ router.get('/:token', async (req: Request, res: Response) => {
                       },
                       orderBy: { createdAt: 'asc' },
                     },
+                    // WhatsApp-style read receipts. Include reads so the
+                    // sender (auth or guest) sees the double-check go
+                    // blue when recipients open their share link.
+                    reads: {
+                      select: {
+                        userId: true,
+                        guestEmail: true,
+                        readAt: true,
+                      },
+                    },
                   },
                 },
               },
@@ -746,6 +756,13 @@ router.get('/:token/version/:versionId/feedbacks', async (req: Request, res: Res
             createdAt: true,
           },
           orderBy: { createdAt: 'asc' },
+        },
+        reads: {
+          select: {
+            userId: true,
+            guestEmail: true,
+            readAt: true,
+          },
         },
       },
     });
@@ -1448,6 +1465,127 @@ router.delete('/:token/feedback/:feedbackId', async (req: Request, res: Response
   } catch (error: any) {
     console.error('Delete feedback via share link error:', error);
     res.status(500).json({ error: error.message || 'Failed to delete feedback' });
+  }
+});
+
+/**
+ * POST /api/v1/deliverable-share/:token/feedback/bulk-read
+ * Mark multiple feedbacks as read by a guest via share link.
+ *
+ * Guests are identified by `guestEmail` in the body (read from the
+ * localStorage'd guestInfo on the frontend). Skips feedbacks the
+ * guest authored themselves — same rule as the auth controller —
+ * and emits `feedback:read` per deliverable so senders see their
+ * double-check go blue in real time.
+ */
+router.post('/:token/feedback/bulk-read', async (req: Request, res: Response) => {
+  try {
+    const token = String(req.params.token);
+    const { feedbackIds, guestEmail } = req.body || {};
+
+    if (!Array.isArray(feedbackIds) || feedbackIds.length === 0) {
+      return res.status(400).json({ error: 'feedbackIds must be a non-empty array' });
+    }
+    if (feedbackIds.length > 200) {
+      return res.status(400).json({ error: 'feedbackIds length exceeds 200' });
+    }
+    if (!guestEmail || typeof guestEmail !== 'string') {
+      return res.status(400).json({ error: 'guestEmail is required for guest reads' });
+    }
+    const ids = feedbackIds.filter((v: unknown): v is string => typeof v === 'string');
+    if (ids.length === 0) {
+      return res.status(400).json({ error: 'feedbackIds must contain strings' });
+    }
+
+    const shareLink = await prisma.deliverableShareLink.findUnique({
+      where: { token },
+      include: {
+        deliverable: {
+          include: {
+            versions: { select: { id: true } },
+          },
+        },
+      },
+    });
+
+    if (!shareLink) return res.status(404).json({ error: 'Invalid share link' });
+    if (!shareLink.isActive) return res.status(403).json({ error: 'This share link has been disabled' });
+    if (shareLink.expiresAt && shareLink.expiresAt < new Date()) {
+      return res.status(403).json({ error: 'This share link has expired' });
+    }
+
+    // Only mark feedbacks that belong to this deliverable and that the
+    // guest didn't author. createMany skips duplicates so re-reads are
+    // idempotent — guest can scroll back over the same messages without
+    // bumping the receipt count.
+    const versionIds = shareLink.deliverable.versions.map(v => v.id);
+    const feedbacks = await prisma.feedback.findMany({
+      where: { id: { in: ids }, versionId: { in: versionIds } },
+      select: {
+        id: true,
+        guestEmail: true,
+        version: { select: { deliverableId: true } },
+      },
+    });
+
+    const othersFeedbackIds = feedbacks
+      .filter((f) => f.guestEmail !== guestEmail)
+      .map((f) => f.id);
+
+    if (othersFeedbackIds.length === 0) {
+      return res.json({ success: true, data: { marked: 0 } });
+    }
+
+    // Skip feedbacks already read by this guest. Without this, every
+    // re-render of the chat would create new rows since the unique
+    // constraint on (feedbackId, userId) doesn't apply when userId is
+    // null (Postgres NULLS DISTINCT default).
+    const alreadyRead = await prisma.feedbackRead.findMany({
+      where: { feedbackId: { in: othersFeedbackIds }, userId: null, guestEmail },
+      select: { feedbackId: true },
+    });
+    const alreadyReadSet = new Set(alreadyRead.map((r) => r.feedbackId));
+    const toCreate = othersFeedbackIds.filter((id) => !alreadyReadSet.has(id));
+
+    if (toCreate.length === 0) {
+      return res.json({ success: true, data: { marked: 0 } });
+    }
+
+    const readAt = new Date();
+    await prisma.feedbackRead.createMany({
+      data: toCreate.map((feedbackId) => ({
+        feedbackId,
+        userId: null,
+        guestEmail,
+        readAt,
+      })),
+    });
+
+    // Broadcast per deliverable for efficient fan-out — same shape as
+    // the auth controller plus guestEmail so clients can match
+    // recipients by either identity.
+    const byDeliverable = new Map<string, string[]>();
+    for (const f of feedbacks) {
+      if (!toCreate.includes(f.id)) continue;
+      const d = f.version?.deliverableId;
+      if (!d) continue;
+      if (!byDeliverable.has(d)) byDeliverable.set(d, []);
+      byDeliverable.get(d)!.push(f.id);
+    }
+    for (const [deliverableId, fbIds] of byDeliverable) {
+      socketService.emitToDeliverable(deliverableId, 'feedback:read', {
+        userId: null,
+        guestEmail,
+        readAt: readAt.toISOString(),
+        feedbackIds: fbIds,
+        deliverableId,
+      });
+    }
+
+    res.json({ success: true, data: { marked: toCreate.length } });
+  } catch (error: any) {
+    console.error('Bulk-read feedbacks via share link error:', error);
+    res.status(500).json({ error: error.message || 'Failed to mark feedbacks as read' });
   }
 });
 

@@ -407,18 +407,28 @@ model Feedback {
 }
 
 // WhatsApp-style group read receipts (2 blue checkmarks when read by all recipients)
+// WhatsApp-style read receipts. Supports both authenticated readers
+// (userId set, guest fields null) and guests reading via a share link
+// (userId null, guestEmail set). Same dual-identity pattern as
+// FeedbackReaction.
 model FeedbackRead {
   id         String   @id @default(uuid())
   feedbackId String   @map("feedback_id")
-  userId     String   @map("user_id")
+  userId     String?  @map("user_id")
+  guestEmail String?  @map("guest_email")
   readAt     DateTime @default(now()) @map("read_at")
 
   feedback Feedback @relation(fields: [feedbackId], references: [id], onDelete: Cascade)
-  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user     User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  // Postgres treats NULLs as DISTINCT in UNIQUE, so this only
+  // enforces uniqueness for authenticated readers. Guest uniqueness
+  // on (feedbackId, guestEmail) is enforced by the controller via
+  // upsert-style findFirst-then-create.
   @@unique([feedbackId, userId])
   @@index([feedbackId])
   @@index([userId])
+  @@index([feedbackId, guestEmail])
   @@map("feedback_reads")
 }
 

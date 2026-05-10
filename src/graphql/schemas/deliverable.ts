@@ -114,7 +114,10 @@ export const deliverableTypeDefs = gql`
   }
 
   type FeedbackRead {
-    userId: ID!
+    # Null when the read receipt comes from a guest reader; in that
+    # case guestEmail is populated. Exactly one of the two is set.
+    userId: ID
+    guestEmail: String
     readAt: DateTime!
   }
 
