@@ -418,6 +418,12 @@ router.get('/:token', async (req: Request, res: Response) => {
               select: {
                 id: true,
                 title: true,
+                // ownerId surfaced so the guest can include the
+                // project owner in their read-receipt recipient set
+                // — without it, the guest never sees their own
+                // double-check go blue (recipientIds=[] → status
+                // stays 'sent' forever).
+                ownerId: true,
               },
             },
             versions: {
@@ -516,6 +522,12 @@ router.get('/:token', async (req: Request, res: Response) => {
         permission: shareLink.permission,
         expiresAt: shareLink.expiresAt,
       },
+      // The guest UI derives the WhatsApp-style recipient set from
+      // (project.ownerId + every userId/guestEmail already present in
+      // feedbacks[].reads). Computing it client-side keeps it
+      // self-correcting when the cached payload drifts after a socket
+      // event — no need to ship a separate recipientUserIds field
+      // that would go stale.
       deliverable: shareLink.deliverable,
     };
 
