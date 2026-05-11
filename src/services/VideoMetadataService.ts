@@ -236,6 +236,109 @@ export const downscaleAndUploadVideo = async (
 };
 
 /**
+ * Quality strings that the HLS worker emits as variant directories
+ * (`hls/<uuid>/<quality>/playlist.m3u8`). Anything else has to go
+ * through the slow re-encode path in `downscaleAndUploadVideo`.
+ *
+ * `SD` is the downscale-side label for what HLS calls `480p`, so we
+ * accept both and normalise inside `remuxHlsVariantToMp4`.
+ */
+const HLS_VARIANT_QUALITIES = new Set(['240p', '480p', '720p', '1080p', 'SD']);
+
+function hlsVariantNameFor(targetQuality: string): string | null {
+  if (targetQuality === 'SD' || targetQuality === '480p') return '480p';
+  if (HLS_VARIANT_QUALITIES.has(targetQuality)) return targetQuality;
+  return null;
+}
+
+/**
+ * Fast-path for the downscale worker: when the HLS ladder already
+ * contains the target quality, we just remux those TS segments into
+ * an MP4 container — no re-encoding. A 14-min source goes from ~4 min
+ * (libx264 veryfast) down to ~30 s (pure I/O + container rewrite).
+ *
+ * Returns the public URL of the uploaded MP4 on success, or `null`
+ * if HLS isn't available for this quality (caller falls back to the
+ * full encode path).
+ */
+export const remuxHlsVariantToMp4 = async (
+  hlsMasterUrl: string | null | undefined,
+  targetQuality: string
+): Promise<string | null> => {
+  const variantName = hlsVariantNameFor(targetQuality);
+  if (!hlsMasterUrl || !variantName) return null;
+
+  // Derive `<base>/hls/<uuid>/<variant>/playlist.m3u8` from the master
+  // URL. The HLS worker always uploads its files in this layout:
+  //   hls/<uuid>/master.m3u8
+  //   hls/<uuid>/<variant>/playlist.m3u8
+  // …so the substitution is mechanical.
+  const variantUrl = hlsMasterUrl.replace(/master\.m3u8(\?.*)?$/, `${variantName}/playlist.m3u8`);
+  if (variantUrl === hlsMasterUrl) {
+    // Master URL didn't match the expected shape — bail out cleanly.
+    console.warn(`[remux] unexpected master URL shape: ${hlsMasterUrl}`);
+    return null;
+  }
+
+  try {
+    const tempDir = process.env.TMPDIR || process.env.TEMP || '/tmp';
+    const tempOutputFile = path.join(tempDir, `video_${variantName}_remux_${Date.now()}.mp4`);
+
+    // -c copy        no re-encode, just repackage segments
+    // -bsf:a aac_adtstoasc   required when copying AAC from TS (ADTS)
+    //                        into MP4 (raw AAC / ASC)
+    // -movflags +faststart   front-of-file moov atom for fast download
+    //                        progress + instant playback
+    const cmd = [
+      `ffmpeg -hide_banner -loglevel error -nostdin`,
+      `-i "${variantUrl}"`,
+      `-c copy`,
+      `-bsf:a aac_adtstoasc`,
+      `-movflags +faststart`,
+      `"${tempOutputFile}" -y`,
+    ].join(' ');
+
+    console.log(`🔀 Remuxing HLS ${variantName} to MP4 (no re-encode)...`);
+    // 10-min ceiling: remux is I/O-bound, even a 2h source finishes in
+    // a couple of minutes. Anything longer is a sign the HLS playlist
+    // is broken — fail fast and let the caller fall back.
+    await execAsync(cmd, { timeout: 10 * 60 * 1000, maxBuffer: 50 * 1024 * 1024 });
+
+    if (!fs.existsSync(tempOutputFile)) {
+      throw new Error('Output file not created');
+    }
+
+    const filename = `video_${variantName}_${Date.now()}.mp4`;
+    console.log(`📤 Uploading ${variantName} remux to GCS...`);
+    const gcsResult = await uploadVideoToGCS(
+      tempOutputFile,
+      filename,
+      `attachment; filename="${filename}"`
+    );
+
+    if (fs.existsSync(tempOutputFile)) fs.unlinkSync(tempOutputFile);
+
+    console.log(`✅ ${variantName} remux uploaded: ${gcsResult.url}`);
+    return gcsResult.url;
+  } catch (error) {
+    // Don't throw — caller falls back to the full encode path. Log
+    // loudly so we can tell from metrics how often remux fails and
+    // why (broken playlist, missing variant, etc.).
+    const detail =
+      error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+    const stderr = (error as { stderr?: unknown } | null)?.stderr;
+    const stderrTail =
+      typeof stderr === 'string' ? stderr.split('\n').slice(-10).join('\n') : '';
+    console.warn(
+      `[remux] HLS remux failed for ${variantName} (will fall back): ${detail}${
+        stderrTail ? ` | ffmpeg stderr (tail): ${stderrTail}` : ''
+      }`
+    );
+    return null;
+  }
+};
+
+/**
  * Génère les versions downscalées pour une vidéo
  */
 export const generateAlternativeQualitiesBackground = async (

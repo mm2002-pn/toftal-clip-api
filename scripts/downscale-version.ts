@@ -16,7 +16,10 @@
  */
 
 import { PrismaClient } from '@prisma/client';
-import { downscaleAndUploadVideo } from '../src/services/VideoMetadataService';
+import {
+  downscaleAndUploadVideo,
+  remuxHlsVariantToMp4,
+} from '../src/services/VideoMetadataService';
 
 const prisma = new PrismaClient();
 
@@ -95,8 +98,27 @@ async function main() {
   }
 
   try {
-    console.log(`[downscale-worker] ffmpeg → ${quality}`);
-    const url = await downscaleAndUploadVideo(version.videoUrl, quality, metadata as never);
+    // Fast path: if the HLS ladder already encoded this quality at
+    // upload time, just remux the TS segments to MP4 (no re-encode →
+    // ~30 s vs ~4 min). Returns null when HLS is unavailable for this
+    // quality, in which case we fall through to the full encode.
+    const hlsMasterUrl =
+      version.alternativeQualities &&
+      typeof version.alternativeQualities === 'object' &&
+      typeof (version.alternativeQualities as Record<string, string>).master === 'string'
+        ? (version.alternativeQualities as Record<string, string>).master
+        : null;
+
+    let url: string | null = null;
+    if (hlsMasterUrl) {
+      console.log(`[downscale-worker] trying HLS remux for ${quality}`);
+      url = await remuxHlsVariantToMp4(hlsMasterUrl, quality);
+    }
+
+    if (!url) {
+      console.log(`[downscale-worker] full ffmpeg encode → ${quality}`);
+      url = await downscaleAndUploadVideo(version.videoUrl, quality, metadata as never);
+    }
 
     // Single transaction: mirror the URL into Version.alternativeQualities
     // (cheap read for status) AND flip the job row to DONE. If either
