@@ -75,7 +75,7 @@ steps:
       - '--add-cloudsql-instances'
       - '${_INSTANCE_CONNECTION_NAME}'
       - '--set-env-vars'
-      - 'TRUST_PROXY=true,CORS_ORIGIN=https://toftalclip.io;https://www.toftalclip.io;https://app.toftalclip.io,NODE_ENV=production,FRONTEND_URL=https://toftalclip.io,EMAIL_SERVICE=gmail,EMAIL_USER=toftalpodium@gmail.com,EMAIL_FROM=Toftal Clip toftalpodium@gmail.com,RATE_LIMIT_MAX=1000,DB_CONNECTION_LIMIT=10,DB_POOL_TIMEOUT=30,GCS_BUCKET_NAME=toftal-clip-media,GCP_PROJECT_ID=toftal-clip-api,GCP_REGION=${_REGION},UPSTASH_REDIS_REST_URL=https://mint-polecat-37123.upstash.io,BICTORYS_API_URL=https://api.bictorys.com,MEDIA_PUBLIC_BASE_URL=https://media.toftalclip.io/,FASTSTART_JOB_NAME=faststart-worker,HLS_JOB_NAME=hls-worker,PREVIEW_JOB_NAME=preview-worker'
+      - 'TRUST_PROXY=true,CORS_ORIGIN=https://toftalclip.io;https://www.toftalclip.io;https://app.toftalclip.io,NODE_ENV=production,FRONTEND_URL=https://toftalclip.io,EMAIL_SERVICE=gmail,EMAIL_USER=toftalpodium@gmail.com,EMAIL_FROM=Toftal Clip toftalpodium@gmail.com,RATE_LIMIT_MAX=1000,DB_CONNECTION_LIMIT=10,DB_POOL_TIMEOUT=30,GCS_BUCKET_NAME=toftal-clip-media,GCP_PROJECT_ID=toftal-clip-api,GCP_REGION=${_REGION},UPSTASH_REDIS_REST_URL=https://mint-polecat-37123.upstash.io,BICTORYS_API_URL=https://api.bictorys.com,MEDIA_PUBLIC_BASE_URL=https://media.toftalclip.io/,FASTSTART_JOB_NAME=faststart-worker,HLS_JOB_NAME=hls-worker,PREVIEW_JOB_NAME=preview-worker,DOWNSCALE_JOB_NAME=downscale-worker'
       # Secrets — Bictorys live keys live in Secret Manager. Same caveat
       # as staging: gcloud --set-secrets REPLACES, so any manually-added
       # secret gets wiped on the next deploy unless declared here.
@@ -194,6 +194,72 @@ steps:
       - 'NODE_ENV=production,GCS_BUCKET_NAME=toftal-clip-media,GCP_PROJECT_ID=toftal-clip-api,GCP_REGION=${_REGION},MEDIA_PUBLIC_BASE_URL=https://media.toftalclip.io/,UPSTASH_REDIS_REST_URL=https://mint-polecat-37123.upstash.io,INTERNAL_API_BASE_URL=https://api.toftalclip.io'
       - '--set-secrets'
       - 'DATABASE_URL=DATABASE_URL:latest,UPSTASH_REDIS_REST_TOKEN=UPSTASH_REDIS_REST_TOKEN:latest,REDIS_TCP_URL=REDIS_TCP_URL:latest,INTERNAL_API_SECRET=INTERNAL_API_SECRET:latest'
+
+  # Deploy downscale-worker as a Cloud Run Job (PROD). See staging yaml
+  # for the rationale on sizing.
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args:
+      - 'run'
+      - 'jobs'
+      - 'deploy'
+      - 'downscale-worker'
+      - '--image'
+      - 'gcr.io/${PROJECT_ID}/${_SERVICE_NAME}:${COMMIT_SHA}'
+      - '--region'
+      - '${_REGION}'
+      - '--set-cloudsql-instances'
+      - '${_INSTANCE_CONNECTION_NAME}'
+      - '--command'
+      - 'npm'
+      - '--args'
+      - 'run,downscale:run'
+      - '--memory'
+      - '16Gi'
+      - '--cpu'
+      - '4'
+      - '--max-retries'
+      - '0'
+      - '--task-timeout'
+      - '3600s'
+      - '--execution-environment'
+      - 'gen2'
+      - '--set-env-vars'
+      - 'NODE_ENV=production,GCS_BUCKET_NAME=toftal-clip-media,GCP_PROJECT_ID=toftal-clip-api,GCP_REGION=${_REGION},MEDIA_PUBLIC_BASE_URL=https://media.toftalclip.io/'
+      - '--set-secrets'
+      - 'DATABASE_URL=DATABASE_URL:latest'
+
+  # Deploy downscale-sweeper as a Cloud Run Job (PROD). Cloud Scheduler
+  # hits this every 5 min to recycle zombie PROCESSING rows.
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args:
+      - 'run'
+      - 'jobs'
+      - 'deploy'
+      - 'downscale-sweeper'
+      - '--image'
+      - 'gcr.io/${PROJECT_ID}/${_SERVICE_NAME}:${COMMIT_SHA}'
+      - '--region'
+      - '${_REGION}'
+      - '--set-cloudsql-instances'
+      - '${_INSTANCE_CONNECTION_NAME}'
+      - '--command'
+      - 'npm'
+      - '--args'
+      - 'run,downscale:sweep'
+      - '--memory'
+      - '512Mi'
+      - '--cpu'
+      - '1'
+      - '--max-retries'
+      - '1'
+      - '--task-timeout'
+      - '300s'
+      - '--set-env-vars'
+      - 'NODE_ENV=production'
+      - '--set-secrets'
+      - 'DATABASE_URL=DATABASE_URL:latest'
 
 images:
   - 'gcr.io/${PROJECT_ID}/${_SERVICE_NAME}:${COMMIT_SHA}'

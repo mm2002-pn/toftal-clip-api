@@ -95,9 +95,10 @@ export const config = {
      * Name of the Cloud Run Job that downscales a single Version to a
      * target quality (720p/1080p/2K/…) on demand when a user clicks
      * Download. Each execution downscales exactly one (versionId,
-     * quality) pair — dedup is enforced in the DB.
+     * quality) pair — dedup is enforced in the DB. cloudbuild-*.yaml
+     * overrides this with the env-specific name.
      */
-    downscaleJobName: process.env.DOWNSCALE_JOB_NAME || 'toftal-downscale-staging',
+    downscaleJobName: process.env.DOWNSCALE_JOB_NAME || 'downscale-worker',
   },
 
   // Media URLs — served via Cloud CDN once the load balancer is in place.

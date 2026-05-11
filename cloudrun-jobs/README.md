@@ -106,29 +106,26 @@ The downscale Job is *triggered programmatically* from the API
 Download on a quality that isn't cached yet. You DON'T `gcloud execute`
 it by hand — that's only useful for a smoke test.
 
-### One-time setup
+Both `downscale-worker[-staging]` and `downscale-sweeper[-staging]` are
+deployed automatically by `cloudbuild.yaml` / `cloudbuild-staging.yaml`
+alongside faststart/hls/preview — no separate YAML to keep in sync.
+
+### One-time IAM setup (per environment)
 
 ```bash
-# Deploy the worker spec
-gcloud run jobs replace cloudrun-jobs/downscale-staging.yaml \
-  --region=europe-west1
-
-# Deploy the sweeper spec
-gcloud run jobs replace cloudrun-jobs/sweep-downscale-staging.yaml \
-  --region=europe-west1
-
-# Let the API SA invoke the worker. Replace <api-sa> with the staging
-# API's Cloud Run runtime SA (usually `toftal-clip-api-staging@…`).
-gcloud run jobs add-iam-policy-binding toftal-downscale-staging \
+# 1. Let the API SA invoke the downscale worker. Replace REGION and
+#    JOB_NAME (downscale-worker-staging in staging, downscale-worker in
+#    prod) and the api-sa with the runtime SA of the Cloud Run service.
+gcloud run jobs add-iam-policy-binding downscale-worker-staging \
   --region=europe-west1 \
-  --member='serviceAccount:<api-sa>@toftal-clip-api.iam.gserviceaccount.com' \
+  --member='serviceAccount:776016345965-compute@developer.gserviceaccount.com' \
   --role='roles/run.invoker'
 
-# Cloud Scheduler trigger for the sweeper (every 5 min)
+# 2. Cloud Scheduler trigger for the sweeper (every 5 min).
 gcloud iam service-accounts create scheduler-invoker-sa \
   --display-name="Cloud Scheduler → Cloud Run Jobs invoker"
 
-gcloud run jobs add-iam-policy-binding toftal-downscale-sweeper-staging \
+gcloud run jobs add-iam-policy-binding downscale-sweeper-staging \
   --region=europe-west1 \
   --member='serviceAccount:scheduler-invoker-sa@toftal-clip-api.iam.gserviceaccount.com' \
   --role='roles/run.invoker'
@@ -136,15 +133,19 @@ gcloud run jobs add-iam-policy-binding toftal-downscale-sweeper-staging \
 gcloud scheduler jobs create http downscale-sweeper-staging \
   --location=europe-west1 \
   --schedule='*/5 * * * *' \
-  --uri='https://europe-west1-run.googleapis.com/apis/run.googleapis.com/v1/namespaces/toftal-clip-api/jobs/toftal-downscale-sweeper-staging:run' \
+  --uri='https://europe-west1-run.googleapis.com/apis/run.googleapis.com/v1/namespaces/toftal-clip-api/jobs/downscale-sweeper-staging:run' \
   --http-method=POST \
   --oauth-service-account-email='scheduler-invoker-sa@toftal-clip-api.iam.gserviceaccount.com'
 ```
 
+Re-run the same commands with prod names (`downscale-worker`,
+`downscale-sweeper`) when the prod cloudbuild has run for the first
+time.
+
 ### Smoke test (rare — usually you exercise via the API)
 
 ```bash
-gcloud run jobs execute toftal-downscale-staging \
+gcloud run jobs execute downscale-worker-staging \
   --region=europe-west1 \
   --update-env-vars=VERSION_ID=<uuid>,QUALITY=720p,JOB_ROW_ID=<uuid>
 ```
