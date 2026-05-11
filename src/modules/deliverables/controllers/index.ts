@@ -973,7 +973,8 @@ export const downscaleVersionStatus = async (
   next: NextFunction
 ): Promise<void> => {
   try {
-    const { id: deliverableId, versionId, quality } = req.params;
+    const { id: deliverableId, versionId } = req.params;
+    const quality = String(req.params.quality ?? '');
     const versionIdStr = String(versionId);
 
     if (!SUPPORTED_QUALITIES.includes(quality as never)) {
