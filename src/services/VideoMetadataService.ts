@@ -196,9 +196,18 @@ export const downscaleAndUploadVideo = async (
       throw new Error('Output file not created');
     }
 
-    // Upload vers GCS
+    // Upload vers GCS with Content-Disposition: attachment so the
+    // browser always saves the file when the URL is opened, even on
+    // mobile cross-origin where the front can't force a download via
+    // JS. The filename here is just a fallback — the front sets a
+    // nicer one via the anchor `download` attribute.
     console.log(`📤 Uploading ${targetQuality} version to GCS...`);
-    const gcsResult = await uploadVideoToGCS(tempOutputFile, `video_${targetQuality}_${Date.now()}.mp4`);
+    const filename = `video_${targetQuality}_${Date.now()}.mp4`;
+    const gcsResult = await uploadVideoToGCS(
+      tempOutputFile,
+      filename,
+      `attachment; filename="${filename}"`
+    );
 
     // Nettoyer le fichier temporaire
     if (fs.existsSync(tempOutputFile)) {

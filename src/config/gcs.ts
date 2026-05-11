@@ -57,7 +57,16 @@ export const uploadToGCS = async (
   filePath: string,
   originalName: string,
   mimeType: string,
-  folder: string = 'uploads'
+  folder: string = 'uploads',
+  /**
+   * Optional Content-Disposition override. Set to e.g.
+   *   `attachment; filename="my-video.mp4"`
+   * for files that should always be downloaded (not played inline). The
+   * downscale worker uses this so mobile browsers can save the file
+   * via a plain anchor click instead of buffering the whole video in
+   * JS memory (which OOMs on iOS for ~200 MB+ files).
+   */
+  contentDisposition?: string
 ): Promise<GCSUploadResult> => {
   // Generate unique filename
   const ext = path.extname(originalName);
@@ -72,6 +81,7 @@ export const uploadToGCS = async (
     metadata: {
       contentType: mimeType,
       cacheControl: 'public, max-age=31536000, immutable',
+      ...(contentDisposition ? { contentDisposition } : {}),
       metadata: {
         originalName: originalName,
         uploadedAt: new Date().toISOString(),
@@ -124,7 +134,9 @@ export const uploadImageToGCS = async (
  */
 export const uploadVideoToGCS = async (
   filePath: string,
-  originalName: string
+  originalName: string,
+  /** Optional Content-Disposition — see uploadToGCS. */
+  contentDisposition?: string
 ): Promise<GCSUploadResult> => {
   const ext = path.extname(originalName).toLowerCase();
   const mimeTypes: Record<string, string> = {
@@ -136,7 +148,7 @@ export const uploadVideoToGCS = async (
   };
   const mimeType = mimeTypes[ext] || 'video/mp4';
 
-  return uploadToGCS(filePath, originalName, mimeType, 'videos');
+  return uploadToGCS(filePath, originalName, mimeType, 'videos', contentDisposition);
 };
 
 /**
