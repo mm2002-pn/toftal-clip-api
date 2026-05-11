@@ -112,35 +112,75 @@ alongside faststart/hls/preview — no separate YAML to keep in sync.
 
 ### One-time IAM setup (per environment)
 
+These commands must be run ONCE per environment. They are NOT in
+`cloudbuild*.yaml` on purpose — we don't want the build pipeline to
+have permission-grant powers in the project. Re-running is safe
+(idempotent), so it's fine to leave them in shell history.
+
+#### Staging — already done ✅
+
 ```bash
-# 1. Let the API SA invoke the downscale worker. Replace REGION and
-#    JOB_NAME (downscale-worker-staging in staging, downscale-worker in
-#    prod) and the api-sa with the runtime SA of the Cloud Run service.
+# API → invoker on the worker
 gcloud run jobs add-iam-policy-binding downscale-worker-staging \
   --region=europe-west1 \
   --member='serviceAccount:776016345965-compute@developer.gserviceaccount.com' \
   --role='roles/run.invoker'
 
-# 2. Cloud Scheduler trigger for the sweeper (every 5 min).
+# Scheduler SA (re-used in prod too)
 gcloud iam service-accounts create scheduler-invoker-sa \
-  --display-name="Cloud Scheduler → Cloud Run Jobs invoker"
+  --display-name="Cloud Scheduler -> Cloud Run Jobs invoker"
 
+# Scheduler → invoker on the sweeper
 gcloud run jobs add-iam-policy-binding downscale-sweeper-staging \
   --region=europe-west1 \
   --member='serviceAccount:scheduler-invoker-sa@toftal-clip-api.iam.gserviceaccount.com' \
   --role='roles/run.invoker'
 
-gcloud scheduler jobs create http downscale-sweeper-staging \
-  --location=europe-west1 \
-  --schedule='*/5 * * * *' \
-  --uri='https://europe-west1-run.googleapis.com/apis/run.googleapis.com/v1/namespaces/toftal-clip-api/jobs/downscale-sweeper-staging:run' \
-  --http-method=POST \
-  --oauth-service-account-email='scheduler-invoker-sa@toftal-clip-api.iam.gserviceaccount.com'
+# Cron (every 5 min) — URI built in pieces because Cloud Shell wraps long lines
+P1=https://europe-west1-run.googleapis.com
+P2=/apis/run.googleapis.com/v1/namespaces/toftal-clip-api
+P3=/jobs/downscale-sweeper-staging:run
+URI="$P1$P2$P3"
+gcloud scheduler jobs create http downscale-sweeper-staging-cron --location=europe-west1 --schedule='*/5 * * * *' --uri="$URI" --http-method=POST --oauth-service-account-email='scheduler-invoker-sa@toftal-clip-api.iam.gserviceaccount.com'
 ```
 
-Re-run the same commands with prod names (`downscale-worker`,
-`downscale-sweeper`) when the prod cloudbuild has run for the first
-time.
+#### Production — to run ONCE after the first push to `main`
+
+These 4 commands wire prod the same way as staging. The
+`scheduler-invoker-sa` from staging is re-used, so no SA creation
+needed.
+
+```bash
+# 1. API → invoker on the prod worker
+gcloud run jobs add-iam-policy-binding downscale-worker \
+  --region=europe-west1 \
+  --member='serviceAccount:776016345965-compute@developer.gserviceaccount.com' \
+  --role='roles/run.invoker'
+
+# 2. Scheduler → invoker on the prod sweeper
+gcloud run jobs add-iam-policy-binding downscale-sweeper \
+  --region=europe-west1 \
+  --member='serviceAccount:scheduler-invoker-sa@toftal-clip-api.iam.gserviceaccount.com' \
+  --role='roles/run.invoker'
+
+# 3. Build the prod URI in pieces
+P1=https://europe-west1-run.googleapis.com
+P2=/apis/run.googleapis.com/v1/namespaces/toftal-clip-api
+P3=/jobs/downscale-sweeper:run
+URI="$P1$P2$P3"
+
+# 4. Create the prod cron (every 5 min)
+gcloud scheduler jobs create http downscale-sweeper-cron --location=europe-west1 --schedule='*/5 * * * *' --uri="$URI" --http-method=POST --oauth-service-account-email='scheduler-invoker-sa@toftal-clip-api.iam.gserviceaccount.com'
+```
+
+Note: if the API service in prod uses a non-default runtime SA, replace
+`776016345965-compute@developer.gserviceaccount.com` in step 1 with the
+output of:
+
+```bash
+gcloud run services describe toftal-clip-api --region=europe-west1 \
+  --format='value(spec.template.spec.serviceAccountName)'
+```
 
 ### Smoke test (rare — usually you exercise via the API)
 
