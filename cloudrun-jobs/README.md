@@ -136,6 +136,15 @@ gcloud run jobs add-iam-policy-binding downscale-sweeper-staging \
   --member='serviceAccount:scheduler-invoker-sa@toftal-clip-api.iam.gserviceaccount.com' \
   --role='roles/run.invoker'
 
+# Let the Cloud Scheduler service agent mint OAuth tokens AS our SA.
+# Without this, --oauth-service-account-email fails with 401
+# UNAUTHENTICATED because Scheduler can't generate a token to present.
+PROJECT_NUM=$(gcloud projects describe toftal-clip-api --format='value(projectNumber)')
+SA=scheduler-invoker-sa@toftal-clip-api.iam.gserviceaccount.com
+AGENT=service-${PROJECT_NUM}@gcp-sa-cloudscheduler.iam.gserviceaccount.com
+ROLE='roles/iam.serviceAccountTokenCreator'
+gcloud iam service-accounts add-iam-policy-binding "$SA" --member="serviceAccount:$AGENT" --role="$ROLE"
+
 # Cron (every 5 min) — URI built in pieces because Cloud Shell wraps long lines
 P1=https://europe-west1-run.googleapis.com
 P2=/apis/run.googleapis.com/v1/namespaces/toftal-clip-api
@@ -147,8 +156,10 @@ gcloud scheduler jobs create http downscale-sweeper-staging-cron --location=euro
 #### Production — to run ONCE after the first push to `main`
 
 These 4 commands wire prod the same way as staging. The
-`scheduler-invoker-sa` from staging is re-used, so no SA creation
-needed.
+`scheduler-invoker-sa` from staging is re-used, AND the
+`iam.serviceAccountTokenCreator` binding that lets Cloud Scheduler
+mint tokens as that SA is also re-used (it's a project-level concept,
+not env-specific), so no SA creation and no extra binding needed.
 
 ```bash
 # 1. API → invoker on the prod worker
