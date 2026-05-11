@@ -184,8 +184,21 @@ export const downscaleAndUploadVideo = async (
     console.log(`✅ ${targetQuality} version uploaded: ${gcsResult.url}`);
     return gcsResult.url;
   } catch (error) {
+    const detail =
+      error instanceof Error
+        ? `${error.name}: ${error.message}`
+        : String(error);
+    // Surface ffmpeg stderr too — execAsync attaches it on the error
+    // object when the exit code is non-zero.
+    const stderr = (error as { stderr?: unknown } | null)?.stderr;
+    const stderrTail =
+      typeof stderr === 'string' ? stderr.split('\n').slice(-10).join('\n') : '';
     console.error(`Error downscaling to ${targetQuality}:`, error);
-    throw new Error(`Erreur lors du downscaling vers ${targetQuality}`);
+    throw new Error(
+      `Erreur lors du downscaling vers ${targetQuality}: ${detail}${
+        stderrTail ? ` | ffmpeg stderr (tail): ${stderrTail}` : ''
+      }`
+    );
   }
 };
 
