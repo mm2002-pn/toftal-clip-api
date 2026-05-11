@@ -1,15 +1,20 @@
 # Backend — Jobs
 
-Les jobs déclenchent des workers Cloud Run via `gcloud run jobs execute` avec
-un override d'env var `VERSION_ID`.
+Les jobs déclenchent des workers Cloud Run via le SDK `@google-cloud/run`
+avec un override d'env vars.
 
 ## Triggers — `src/services/`
 
-| Fichier | Job déclenché |
-|---|---|
-| `faststartTrigger.ts` | `faststart-worker-{env}` |
-| `previewTrigger.ts` | `preview-worker-{env}` |
-| `hlsTrigger.ts` | `hls-worker-{env}` |
+| Fichier | Job déclenché | Env override |
+|---|---|---|
+| `faststartTrigger.ts` | `faststart-worker[-staging]` | `VERSION_ID` |
+| `previewTrigger.ts` | `preview-worker[-staging]` | `VERSION_ID` |
+| `hlsTrigger.ts` | `hls-worker[-staging]` | `VERSION_ID` |
+| `downscaleJobsService.ts` | `downscale-worker[-staging]` | `VERSION_ID`, `QUALITY`, `JOB_ROW_ID` |
+
+Le sweeper `downscale-sweeper[-staging]` ne passe pas par un trigger
+applicatif : Cloud Scheduler le lance directement toutes les 5 min via
+l'API admin Cloud Run.
 
 Pattern commun :
 
@@ -31,13 +36,19 @@ export const triggerXxxJob = async (versionId: string) => {
 L'API ne **bloque pas** sur le résultat : trigger fire-and-forget, le worker
 notifie la fin via l'endpoint internal.
 
-## Workers — `src/workers/`
+## Workers — `src/workers/` et `scripts/`
 
-| Fichier | Worker |
-|---|---|
-| `faststart.ts` | Le code qui tourne dans le job faststart |
-| `preview.ts` | Le code qui tourne dans le job preview |
-| `hls.ts` | Le code qui tourne dans le job HLS |
+| Fichier | Worker | Entrypoint Docker |
+|---|---|---|
+| `src/workers/faststart.ts` | faststart | `node dist/workers/faststart.js` |
+| `src/workers/preview.ts` | preview | `node dist/workers/preview.js` |
+| `src/workers/hls.ts` | hls | `node dist/workers/hls.js` |
+| `scripts/downscale-version.ts` | downscale | `npm run downscale:run` (ts-node) |
+| `scripts/sweep-downscale-zombies.ts` | sweeper | `npm run downscale:sweep` (ts-node) |
+
+Note : les 3 anciens workers sont compilés vers `dist/` ; les 2 nouveaux
+tournent en ts-node depuis `scripts/` parce qu'ils partagent le même
+pattern que les backfills déjà en place dans ce dossier.
 
 Tous suivent le même pattern :
 
