@@ -8,6 +8,11 @@ import { cacheService, CACHE_KEYS, CACHE_TTL } from '../../services/cacheService
 import { EmailService } from '../../services/EmailService';
 import { PermissionService } from '../../services/PermissionService';
 import { shareDownscaleLimiter } from '../../middlewares/rateLimiter';
+import {
+  enqueueDownscale,
+  getDownscaleStatus,
+  SUPPORTED_QUALITIES,
+} from '../../services/downscaleJobsService';
 import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
@@ -1728,111 +1733,121 @@ router.post('/:token/feedback/:feedbackId/reactions', async (req: Request, res: 
  * Downscale video via share link (PUBLIC - no auth required)
  * Requires 'download' permission
  */
+// Shared share-link gate. Returns either the verified version or sends
+// the appropriate 4xx and returns null.
+async function resolveShareForDownscale(
+  req: Request,
+  res: Response,
+  requireDownload: boolean
+): Promise<{ versionId: string } | null> {
+  const token = String(req.params.token);
+  const versionId = String(req.params.versionId);
+
+  const shareLink = await prisma.deliverableShareLink.findUnique({
+    where: { token },
+    include: {
+      deliverable: { include: { versions: { where: { id: versionId }, select: { id: true } } } },
+    },
+  });
+
+  if (!shareLink) {
+    res.status(404).json({ error: 'Invalid share link' });
+    return null;
+  }
+  if (!shareLink.isActive) {
+    res.status(403).json({ error: 'This share link has been disabled' });
+    return null;
+  }
+  if (shareLink.expiresAt && shareLink.expiresAt < new Date()) {
+    res.status(403).json({ error: 'This share link has expired' });
+    return null;
+  }
+  if (requireDownload && shareLink.permission !== 'download') {
+    res.status(403).json({ error: 'This share link does not allow downloading' });
+    return null;
+  }
+  if (!shareLink.deliverable.versions || shareLink.deliverable.versions.length === 0) {
+    res.status(404).json({ error: 'Version not found or does not belong to this deliverable' });
+    return null;
+  }
+
+  return { versionId };
+}
+
 router.post('/:token/version/:versionId/downscale', shareDownscaleLimiter, async (req: Request, res: Response) => {
   try {
-    const token = String(req.params.token);
-    const versionId = String(req.params.versionId);
-    const { quality } = req.body;
+    const { quality } = req.body as { quality?: string };
+    const retry = req.query.retry === '1' || req.query.retry === 'true';
 
-    console.log('🎬 POST /deliverable-share/:token/version/:versionId/downscale');
-    console.log('🔑 Token:', token.substring(0, 10) + '...');
-    console.log('📹 VersionId:', versionId);
-    console.log('🎯 Quality:', quality);
-
-    if (!quality) {
-      return res.status(400).json({ error: 'Target quality is required' });
-    }
-
-    // Verify share link exists and has download permission
-    const shareLink = await prisma.deliverableShareLink.findUnique({
-      where: { token },
-      include: {
-        deliverable: {
-          include: {
-            versions: {
-              where: { id: versionId },
-            },
-          },
-        },
-      },
-    });
-
-    if (!shareLink) {
-      return res.status(404).json({ error: 'Invalid share link' });
-    }
-
-    // Check if link is active
-    if (!shareLink.isActive) {
-      return res.status(403).json({ error: 'This share link has been disabled' });
-    }
-
-    // Check expiration
-    if (shareLink.expiresAt && shareLink.expiresAt < new Date()) {
-      return res.status(403).json({ error: 'This share link has expired' });
-    }
-
-    // Check permission - must be 'download' to downscale
-    if (shareLink.permission !== 'download') {
-      return res.status(403).json({ error: 'This share link does not allow downloading' });
-    }
-
-    // Verify version belongs to the deliverable
-    if (!shareLink.deliverable.versions || shareLink.deliverable.versions.length === 0) {
-      return res.status(404).json({ error: 'Version not found or does not belong to this deliverable' });
-    }
-
-    const version = shareLink.deliverable.versions[0];
-
-    // Check if version has metadata
-    const metadata = version.metadata as any;
-    if (!metadata || !metadata.width || !metadata.height) {
-      return res.status(400).json({ error: 'Video metadata not available' });
-    }
-
-    // Check if already cached
-    const alternativeQualities = version.alternativeQualities as any;
-    if (alternativeQualities && alternativeQualities[quality]) {
-      console.log(`✅ Returning cached version for quality ${quality}`);
-      return res.json({
-        success: true,
-        data: {
-          quality,
-          url: alternativeQualities[quality],
-          source: 'cached',
-        },
+    if (!quality || !SUPPORTED_QUALITIES.includes(quality as never)) {
+      return res.status(400).json({
+        error: `Target quality is required and must be one of: ${SUPPORTED_QUALITIES.join(', ')}`,
       });
     }
 
-    // Downscale video
-    const { downscaleAndUploadVideo } = require('../../services/VideoMetadataService');
+    const ctx = await resolveShareForDownscale(req, res, /* requireDownload */ true);
+    if (!ctx) return;
 
-    console.log(`🎬 Downscaling version ${versionId} to ${quality}...`);
-    const downscaledUrl = await downscaleAndUploadVideo(version.videoUrl, quality, metadata);
+    const job = await enqueueDownscale(ctx.versionId, quality, { retry });
 
-    // Save to database
-    const updatedAlternatives = alternativeQualities || {};
-    updatedAlternatives[quality] = downscaledUrl;
+    if (job.status === 'DONE') {
+      return res.json({
+        success: true,
+        data: { quality, url: job.url, status: 'DONE', source: 'cached', jobId: job.jobId },
+      });
+    }
 
-    await prisma.version.update({
-      where: { id: versionId },
-      data: { alternativeQualities: updatedAlternatives },
+    if (job.status === 'FAILED') {
+      return res.status(409).json({
+        success: false,
+        data: { quality, status: 'FAILED', jobId: job.jobId, error: job.error },
+      });
+    }
+
+    res.status(202).json({
+      success: true,
+      data: { quality, status: 'PROCESSING', jobId: job.jobId },
     });
+  } catch (error: any) {
+    console.error('Downscale via share link error:', error);
+    res.status(500).json({ error: error.message || 'Failed to enqueue downscale' });
+  }
+});
 
-    console.log(`✅ Version downscaled to ${quality}: ${downscaledUrl}`);
+/**
+ * GET /api/v1/deliverable-share/:token/version/:versionId/downscale/:quality/status
+ * Polling endpoint for guests. `view` permission is enough — anyone who
+ * can open the share link can check whether the downscale is done. The
+ * actual URL is still only useful with `download` permission because we
+ * gate that on the POST.
+ */
+router.get('/:token/version/:versionId/downscale/:quality/status', async (req: Request, res: Response) => {
+  try {
+    const quality = String(req.params.quality);
+    if (!SUPPORTED_QUALITIES.includes(quality as never)) {
+      return res.status(400).json({ error: 'Unknown quality' });
+    }
 
+    const ctx = await resolveShareForDownscale(req, res, /* requireDownload */ false);
+    if (!ctx) return;
+
+    const view = await getDownscaleStatus(ctx.versionId, quality);
+    if (!view) {
+      return res.json({ success: true, data: { quality, status: 'NOT_STARTED' } });
+    }
     res.json({
       success: true,
       data: {
         quality,
-        url: downscaledUrl,
-        source: 'generated',
+        status: view.status,
+        url: view.url,
+        error: view.error,
+        jobId: view.jobId,
       },
     });
   } catch (error: any) {
-    console.error('Downscale via share link error:', error);
-    res.status(500).json({
-      error: error.message || 'Failed to downscale video',
-    });
+    console.error('Downscale status via share link error:', error);
+    res.status(500).json({ error: error.message || 'Failed to read downscale status' });
   }
 });
 

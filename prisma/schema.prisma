@@ -315,14 +315,49 @@ model Version {
   createdAt  DateTime @default(now()) @map("created_at")
 
   // Relations
-  deliverable Deliverable @relation(fields: [deliverableId], references: [id], onDelete: Cascade)
-  uploadedBy  User?       @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
-  feedbacks   Feedback[]
+  deliverable    Deliverable           @relation(fields: [deliverableId], references: [id], onDelete: Cascade)
+  uploadedBy     User?                 @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
+  feedbacks      Feedback[]
+  downscaleJobs  VersionDownscaleJob[]
 
   // ✅ PHASE 2: Index pour optimiser les queries
   @@index([deliverableId])
   @@index([uploadedById])
   @@map("versions")
+}
+
+// One row per (version, target-quality) pair. Lets us run ffmpeg in an
+// out-of-band Cloud Run Job instead of on the HTTP thread and keeps the
+// dedup atomic — a UNIQUE(version_id, quality) means N concurrent
+// requests for the same downscale only ever spawn ONE worker.
+//
+//   PROCESSING → ffmpeg currently running (or zombie if startedAt > 1h)
+//   DONE       → resultUrl is the GCS URL and Version.alternativeQualities
+//                also mirrors it for cheap reads
+//   FAILED     → error has the wrapped ffmpeg/upload message; callers
+//                can re-enqueue via POST .../downscale?retry=1
+enum DownscaleJobStatus {
+  PROCESSING
+  DONE
+  FAILED
+}
+
+model VersionDownscaleJob {
+  id                  String              @id @default(uuid())
+  versionId           String              @map("version_id")
+  quality             String              // '720p' | '1080p' | '2K' | '4K' | 'SD'
+  status              DownscaleJobStatus  @default(PROCESSING)
+  cloudRunExecutionId String?             @map("cloud_run_execution_id")
+  resultUrl           String?             @map("result_url")
+  error               String?
+  startedAt           DateTime            @default(now()) @map("started_at")
+  finishedAt          DateTime?           @map("finished_at")
+
+  version Version @relation(fields: [versionId], references: [id], onDelete: Cascade)
+
+  @@unique([versionId, quality], name: "version_quality_unique")
+  @@index([status, startedAt])
+  @@map("version_downscale_jobs")
 }
 
 model WorkflowPhase {

@@ -1,0 +1,56 @@
+# Cloud Run Job — sweeps zombie downscale rows (staging)
+# =======================================================
+# Marks PROCESSING rows older than 1h as FAILED. Runs every 5 min via
+# Cloud Scheduler. Cheap: just one UPDATE … WHERE status='PROCESSING'.
+#
+# Deploy once:
+#   gcloud run jobs replace cloudrun-jobs/sweep-downscale-staging.yaml \
+#     --region=europe-west1
+#
+# Schedule:
+#   gcloud scheduler jobs create http downscale-sweeper-staging \
+#     --location=europe-west1 \
+#     --schedule='*/5 * * * *' \
+#     --uri='https://europe-west1-run.googleapis.com/apis/run.googleapis.com/v1/namespaces/toftal-clip-api/jobs/toftal-downscale-sweeper-staging:run' \
+#     --http-method=POST \
+#     --oauth-service-account-email='scheduler-invoker-sa@toftal-clip-api.iam.gserviceaccount.com'
+#
+# Bind the scheduler SA to roles/run.invoker on the Job once.
+
+apiVersion: run.googleapis.com/v1
+kind: Job
+metadata:
+  name: toftal-downscale-sweeper-staging
+  labels:
+    env: staging
+    purpose: downscale-sweeper
+spec:
+  template:
+    spec:
+      taskCount: 1
+      template:
+        spec:
+          # 5 min is plenty — this is one UPDATE statement.
+          timeoutSeconds: 300
+          maxRetries: 1
+          containers:
+            - image: gcr.io/toftal-clip-api/toftal-clip-api-staging:staging-latest
+              command:
+                - npm
+              args:
+                - run
+                - downscale:sweep
+              env:
+                - name: NODE_ENV
+                  value: staging
+                - name: DATABASE_URL
+                  valueFrom:
+                    secretKeyRef:
+                      name: DATABASE_URL_STAGING
+                      key: latest
+              resources:
+                limits:
+                  cpu: "1"
+                  memory: "512Mi"
+          volumes: []
+          serviceAccountName: backfill-job-sa@toftal-clip-api.iam.gserviceaccount.com

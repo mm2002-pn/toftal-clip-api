@@ -161,11 +161,35 @@ export const downscaleAndUploadVideo = async (
     const tempDir = process.env.TMPDIR || process.env.TEMP || '/tmp';
     const tempOutputFile = path.join(tempDir, `video_${targetQuality}_${Date.now()}.mp4`);
 
-    // Commander FFmpeg pour downscaler
-    const ffmpegCommand = `ffmpeg -i "${videoUrl}" -vf "scale=${targetRes.width}:${targetRes.height}" -b:v ${targetRes.bitrate} -preset medium "${tempOutputFile}" -y`;
+    // Commander FFmpeg pour downscaler.
+    //
+    // `-preset veryfast` + `-threads 0` (= all available cores) brings the
+    // encode rate from ~0.5× realtime to ~3-4× realtime on the Job's 2-vCPU
+    // sizing. Bitrate is capped per target so the file size stays under
+    // control even with a faster preset.
+    //
+    // `-vf scale=…:force_original_aspect_ratio=decrease,pad=…` keeps the
+    // aspect ratio and pads if needed — without it portrait 9/16 sources
+    // get squashed into landscape boxes.
+    //
+    // Audio is re-encoded with libfdk_aac unavailable on Debian → fall back
+    // to native `aac` at 128k which is fine for delivery-quality.
+    const ffmpegCommand = [
+      `ffmpeg -hide_banner -loglevel error -nostdin`,
+      `-i "${videoUrl}"`,
+      `-vf "scale=${targetRes.width}:${targetRes.height}:force_original_aspect_ratio=decrease,pad=${targetRes.width}:${targetRes.height}:(ow-iw)/2:(oh-ih)/2"`,
+      `-c:v libx264 -preset veryfast -b:v ${targetRes.bitrate} -maxrate ${targetRes.bitrate} -bufsize ${parseInt(targetRes.bitrate) * 2}k`,
+      `-c:a aac -b:a 128k`,
+      `-movflags +faststart`,
+      `-threads 0`,
+      `"${tempOutputFile}" -y`,
+    ].join(' ');
 
     console.log(`🎬 Downscaling video to ${targetQuality}...`);
-    await execAsync(ffmpegCommand, { timeout: 600000 }); // 10 minutes timeout
+    // 50 min timeout — Cloud Run Job has a 1h ceiling and this MUST
+    // expire before the Job's own timeout so we get a clean error
+    // rather than a SIGKILL.
+    await execAsync(ffmpegCommand, { timeout: 50 * 60 * 1000, maxBuffer: 50 * 1024 * 1024 });
 
     // Vérifier que le fichier existe
     if (!fs.existsSync(tempOutputFile)) {
