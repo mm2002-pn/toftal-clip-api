@@ -66,7 +66,15 @@ export const uploadToGCS = async (
    * via a plain anchor click instead of buffering the whole video in
    * JS memory (which OOMs on iOS for ~200 MB+ files).
    */
-  contentDisposition?: string
+  contentDisposition?: string,
+  /**
+   * Optional Content-Type override. iOS Safari sometimes ignores
+   * Content-Disposition: attachment for media MIME types and plays the
+   * file inline instead of saving it (showing a black screen if the
+   * H.264 profile isn't supported by AVFoundation). Set this to
+   * `application/octet-stream` for files that MUST download.
+   */
+  contentTypeOverride?: string
 ): Promise<GCSUploadResult> => {
   // Generate unique filename
   const ext = path.extname(originalName);
@@ -79,7 +87,7 @@ export const uploadToGCS = async (
   await bucket.upload(filePath, {
     destination: fileName,
     metadata: {
-      contentType: mimeType,
+      contentType: contentTypeOverride || mimeType,
       cacheControl: 'public, max-age=31536000, immutable',
       ...(contentDisposition ? { contentDisposition } : {}),
       metadata: {
@@ -136,7 +144,9 @@ export const uploadVideoToGCS = async (
   filePath: string,
   originalName: string,
   /** Optional Content-Disposition — see uploadToGCS. */
-  contentDisposition?: string
+  contentDisposition?: string,
+  /** Optional Content-Type override — see uploadToGCS. */
+  contentTypeOverride?: string
 ): Promise<GCSUploadResult> => {
   const ext = path.extname(originalName).toLowerCase();
   const mimeTypes: Record<string, string> = {
@@ -148,7 +158,7 @@ export const uploadVideoToGCS = async (
   };
   const mimeType = mimeTypes[ext] || 'video/mp4';
 
-  return uploadToGCS(filePath, originalName, mimeType, 'videos', contentDisposition);
+  return uploadToGCS(filePath, originalName, mimeType, 'videos', contentDisposition, contentTypeOverride);
 };
 
 /**

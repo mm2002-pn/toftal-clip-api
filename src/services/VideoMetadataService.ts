@@ -256,7 +256,13 @@ export const downscaleAndUploadVideo = async (
     const gcsResult = await uploadVideoToGCS(
       tempOutputFile,
       filename,
-      `attachment; filename="${filename}"`
+      `attachment; filename="${filename}"`,
+      // application/octet-stream prevents iOS Safari from trying to play
+      // the file inline (which it does for video/mp4 even with CD
+      // attachment, sometimes ending in a "black screen" if the
+      // profile/level isn't AVFoundation-friendly). These artefacts
+      // exist only to be downloaded — no playback path uses them.
+      'application/octet-stream'
     );
 
     cleanup();
@@ -361,7 +367,10 @@ export const remuxHlsVariantToMp4 = async (
     const gcsResult = await uploadVideoToGCS(
       tempOutputFile,
       filename,
-      `attachment; filename="${filename}"`
+      `attachment; filename="${filename}"`,
+      // Force octet-stream so iOS Safari downloads instead of trying
+      // to play inline. See note in downscaleAndUploadVideo.
+      'application/octet-stream'
     );
 
     if (fs.existsSync(tempOutputFile)) fs.unlinkSync(tempOutputFile);
