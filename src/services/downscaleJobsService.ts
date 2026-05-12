@@ -22,6 +22,45 @@ import { JobsClient } from '@google-cloud/run';
 import { prisma } from '../config/database';
 import { config } from '../config';
 import { logger } from '../utils/logger';
+import { BUCKET_NAME, getSignedDownloadUrl } from '../config/gcs';
+
+/**
+ * Replace a public CDN URL like
+ *   https://media.staging.toftalclip.io/videos/<uuid>.mp4
+ * (or https://storage.googleapis.com/<bucket>/videos/<uuid>.mp4)
+ * with a freshly-signed GCS URL that bakes in CD: attachment +
+ * application/octet-stream via response-header overrides.
+ *
+ * Why we do this even for files that *should* already carry those
+ * headers in their stored metadata: older downscale runs (before the
+ * Content-Disposition fix landed) uploaded with `video/mp4` and no
+ * CD, which on iOS Safari opens the player inline instead of saving.
+ * Signing on the fly applies the override regardless of what the
+ * object's stored metadata says, so old cached files and new ones
+ * behave the same — Safari sees `attachment` + `octet-stream` in the
+ * response and routes the body to its download manager.
+ *
+ * Returns the original URL on any failure (best-effort).
+ */
+async function signedDownloadForCachedUrl(
+  cachedUrl: string,
+  quality: string
+): Promise<string> {
+  try {
+    const u = new URL(cachedUrl);
+    let objectName = u.pathname.replace(/^\/+/, '');
+    if (objectName.startsWith(`${BUCKET_NAME}/`)) {
+      objectName = objectName.slice(BUCKET_NAME.length + 1);
+    }
+    const filename = `video_${quality}.mp4`;
+    return await getSignedDownloadUrl(objectName, filename, 60);
+  } catch (err) {
+    logger.warn(
+      `[downscale-jobs] could not sign download URL for ${cachedUrl}: ${(err as Error).message}`
+    );
+    return cachedUrl;
+  }
+}
 
 export type DownscaleJobStatus = 'PROCESSING' | 'DONE' | 'FAILED';
 
@@ -119,16 +158,21 @@ export async function getDownscaleStatus(
       ? (version.alternativeQualities as Record<string, string>)[quality]
       : undefined;
   if (cached) {
-    return { status: 'DONE', url: cached, jobId: 'cached' };
+    const signedUrl = await signedDownloadForCachedUrl(cached, quality);
+    return { status: 'DONE', url: signedUrl, jobId: 'cached' };
   }
 
   const job = await prisma.versionDownscaleJob.findUnique({
     where: { version_quality_unique: { versionId, quality } },
   });
   if (!job) return null;
+  const url =
+    job.status === 'DONE' && job.resultUrl
+      ? await signedDownloadForCachedUrl(job.resultUrl, quality)
+      : job.resultUrl ?? undefined;
   return {
     status: job.status as DownscaleJobStatus,
-    url: job.resultUrl ?? undefined,
+    url,
     error: job.error ?? undefined,
     jobId: job.id,
   };
