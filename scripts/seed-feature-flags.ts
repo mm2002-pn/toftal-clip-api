@@ -48,6 +48,20 @@ const FLAGS: { name: string; description: string; enabled: boolean }[] = [
     description: 'Active le free trial (14 jours) avant le premier paiement Bictorys',
     enabled: false,
   },
+
+  // Workspaces / teams
+  //
+  // Master switch for the "Équipe" feature: the sidebar item, the
+  // /team and /team/:id routes, the "Nouvelle équipe" dropdown
+  // entry, and the team-scoped project creation path in
+  // ProjectClone all read this flag. Staging keeps it ON; we set it
+  // OFF in prod until the billing flow is validated end-to-end.
+  {
+    name: 'teams_enabled',
+    description:
+      'Active la fonctionnalité Équipe (sidebar, /team, création d\'org, projets d\'équipe)',
+    enabled: true,
+  },
 ];
 
 async function main() {
