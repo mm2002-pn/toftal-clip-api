@@ -6,7 +6,15 @@ import { sendEmail, emailTemplates } from '../../../config/email';
 import { socketService } from '../../../services/socketService';
 import { extractVideoMetadata } from '../../../services/VideoMetadataService';
 import { generateVideoThumbnail } from '../../../services/VideoThumbnailService';
-import { bucket, BUCKET_NAME } from '../../../config/gcs';
+import { triggerFaststartJob } from '../../../services/faststartTrigger';
+import { triggerHlsJob } from '../../../services/hlsTrigger';
+import { triggerPreviewJob } from '../../../services/previewTrigger';
+import {
+  enqueueDownscale,
+  getDownscaleStatus,
+  SUPPORTED_QUALITIES,
+} from '../../../services/downscaleJobsService';
+import { bucket, BUCKET_NAME, getSignedDownloadUrl } from '../../../config/gcs';
 import { renderEmailFromDB } from '../../../services/templateResolver';
 
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
@@ -495,6 +503,34 @@ export const addVersion = async (req: Request, res: Response, next: NextFunction
       }
     });
 
+    // Fire-and-forget: kick off the faststart remux job. Decouples a
+    // potentially long ffmpeg pass (mostly I/O for `-c copy`, but the
+    // source can be 5–20 GB) from the inbound HTTP response. Emits
+    // `version:playback-ready` when the playable.mp4 is live; the
+    // frontend swaps src instantly. See workers/faststart.ts.
+    setImmediate(() => {
+      void triggerFaststartJob(version.id);
+    });
+
+    // Fire-and-forget: kick off the HLS multi-quality encode job in
+    // parallel. Takes 2–60 min (CPU-bound, full re-encode). When done,
+    // sets versions.alternative_qualities.master and emits
+    // `version:hls-ready` so the frontend swaps to adaptive bitrate
+    // playback via hls.js (or native HLS on Safari). See workers/hls.ts.
+    setImmediate(() => {
+      void triggerHlsJob(version.id);
+    });
+
+    // Fire-and-forget: kick off the preview encode job in parallel.
+    // Lightweight 480p ultrafast MP4 — meant to be the FIRST stream-
+    // friendly artefact ready for the user (~30s for short clips,
+    // ~5-10 min for long 4K). Bridges the gap between faststart
+    // (which is too heavy on big sources) and HLS (which takes long
+    // on long sources). See workers/preview.ts.
+    setImmediate(() => {
+      void triggerPreviewJob(version.id);
+    });
+
     // Update deliverable status to VALIDATION with progress 75%
     await prisma.deliverable.update({
       where: { id },
@@ -569,7 +605,7 @@ export const getVersions = async (req: Request, res: Response, next: NextFunctio
       orderBy: { versionNumber: 'desc' },
       include: {
         uploadedBy: { select: { id: true, name: true, avatarUrl: true } },
-        feedbacks: { include: { revisionTasks: true, author: true, reads: { select: { userId: true, readAt: true } }, reactions: { select: { id: true, userId: true, emoji: true, createdAt: true }, orderBy: { createdAt: 'asc' } } }, orderBy: { createdAt: 'asc' } },
+        feedbacks: { include: { revisionTasks: true, author: true, reads: { select: { userId: true, guestEmail: true, readAt: true } }, reactions: { select: { id: true, userId: true, guestEmail: true, guestName: true, emoji: true, createdAt: true }, orderBy: { createdAt: 'asc' } } }, orderBy: { createdAt: 'asc' } },
       },
     });
 
@@ -853,83 +889,183 @@ export const extractVersionMetadata = async (req: Request, res: Response, next: 
   }
 };
 
+/**
+ * Kick off (or piggy-back on) an async downscale job. This used to fork
+ * ffmpeg synchronously and Cloud Run killed the request before 14-min
+ * sources finished; now it returns immediately and the front polls the
+ * companion `/status` endpoint until the URL is ready.
+ *
+ * Response shape:
+ *   200 { quality, url, status: 'DONE', source: 'cached' }
+ *   202 { quality, jobId, status: 'PROCESSING' }
+ *   409 { quality, jobId, status: 'FAILED', error } — caller can retry
+ *       with `?retry=1` to flip back to PROCESSING and re-enqueue.
+ */
 export const downscaleVersion = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { id: deliverableId, versionId } = req.params;
-    const { quality } = req.body; // Target quality: "1080p", "2K", "4K", etc.
+    const { quality } = req.body as { quality?: string };
     const versionIdStr = String(versionId);
+    const retry = req.query.retry === '1' || req.query.retry === 'true';
 
-    if (!quality) {
-      ApiResponse.error(res, 'Target quality is required', 400);
+    if (!quality || !SUPPORTED_QUALITIES.includes(quality as never)) {
+      ApiResponse.error(
+        res,
+        `Target quality is required and must be one of: ${SUPPORTED_QUALITIES.join(', ')}`,
+        400
+      );
       return;
     }
 
-    // Get version
     const version = await prisma.version.findUnique({
       where: { id: versionIdStr },
-      include: { deliverable: true },
+      select: { id: true, deliverableId: true },
     });
-
     if (!version) {
       ApiResponse.error(res, 'Version not found', 404);
       return;
     }
-
     if (version.deliverableId !== deliverableId) {
       ApiResponse.error(res, 'Version does not belong to this deliverable', 400);
       return;
     }
 
-    // Get metadata (extract if needed)
-    let metadata = version.metadata as any;
-    if (!metadata) {
-      const { extractVideoMetadata } = require('../../../services/VideoMetadataService');
-      console.log('📹 Extracting metadata first...');
-      metadata = await extractVideoMetadata(version.videoUrl);
+    const job = await enqueueDownscale(versionIdStr, quality, { retry });
 
-      // Save metadata
-      await prisma.version.update({
-        where: { id: versionIdStr },
-        data: { metadata },
-      });
-    }
-
-    // Check if already cached
-    const alternativeQualities = version.alternativeQualities as any;
-    if (alternativeQualities && alternativeQualities[quality]) {
-      console.log(`✅ Returning cached version for quality ${quality}`);
-      ApiResponse.success(res, {
-        quality,
-        url: alternativeQualities[quality],
-        source: 'cached',
-      }, 'Downscaled version available');
+    if (job.status === 'DONE') {
+      ApiResponse.success(
+        res,
+        { quality, url: job.url, status: 'DONE', source: 'cached', jobId: job.jobId },
+        'Downscaled version available'
+      );
       return;
     }
 
-    // Downscale video
-    const { downscaleAndUploadVideo } = require('../../../services/VideoMetadataService');
+    if (job.status === 'FAILED') {
+      // 409 = "you can still recover" — the front offers a retry.
+      res.status(409).json({
+        success: false,
+        message: 'Previous downscale attempt failed',
+        data: { quality, status: 'FAILED', jobId: job.jobId, error: job.error },
+      });
+      return;
+    }
 
-    console.log(`🎬 Downscaling version ${versionIdStr} to ${quality}...`);
-    const downscaledUrl = await downscaleAndUploadVideo(version.videoUrl, quality, metadata);
-
-    // Save to database
-    const updatedAlternatives = alternativeQualities || {};
-    updatedAlternatives[quality] = downscaledUrl;
-
-    await prisma.version.update({
-      where: { id: versionIdStr },
-      data: { alternativeQualities: updatedAlternatives },
+    // PROCESSING — 202 Accepted, the front should now poll /status.
+    res.status(202).json({
+      success: true,
+      message: 'Downscale started — poll the status endpoint',
+      data: { quality, status: 'PROCESSING', jobId: job.jobId },
     });
-
-    console.log(`✅ Version downscaled to ${quality}: ${downscaledUrl}`);
-
-    ApiResponse.success(res, {
-      quality,
-      url: downscaledUrl,
-      source: 'generated',
-    }, 'Version downscaled');
   } catch (error) {
-    console.error('Error downscaling version:', error);
+    console.error('Error enqueuing downscale:', error);
+    next(error);
+  }
+};
+
+/**
+ * Returns a short-lived signed URL for the ORIGINAL video with
+ * Content-Disposition: attachment + Content-Type: application/octet-stream
+ * baked in via response-header overrides. The front anchor-clicks this
+ * URL so iOS Safari downloads to Files instead of OOM-ing on a 1 GB
+ * fetch+Blob (the old performDownload path).
+ *
+ * The underlying GCS object keeps its native video/mp4 + no CD so
+ * playback through the HTML5 player isn't affected.
+ */
+export const getOriginalDownloadUrl = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const { id: deliverableId, versionId } = req.params;
+    const versionIdStr = String(versionId);
+
+    const version = await prisma.version.findUnique({
+      where: { id: versionIdStr },
+      select: {
+        id: true,
+        deliverableId: true,
+        videoUrl: true,
+        deliverable: { select: { title: true } },
+      },
+    });
+    if (!version) {
+      ApiResponse.error(res, 'Version not found', 404);
+      return;
+    }
+    if (version.deliverableId !== deliverableId) {
+      ApiResponse.error(res, 'Version does not belong to this deliverable', 400);
+      return;
+    }
+    if (!version.videoUrl) {
+      ApiResponse.error(res, 'Version has no video URL', 400);
+      return;
+    }
+
+    // Derive the GCS object name from the public URL. Both CDN
+    // (`https://media.staging.toftalclip.io/videos/<file>`) and raw
+    // storage (`https://storage.googleapis.com/<bucket>/videos/<file>`)
+    // shapes are supported.
+    const u = new URL(version.videoUrl);
+    let objectName = u.pathname.replace(/^\/+/, '');
+    // Strip the bucket prefix if present (storage.googleapis.com case).
+    if (objectName.startsWith(`${BUCKET_NAME}/`)) {
+      objectName = objectName.slice(BUCKET_NAME.length + 1);
+    }
+
+    const suggested =
+      (version.deliverable?.title?.replace(/[^a-zA-Z0-9-_]/g, '_') || 'video') + '.mp4';
+
+    const url = await getSignedDownloadUrl(objectName, suggested, 60);
+    ApiResponse.success(res, { url, suggestedFilename: suggested }, 'Signed download URL');
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Cheap polling endpoint. Returns the same shape as `downscaleVersion`
+ * but always 200 — the body's `status` field is the source of truth.
+ */
+export const downscaleVersionStatus = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const { id: deliverableId, versionId } = req.params;
+    const quality = String(req.params.quality ?? '');
+    const versionIdStr = String(versionId);
+
+    if (!SUPPORTED_QUALITIES.includes(quality as never)) {
+      ApiResponse.error(res, 'Unknown quality', 400);
+      return;
+    }
+
+    const version = await prisma.version.findUnique({
+      where: { id: versionIdStr },
+      select: { id: true, deliverableId: true },
+    });
+    if (!version || version.deliverableId !== deliverableId) {
+      ApiResponse.error(res, 'Version not found', 404);
+      return;
+    }
+
+    const view = await getDownscaleStatus(versionIdStr, quality);
+    if (!view) {
+      // No job ever enqueued — front shouldn't poll without first POSTing.
+      ApiResponse.success(res, { quality, status: 'NOT_STARTED' }, 'No downscale job');
+      return;
+    }
+
+    ApiResponse.success(
+      res,
+      { quality, status: view.status, url: view.url, error: view.error, jobId: view.jobId },
+      'Downscale status'
+    );
+  } catch (error) {
     next(error);
   }
 };

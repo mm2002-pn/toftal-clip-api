@@ -13,7 +13,7 @@
  */
 
 import { Router, Request, Response, NextFunction } from 'express';
-import { createTusServer, getUploadProgress, TUS_CONFIG, getGcsTransferProgress, clearGcsTransferProgress, canResumeUpload } from '../../config/tus';
+import { createTusServer, getUploadProgress, TUS_CONFIG } from '../../config/tus';
 import { authenticate } from '../../middlewares/auth';
 import jwt from 'jsonwebtoken';
 import { config } from '../../config';
@@ -87,53 +87,11 @@ router.get('/progress/:id', authenticate, async (req: Request, res: Response) =>
   }
 });
 
-/**
- * Custom endpoint: Check if upload can be resumed
- * GET /api/v1/tus/can-resume/:id
- */
-router.get('/can-resume/:id', async (req: Request, res: Response) => {
-  try {
-    const uploadId = String(req.params.id);
-    const result = await canResumeUpload(uploadId);
-
-    res.json({
-      success: true,
-      data: result,
-    });
-  } catch (error: any) {
-    console.error('Can resume check error:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message || 'Failed to check resume status',
-    });
-  }
-});
-
-/**
- * Custom endpoint: Get GCS transfer progress (for polling)
- * GET /api/v1/tus/transfer/:id
- */
-router.get('/transfer/:id', async (req: Request, res: Response) => {
-  const uploadId = String(req.params.id);
-  const progress = await getGcsTransferProgress(uploadId);
-
-  if (!progress) {
-    return res.status(404).json({
-      success: false,
-      error: 'Transfer not found',
-    });
-  }
-
-  // Clear progress data if completed or error (cleanup after 30s)
-  if (progress.status === 'completed' || progress.status === 'error') {
-    setTimeout(() => clearGcsTransferProgress(uploadId).catch(console.error), 30000);
-  }
-
-  res.json({
-    success: true,
-    data: progress,
-  });
-});
+// Note: /can-resume/:id and /transfer/:id used to be needed when
+// the FileStore variant kept partial chunks on local disk and copied
+// them to GCS asynchronously after upload completion. With GCSStore
+// the GCS object IS the partial — tus-js-client's HEAD /:id natively
+// returns the right offset, so no custom resume endpoint is needed.
 
 /**
  * Custom endpoint: Get TUS configuration

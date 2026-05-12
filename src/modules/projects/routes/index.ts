@@ -33,6 +33,9 @@ router.post('/:id/deliverables', requireProjectAccess('edit'), projectsControlle
 router.get('/:id/media', requireProjectAccess('view'), projectsController.getProjectMedia);
 router.post('/:id/media', requireProjectAccess('edit'), projectsController.addProjectMedia);
 router.get('/:id/members', requireProjectAccess('view'), projectsController.getProjectMembers);
+// US-TEAM-06: directly add a team member (annuaire interne) — bypasses the
+// invitation flow since the user is already trusted. Owner-only.
+router.post('/:id/team-members', requireProjectOwner(), projectsController.addTeamMemberToProject);
 
 // Brief completion (for CLIENT project onboarding) — owner only.
 router.post('/:id/complete-brief', requireProjectOwner(), projectsController.completeBrief);

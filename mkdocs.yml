@@ -1,0 +1,160 @@
+site_name: Toftal Clip — Documentation interne
+site_description: >-
+  Architecture, infrastructure, flows et runbooks pour Toftal Clip.
+  Référence technique pour l'équipe.
+site_author: Toftal
+copyright: "© Toftal — Documentation interne"
+
+# site_url is intentionally left empty so `mkdocs serve` runs at root
+# locally. The GitHub Pages build sets the real site_url at build-time
+# via `mkdocs build --site-url ...`.
+site_url: ""
+repo_url: https://github.com/mm2002-pn/toftal-clip-api
+repo_name: toftal-clip-api
+edit_uri: edit/staging/docs/
+
+# Avoid the default port 8000 which collides with the local Laravel /
+# php artisan serve dev server many of us run on the same machine.
+dev_addr: "127.0.0.1:8765"
+
+theme:
+  name: material
+  language: fr
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - navigation.tracking
+    - navigation.indexes
+    - toc.follow
+    - search.suggest
+    - search.highlight
+    - search.share
+    - content.code.copy
+    - content.code.annotate
+    - content.tabs.link
+    - content.tooltips
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: pink
+      accent: pink
+      toggle:
+        icon: material/weather-night
+        name: Mode sombre
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: pink
+      accent: pink
+      toggle:
+        icon: material/weather-sunny
+        name: Mode clair
+  font:
+    text: Inter
+    code: JetBrains Mono
+  icon:
+    repo: fontawesome/brands/github
+
+plugins:
+  - search:
+      lang:
+        - fr
+        - en
+  - mermaid2:
+      version: 10.9.0
+  - git-revision-date-localized:
+      type: timeago
+      locale: fr
+      enable_creation_date: true
+      fallback_to_build_date: true
+  - glightbox
+
+nav:
+  - Accueil: index.md
+  - Architecture:
+      - Vue d'ensemble: architecture/overview.md
+      - Modèle de données: architecture/data-model.md
+      - Stack technique: architecture/tech-stack.md
+  - Flows métier:
+      - Upload vidéo: flows/video-upload.md
+      - Paiements (Bictorys): flows/payments-bictorys.md
+      - Authentification: flows/auth.md
+      - Notifications (in-app, FCM, email): flows/notifications.md
+      - Emails (Gmail SMTP): flows/emails.md
+      - IA (Groq, prompts): flows/ai.md
+      - Partage: flows/sharing.md
+  - Infrastructure:
+      - Google Cloud: infra/google-cloud.md
+      - Cloud Run: infra/cloud-run.md
+      - Cloud Build (CI/CD + triggers): infra/cloud-build.md
+      - Cloud SQL Proxy: infra/cloud-sql-proxy.md
+      - Workers vidéo: infra/workers.md
+      - Observabilité (Sentry, Amplitude, Logs): infra/observability.md
+      - Secrets: infra/secrets.md
+  - Backend:
+      - Modules: backend/modules.md
+      - GraphQL: backend/graphql.md
+      - Services: backend/services.md
+      - Référence API: backend/api-reference.md
+      - Base de données: backend/database.md
+      - Uploads classiques (Multer): backend/uploads-multer.md
+      - Scripts (seeders, backfills): backend/scripts.md
+      - Jobs: backend/jobs.md
+  - Frontend:
+      - Composants: frontend/components.md
+      - Routing: frontend/routing.md
+      - State: frontend/state.md
+  - Runbooks:
+      - Déploiement staging: runbooks/deploy-staging.md
+      - Déploiement prod: runbooks/deploy-prod.md
+      - Rollback: runbooks/rollback.md
+      - Incident response: runbooks/incident-response.md
+  - Conventions:
+      - Git: conventions/git.md
+      - Naming: conventions/naming.md
+      - Style de code: conventions/code-style.md
+  - Annexes:
+      - Setup CI/CD (legacy): CI-CD-SETUP.md
+      - Logique des projets (legacy): PROJECT_LOGIC.md
+
+markdown_extensions:
+  - abbr
+  - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:mermaid2.fence_mermaid_custom
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - pymdownx.tilde
+  - pymdownx.caret
+  - pymdownx.mark
+  - pymdownx.keys
+  - pymdownx.smartsymbols
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/mm2002-pn/toftal-clip-api
+      name: Repo back-end
+    - icon: fontawesome/brands/github
+      link: https://github.com/PapeSG/toftal-clip
+      name: Repo front-end

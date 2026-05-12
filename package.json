@@ -28,11 +28,15 @@
     "backfill:audio-mime:dry": "ts-node --transpile-only scripts/backfill-audio-content-type.ts --dry-run",
     "backfill:file-sizes": "ts-node --transpile-only scripts/backfill-file-sizes.ts",
     "backfill:file-sizes:dry": "ts-node --transpile-only scripts/backfill-file-sizes.ts --dry-run",
+    "downscale:run": "ts-node --transpile-only scripts/downscale-version.ts",
+    "downscale:sweep": "ts-node --transpile-only scripts/sweep-downscale-zombies.ts",
     "seed:feature-flags": "ts-node --transpile-only scripts/seed-feature-flags.ts",
     "seed:feature-flags:reset": "ts-node --transpile-only scripts/seed-feature-flags.ts --reset",
     "seed:email-templates": "ts-node --transpile-only scripts/seed-email-templates.ts",
     "seed:ai-prompts": "ts-node --transpile-only scripts/seed-ai-prompts.ts",
-    "seed:all": "npm run seed:feature-flags && npm run seed:email-templates && npm run seed:ai-prompts",
+    "seed:subscription-plans": "ts-node --transpile-only scripts/seed-subscription-plans.ts",
+    "seed:subscription-plans:reset": "ts-node --transpile-only scripts/seed-subscription-plans.ts --reset",
+    "seed:all": "npm run seed:feature-flags && npm run seed:email-templates && npm run seed:ai-prompts && npm run seed:subscription-plans",
     "backfill:all": "npm run backfill:metadata && npm run backfill:thumbnails && npm run backfill:cache-control && npm run backfill:audio-mime && npm run backfill:file-sizes"
   },
   "keywords": [
@@ -47,6 +51,7 @@
   "type": "commonjs",
   "dependencies": {
     "@apollo/server": "^4.13.0",
+    "@google-cloud/run": "^3.2.1",
     "@google-cloud/storage": "^7.19.0",
     "@google/generative-ai": "^0.24.1",
     "@graphql-tools/merge": "^9.1.7",

@@ -85,3 +85,27 @@ export const aiLimiter = rateLimit({
     ApiResponse.tooManyRequests(res, 'Too many AI requests, please try again later.');
   },
 });
+
+// Public share downscale limiter — guards
+// POST /api/v1/deliverable-share/:token/version/:versionId/downscale
+// against DoS. The endpoint is unauthenticated (anyone with the share
+// token reaches it) and each call spawns an ffmpeg job that re-encodes
+// the source video — easily multi-second of CPU on a multi-Gi clip.
+// Hard cap per IP so a leaked token can't be used to burn compute,
+// and so a hostile client can't grind through quality permutations.
+// Uses ipKeyGenerator to normalise IPv6 (collapse to /64 prefix),
+// otherwise an attacker can rotate suffixes and bypass the limiter
+// (express-rate-limit v8 ERR_ERL_KEY_GEN_IPV6).
+export const shareDownscaleLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1 hour
+  max: config.isProduction ? 5 : 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => ipKeyGenerator(req.ip || 'unknown'),
+  handler: (_req, res) => {
+    ApiResponse.tooManyRequests(
+      res,
+      'Trop de demandes de compression vidéo, réessayez dans une heure.'
+    );
+  },
+});

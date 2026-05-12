@@ -8,6 +8,30 @@ const PROJECT_ID = process.env.GCP_PROJECT_ID || 'toftal-clip-api';
 const KEY_FILE = process.env.GCS_KEY_FILE;
 const IS_CLOUD_RUN = process.env.NODE_ENV === 'production' || process.env.NODE_ENV === 'staging';
 
+/**
+ * Public base URL the frontend should use to fetch media. Set to the
+ * Cloud CDN domain in staging/prod (`https://media.staging.toftalclip.io/`),
+ * falls back to direct GCS in dev.
+ *
+ * Why we don't just `storage.googleapis.com/...` everywhere
+ * ────────────────────────────────────────────────────────
+ * Direct GCS = no CDN, no edge cache, ~200-300 ms first-byte latency
+ * from West Africa to Google's EU/US data centers. On a 1h video the
+ * browser issues hundreds of range requests during seek + buffer
+ * fill, multiplying that latency. Routing through Cloud CDN cuts
+ * tail latency by ~80% on first hit and to near-zero on cache hits.
+ *
+ * Returning the CDN URL from the upload pipeline means the very
+ * first playback after upload already benefits from the CDN, before
+ * the faststart worker has even run.
+ */
+const MEDIA_PUBLIC_BASE_URL =
+  process.env.MEDIA_PUBLIC_BASE_URL || `https://storage.googleapis.com/${BUCKET_NAME}/`;
+
+function buildPublicUrl(fileName: string): string {
+  return `${MEDIA_PUBLIC_BASE_URL}${fileName}`;
+}
+
 // Initialize storage
 // In Cloud Run (production/staging), use Application Default Credentials
 // In development, use service account key file
@@ -33,7 +57,24 @@ export const uploadToGCS = async (
   filePath: string,
   originalName: string,
   mimeType: string,
-  folder: string = 'uploads'
+  folder: string = 'uploads',
+  /**
+   * Optional Content-Disposition override. Set to e.g.
+   *   `attachment; filename="my-video.mp4"`
+   * for files that should always be downloaded (not played inline). The
+   * downscale worker uses this so mobile browsers can save the file
+   * via a plain anchor click instead of buffering the whole video in
+   * JS memory (which OOMs on iOS for ~200 MB+ files).
+   */
+  contentDisposition?: string,
+  /**
+   * Optional Content-Type override. iOS Safari sometimes ignores
+   * Content-Disposition: attachment for media MIME types and plays the
+   * file inline instead of saving it (showing a black screen if the
+   * H.264 profile isn't supported by AVFoundation). Set this to
+   * `application/octet-stream` for files that MUST download.
+   */
+  contentTypeOverride?: string
 ): Promise<GCSUploadResult> => {
   // Generate unique filename
   const ext = path.extname(originalName);
@@ -46,8 +87,9 @@ export const uploadToGCS = async (
   await bucket.upload(filePath, {
     destination: fileName,
     metadata: {
-      contentType: mimeType,
+      contentType: contentTypeOverride || mimeType,
       cacheControl: 'public, max-age=31536000, immutable',
+      ...(contentDisposition ? { contentDisposition } : {}),
       metadata: {
         originalName: originalName,
         uploadedAt: new Date().toISOString(),
@@ -61,7 +103,7 @@ export const uploadToGCS = async (
   const [metadata] = await file.getMetadata();
 
   // Generate signed URL (valid for 7 days) or public URL
-  const publicUrl = `https://storage.googleapis.com/${BUCKET_NAME}/${fileName}`;
+  const publicUrl = buildPublicUrl(fileName);
 
   return {
     url: publicUrl,
@@ -100,7 +142,11 @@ export const uploadImageToGCS = async (
  */
 export const uploadVideoToGCS = async (
   filePath: string,
-  originalName: string
+  originalName: string,
+  /** Optional Content-Disposition — see uploadToGCS. */
+  contentDisposition?: string,
+  /** Optional Content-Type override — see uploadToGCS. */
+  contentTypeOverride?: string
 ): Promise<GCSUploadResult> => {
   const ext = path.extname(originalName).toLowerCase();
   const mimeTypes: Record<string, string> = {
@@ -112,7 +158,7 @@ export const uploadVideoToGCS = async (
   };
   const mimeType = mimeTypes[ext] || 'video/mp4';
 
-  return uploadToGCS(filePath, originalName, mimeType, 'videos');
+  return uploadToGCS(filePath, originalName, mimeType, 'videos', contentDisposition, contentTypeOverride);
 };
 
 /**
@@ -189,6 +235,33 @@ export const getSignedUrl = async (
 };
 
 /**
+ * Signed URL for a download with response-header overrides. The CDN
+ * (when in front of GCS) and GCS itself honour these on a signed
+ * request even when the underlying object's stored metadata says
+ * something else. We use this to force a browser save dialog on the
+ * "Original" download path WITHOUT touching the playback URL of the
+ * same object (which still serves with video/mp4 + no CD for the
+ * player). Returns a fresh signed URL valid for `expiresInMinutes`.
+ */
+export const getSignedDownloadUrl = async (
+  fileName: string,
+  suggestedFilename: string,
+  expiresInMinutes: number = 60
+): Promise<string> => {
+  const file = bucket.file(fileName);
+  const [signedUrl] = await file.getSignedUrl({
+    version: 'v4',
+    action: 'read',
+    expires: Date.now() + expiresInMinutes * 60 * 1000,
+    responseDisposition: `attachment; filename="${suggestedFilename}"`,
+    // application/octet-stream so iOS Safari doesn't try to play the
+    // video inline — see DownloadContext for the rationale.
+    responseType: 'application/octet-stream',
+  });
+  return signedUrl;
+};
+
+/**
  * Generate a signed URL for upload (write)
  */
 export const getUploadSignedUrl = async (
@@ -209,7 +282,7 @@ export const getUploadSignedUrl = async (
     contentType: contentType,
   });
 
-  const publicUrl = `https://storage.googleapis.com/${BUCKET_NAME}/${uniqueFileName}`;
+  const publicUrl = buildPublicUrl(uniqueFileName);
 
   return {
     signedUrl,

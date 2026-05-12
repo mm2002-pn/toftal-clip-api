@@ -23,9 +23,12 @@ logs/
 # Build artifacts (compiled JS is in dist/)
 dist/
 
-# Documentation
+# Documentation (MkDocs lives here, never in the Cloud Build context)
 README.md
 docs/
+mkdocs.yml
+site/
+.github/workflows/docs.yml
 
 # Uploads (local)
 uploads/

@@ -4,12 +4,21 @@ import { ApiResponse } from '../../../utils/apiResponse';
 import { config } from '../../../config';
 import { auditLog } from '../../../services/auditLogger';
 
-// Cookie options - handle cross-origin in production
+// Cookie options for the refresh token.
+//
+// Now that the API is on api.toftalclip.io (same eTLD+1 as the frontend on
+// toftalclip.io), the cookie is first-party — Safari ITP / Chrome 3rd-party
+// phaseout no longer touches it. We can drop SameSite=None (which was only
+// needed to let a 3rd-party cookie cross sites) in favour of the saner Lax
+// default. The cookie stays host-only (no `domain` attribute) so prod and
+// staging keep separate refresh tokens — sharing across .toftalclip.io would
+// let staging see prod cookies and vice-versa, which is gross even if JWT
+// signature verification would reject the mismatched secret anyway.
 const cookieOptions = {
   httpOnly: true,
-  secure: config.isProduction, // true in production (HTTPS)
-  sameSite: config.isProduction ? 'none' as const : 'lax' as const, // 'none' for cross-origin in production
-  maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days for refresh token
+  secure: config.isProduction,
+  sameSite: 'lax' as const,
+  maxAge: 30 * 24 * 60 * 60 * 1000,
   path: '/',
 };
 

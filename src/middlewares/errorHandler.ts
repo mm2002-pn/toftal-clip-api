@@ -10,12 +10,29 @@ export const errorHandler = (
   res: Response,
   next: NextFunction
 ): Response => {
-  // Log error
-  logger.error(`${err.message}`, {
-    stack: err.stack,
-    path: req.path,
-    method: req.method,
-  });
+  // Auth-related errors are expected user-side situations (session
+  // expired, no token sent on a protected route, etc.) — not server
+  // bugs. We respond 401 below but skip the ERROR-level log so Cloud
+  // Logging stops surfacing them as application errors. The
+  // front-side already shows the user the right "session expired"
+  // affordance.
+  const isAuthExpected =
+    (err as AppError).statusCode === 401 ||
+    err.name === 'JsonWebTokenError' ||
+    err.name === 'TokenExpiredError' ||
+    err.message === 'Invalid token' ||
+    err.message === 'Access token required' ||
+    err.message === 'Token expired';
+
+  if (isAuthExpected) {
+    logger.warn(`auth: ${err.message}`, { path: req.path, method: req.method });
+  } else {
+    logger.error(`${err.message}`, {
+      stack: err.stack,
+      path: req.path,
+      method: req.method,
+    });
+  }
 
   // Handle known operational errors
   if (err instanceof AppError) {

@@ -76,6 +76,7 @@ export const projectTypeDefs = gql`
     talent: User
     ownerId: ID
     owner: User
+    organizationId: ID
     status: ProjectStatus!
     startDate: DateTime
     deadline: DateTime
@@ -107,6 +108,10 @@ export const projectTypeDefs = gql`
     clientId: ID
     talentId: ID
     search: String
+    # Filter by organisation. Pass an org id to scope to that team's space,
+    # or "PERSONAL" (sentinel) to scope to projects with NULL organizationId
+    # (= the personal space). Leave undefined to mix both.
+    organizationId: String
   }
 
   input ProjectsSortInput {

@@ -7,6 +7,13 @@ import { socketService } from '../../services/socketService';
 import { cacheService, CACHE_KEYS, CACHE_TTL } from '../../services/cacheService';
 import { EmailService } from '../../services/EmailService';
 import { PermissionService } from '../../services/PermissionService';
+import { shareDownscaleLimiter } from '../../middlewares/rateLimiter';
+import {
+  enqueueDownscale,
+  getDownscaleStatus,
+  SUPPORTED_QUALITIES,
+} from '../../services/downscaleJobsService';
+import { BUCKET_NAME, getSignedDownloadUrl } from '../../config/gcs';
 import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
@@ -417,6 +424,12 @@ router.get('/:token', async (req: Request, res: Response) => {
               select: {
                 id: true,
                 title: true,
+                // ownerId surfaced so the guest can include the
+                // project owner in their read-receipt recipient set
+                // — without it, the guest never sees their own
+                // double-check go blue (recipientIds=[] → status
+                // stays 'sent' forever).
+                ownerId: true,
               },
             },
             versions: {
@@ -439,6 +452,27 @@ router.get('/:token', async (req: Request, res: Response) => {
                       },
                     },
                     revisionTasks: true,
+                    reactions: {
+                      select: {
+                        id: true,
+                        userId: true,
+                        guestEmail: true,
+                        guestName: true,
+                        emoji: true,
+                        createdAt: true,
+                      },
+                      orderBy: { createdAt: 'asc' },
+                    },
+                    // WhatsApp-style read receipts. Include reads so the
+                    // sender (auth or guest) sees the double-check go
+                    // blue when recipients open their share link.
+                    reads: {
+                      select: {
+                        userId: true,
+                        guestEmail: true,
+                        readAt: true,
+                      },
+                    },
                   },
                 },
               },
@@ -494,6 +528,12 @@ router.get('/:token', async (req: Request, res: Response) => {
         permission: shareLink.permission,
         expiresAt: shareLink.expiresAt,
       },
+      // The guest UI derives the WhatsApp-style recipient set from
+      // (project.ownerId + every userId/guestEmail already present in
+      // feedbacks[].reads). Computing it client-side keeps it
+      // self-correcting when the cached payload drifts after a socket
+      // event — no need to ship a separate recipientUserIds field
+      // that would go stale.
       deliverable: shareLink.deliverable,
     };
 
@@ -722,6 +762,24 @@ router.get('/:token/version/:versionId/feedbacks', async (req: Request, res: Res
             structuredText: true,
             author: { select: { id: true, name: true } },
             guestName: true,
+          },
+        },
+        reactions: {
+          select: {
+            id: true,
+            userId: true,
+            guestEmail: true,
+            guestName: true,
+            emoji: true,
+            createdAt: true,
+          },
+          orderBy: { createdAt: 'asc' },
+        },
+        reads: {
+          select: {
+            userId: true,
+            guestEmail: true,
+            readAt: true,
           },
         },
       },
@@ -1193,8 +1251,10 @@ router.patch('/:token/feedback/:feedbackId/resolve', async (req: Request, res: R
       return res.status(403).json({ error: 'This share link has expired' });
     }
 
-    // Check permission - must be 'comment' or 'download' to resolve
-    if (shareLink.permission === 'view') {
+    // Resolving a feedback is an editor-level action — only share
+    // links granted `download` permission can mark threads resolved.
+    // 'view' and 'comment' are read/comment-only at this level.
+    if (shareLink.permission !== 'download') {
       return res.status(403).json({ error: 'This share link does not allow resolving comments' });
     }
 
@@ -1252,26 +1312,557 @@ router.patch('/:token/feedback/:feedbackId/resolve', async (req: Request, res: R
 });
 
 /**
+ * PUT /api/v1/deliverable-share/:token/feedback/:feedbackId
+ * Edit a guest's own feedback via share link (PUBLIC - no auth required).
+ * Requires 'comment' or 'download' permission. Guest authorship is
+ * verified by matching the request's guestEmail against the feedback's
+ * stored guestEmail — same identification scheme used by /feedback POST.
+ */
+router.put('/:token/feedback/:feedbackId', async (req: Request, res: Response) => {
+  try {
+    const token = String(req.params.token);
+    const feedbackId = String(req.params.feedbackId);
+    const { rawText, structuredText, guestEmail } = req.body;
+
+    if (!rawText && !structuredText) {
+      return res.status(400).json({ error: 'rawText or structuredText is required' });
+    }
+    if (!guestEmail || typeof guestEmail !== 'string') {
+      return res.status(400).json({ error: 'guestEmail is required for guest edits' });
+    }
+
+    const shareLink = await prisma.deliverableShareLink.findUnique({
+      where: { token },
+      include: {
+        deliverable: {
+          include: {
+            project: { select: { id: true } },
+            versions: { select: { id: true } },
+          },
+        },
+      },
+    });
+
+    if (!shareLink) return res.status(404).json({ error: 'Invalid share link' });
+    if (!shareLink.isActive) return res.status(403).json({ error: 'This share link has been disabled' });
+    if (shareLink.expiresAt && shareLink.expiresAt < new Date()) {
+      return res.status(403).json({ error: 'This share link has expired' });
+    }
+    if (shareLink.permission === 'view') {
+      return res.status(403).json({ error: 'This share link does not allow editing comments' });
+    }
+
+    const versionIds = shareLink.deliverable.versions.map(v => v.id);
+    const feedback = await prisma.feedback.findFirst({
+      where: { id: feedbackId, versionId: { in: versionIds } },
+    });
+
+    if (!feedback) return res.status(404).json({ error: 'Feedback not found' });
+
+    // Guest authorship check — only the guest who originally posted can
+    // edit. Authenticated-user feedbacks (authorId set, guestEmail null)
+    // are off-limits to share-link callers.
+    if (!feedback.guestEmail || feedback.guestEmail !== guestEmail) {
+      return res.status(403).json({ error: 'You can only edit your own comments' });
+    }
+
+    const updatedFeedback = await prisma.feedback.update({
+      where: { id: feedbackId },
+      data: {
+        rawText: rawText ?? feedback.rawText,
+        structuredText: structuredText ?? feedback.structuredText,
+        editedAt: new Date(),
+      },
+      include: {
+        author: { select: { id: true, name: true, avatarUrl: true } },
+        revisionTasks: true,
+        replyingTo: {
+          select: {
+            id: true,
+            rawText: true,
+            structuredText: true,
+            author: { select: { id: true, name: true } },
+            guestName: true,
+          },
+        },
+        // Without this the rebound feedback would render with an empty
+        // reactions array and the existing pills would visually vanish
+        // until the next list refresh.
+        reactions: {
+          select: {
+            id: true,
+            userId: true,
+            guestEmail: true,
+            guestName: true,
+            emoji: true,
+            createdAt: true,
+          },
+          orderBy: { createdAt: 'asc' },
+        },
+      },
+    });
+
+    await cacheService.invalidateFeedbacks(feedback.versionId);
+
+    const projectId = shareLink.deliverable.project.id;
+    socketService.emitToProject(projectId, 'feedback:updated', {
+      id: updatedFeedback.id,
+      versionId: feedback.versionId,
+      rawText: updatedFeedback.rawText,
+      structuredText: updatedFeedback.structuredText,
+      editedAt: updatedFeedback.editedAt,
+      projectId,
+    });
+
+    res.json({ success: true, data: updatedFeedback });
+  } catch (error: any) {
+    console.error('Edit feedback via share link error:', error);
+    res.status(500).json({ error: error.message || 'Failed to edit feedback' });
+  }
+});
+
+/**
+ * DELETE /api/v1/deliverable-share/:token/feedback/:feedbackId
+ * Delete a guest's own feedback via share link (PUBLIC - no auth required).
+ * Same authorisation pattern as PUT — guestEmail must match.
+ */
+router.delete('/:token/feedback/:feedbackId', async (req: Request, res: Response) => {
+  try {
+    const token = String(req.params.token);
+    const feedbackId = String(req.params.feedbackId);
+    // DELETE bodies are awkward across HTTP clients, so accept the
+    // identity from a query param too. Either works.
+    const guestEmail = (req.body?.guestEmail || req.query?.guestEmail) as string | undefined;
+
+    if (!guestEmail || typeof guestEmail !== 'string') {
+      return res.status(400).json({ error: 'guestEmail is required for guest deletes' });
+    }
+
+    const shareLink = await prisma.deliverableShareLink.findUnique({
+      where: { token },
+      include: {
+        deliverable: {
+          include: {
+            project: { select: { id: true } },
+            versions: { select: { id: true } },
+          },
+        },
+      },
+    });
+
+    if (!shareLink) return res.status(404).json({ error: 'Invalid share link' });
+    if (!shareLink.isActive) return res.status(403).json({ error: 'This share link has been disabled' });
+    if (shareLink.expiresAt && shareLink.expiresAt < new Date()) {
+      return res.status(403).json({ error: 'This share link has expired' });
+    }
+    if (shareLink.permission === 'view') {
+      return res.status(403).json({ error: 'This share link does not allow deleting comments' });
+    }
+
+    const versionIds = shareLink.deliverable.versions.map(v => v.id);
+    const feedback = await prisma.feedback.findFirst({
+      where: { id: feedbackId, versionId: { in: versionIds } },
+    });
+
+    if (!feedback) return res.status(404).json({ error: 'Feedback not found' });
+
+    if (!feedback.guestEmail || feedback.guestEmail !== guestEmail) {
+      return res.status(403).json({ error: 'You can only delete your own comments' });
+    }
+
+    const versionId = feedback.versionId;
+    await prisma.feedback.delete({ where: { id: feedbackId } });
+    await cacheService.invalidateFeedbacks(versionId);
+
+    const projectId = shareLink.deliverable.project.id;
+    socketService.emitToProject(projectId, 'feedback:deleted', {
+      id: feedbackId,
+      versionId,
+      projectId,
+    });
+
+    res.json({ success: true, data: null });
+  } catch (error: any) {
+    console.error('Delete feedback via share link error:', error);
+    res.status(500).json({ error: error.message || 'Failed to delete feedback' });
+  }
+});
+
+/**
+ * POST /api/v1/deliverable-share/:token/feedback/bulk-read
+ * Mark multiple feedbacks as read by a guest via share link.
+ *
+ * Guests are identified by `guestEmail` in the body (read from the
+ * localStorage'd guestInfo on the frontend). Skips feedbacks the
+ * guest authored themselves — same rule as the auth controller —
+ * and emits `feedback:read` per deliverable so senders see their
+ * double-check go blue in real time.
+ */
+router.post('/:token/feedback/bulk-read', async (req: Request, res: Response) => {
+  try {
+    const token = String(req.params.token);
+    const { feedbackIds, guestEmail } = req.body || {};
+
+    if (!Array.isArray(feedbackIds) || feedbackIds.length === 0) {
+      return res.status(400).json({ error: 'feedbackIds must be a non-empty array' });
+    }
+    if (feedbackIds.length > 200) {
+      return res.status(400).json({ error: 'feedbackIds length exceeds 200' });
+    }
+    if (!guestEmail || typeof guestEmail !== 'string') {
+      return res.status(400).json({ error: 'guestEmail is required for guest reads' });
+    }
+    const ids = feedbackIds.filter((v: unknown): v is string => typeof v === 'string');
+    if (ids.length === 0) {
+      return res.status(400).json({ error: 'feedbackIds must contain strings' });
+    }
+
+    const shareLink = await prisma.deliverableShareLink.findUnique({
+      where: { token },
+      include: {
+        deliverable: {
+          include: {
+            versions: { select: { id: true } },
+          },
+        },
+      },
+    });
+
+    if (!shareLink) return res.status(404).json({ error: 'Invalid share link' });
+    if (!shareLink.isActive) return res.status(403).json({ error: 'This share link has been disabled' });
+    if (shareLink.expiresAt && shareLink.expiresAt < new Date()) {
+      return res.status(403).json({ error: 'This share link has expired' });
+    }
+
+    // Only mark feedbacks that belong to this deliverable and that the
+    // guest didn't author. createMany skips duplicates so re-reads are
+    // idempotent — guest can scroll back over the same messages without
+    // bumping the receipt count.
+    const versionIds = shareLink.deliverable.versions.map(v => v.id);
+    const feedbacks = await prisma.feedback.findMany({
+      where: { id: { in: ids }, versionId: { in: versionIds } },
+      select: {
+        id: true,
+        guestEmail: true,
+        version: { select: { deliverableId: true } },
+      },
+    });
+
+    const othersFeedbackIds = feedbacks
+      .filter((f) => f.guestEmail !== guestEmail)
+      .map((f) => f.id);
+
+    if (othersFeedbackIds.length === 0) {
+      return res.json({ success: true, data: { marked: 0 } });
+    }
+
+    // Skip feedbacks already read by this guest. Without this, every
+    // re-render of the chat would create new rows since the unique
+    // constraint on (feedbackId, userId) doesn't apply when userId is
+    // null (Postgres NULLS DISTINCT default).
+    const alreadyRead = await prisma.feedbackRead.findMany({
+      where: { feedbackId: { in: othersFeedbackIds }, userId: null, guestEmail },
+      select: { feedbackId: true },
+    });
+    const alreadyReadSet = new Set(alreadyRead.map((r) => r.feedbackId));
+    const toCreate = othersFeedbackIds.filter((id) => !alreadyReadSet.has(id));
+
+    if (toCreate.length === 0) {
+      return res.json({ success: true, data: { marked: 0 } });
+    }
+
+    const readAt = new Date();
+    await prisma.feedbackRead.createMany({
+      data: toCreate.map((feedbackId) => ({
+        feedbackId,
+        userId: null,
+        guestEmail,
+        readAt,
+      })),
+    });
+
+    // Broadcast per deliverable for efficient fan-out — same shape as
+    // the auth controller plus guestEmail so clients can match
+    // recipients by either identity.
+    const byDeliverable = new Map<string, string[]>();
+    for (const f of feedbacks) {
+      if (!toCreate.includes(f.id)) continue;
+      const d = f.version?.deliverableId;
+      if (!d) continue;
+      if (!byDeliverable.has(d)) byDeliverable.set(d, []);
+      byDeliverable.get(d)!.push(f.id);
+    }
+    for (const [deliverableId, fbIds] of byDeliverable) {
+      socketService.emitToDeliverable(deliverableId, 'feedback:read', {
+        userId: null,
+        guestEmail,
+        readAt: readAt.toISOString(),
+        feedbackIds: fbIds,
+        deliverableId,
+      });
+    }
+
+    res.json({ success: true, data: { marked: toCreate.length } });
+  } catch (error: any) {
+    console.error('Bulk-read feedbacks via share link error:', error);
+    res.status(500).json({ error: error.message || 'Failed to mark feedbacks as read' });
+  }
+});
+
+/**
+ * POST /api/v1/deliverable-share/:token/feedback/:feedbackId/reactions
+ * Toggle an emoji reaction as a guest via share link.
+ *
+ * Mirrors the auth controller's contract (same emoji → remove, different
+ * emoji → replace, none → add) but keys reactions on `guestEmail`
+ * instead of `userId`. Returns the fresh reaction list so the optimistic
+ * frontend state can reconcile.
+ */
+router.post('/:token/feedback/:feedbackId/reactions', async (req: Request, res: Response) => {
+  try {
+    const token = String(req.params.token);
+    const feedbackId = String(req.params.feedbackId);
+    const { emoji, guestEmail, guestName } = req.body || {};
+
+    if (typeof emoji !== 'string' || emoji.length === 0 || emoji.length > 16) {
+      return res.status(400).json({ error: 'emoji must be a short non-empty string' });
+    }
+    if (!guestEmail || typeof guestEmail !== 'string') {
+      return res.status(400).json({ error: 'guestEmail is required for guest reactions' });
+    }
+
+    const shareLink = await prisma.deliverableShareLink.findUnique({
+      where: { token },
+      include: {
+        deliverable: {
+          include: {
+            project: { select: { id: true } },
+            versions: { select: { id: true } },
+          },
+        },
+      },
+    });
+
+    if (!shareLink) return res.status(404).json({ error: 'Invalid share link' });
+    if (!shareLink.isActive) return res.status(403).json({ error: 'This share link has been disabled' });
+    if (shareLink.expiresAt && shareLink.expiresAt < new Date()) {
+      return res.status(403).json({ error: 'This share link has expired' });
+    }
+    if (shareLink.permission === 'view') {
+      return res.status(403).json({ error: 'This share link does not allow reactions' });
+    }
+
+    const versionIds = shareLink.deliverable.versions.map(v => v.id);
+    const feedback = await prisma.feedback.findFirst({
+      where: { id: feedbackId, versionId: { in: versionIds } },
+      select: { id: true, versionId: true, version: { select: { deliverableId: true } } },
+    });
+    if (!feedback) return res.status(404).json({ error: 'Feedback not found' });
+
+    // Guest uniqueness on (feedbackId, guestEmail) is enforced here
+    // since Prisma can't model partial-unique compound keys without
+    // raw SQL. findFirst-then-act keeps the toggle/replace/add flow
+    // identical to the authenticated path.
+    const existing = await prisma.feedbackReaction.findFirst({
+      where: { feedbackId, userId: null, guestEmail },
+    });
+
+    let action: 'added' | 'removed' | 'changed';
+    if (!existing) {
+      await prisma.feedbackReaction.create({
+        data: {
+          feedbackId,
+          userId: null,
+          guestEmail,
+          guestName: typeof guestName === 'string' ? guestName : null,
+          emoji,
+        },
+      });
+      action = 'added';
+    } else if (existing.emoji === emoji) {
+      await prisma.feedbackReaction.delete({ where: { id: existing.id } });
+      action = 'removed';
+    } else {
+      await prisma.feedbackReaction.update({
+        where: { id: existing.id },
+        data: { emoji, createdAt: new Date() },
+      });
+      action = 'changed';
+    }
+
+    const reactions = await prisma.feedbackReaction.findMany({
+      where: { feedbackId },
+      select: {
+        id: true,
+        userId: true,
+        guestEmail: true,
+        guestName: true,
+        emoji: true,
+        createdAt: true,
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    // Invalidate the cached deliverable payload — without this the
+    // GET /:token cache (1 min TTL) keeps returning the stale
+    // reactions list, so a guest who reacts then refreshes loses
+    // their pill until the cache expires.
+    await cacheService.invalidateFeedbacks(feedback.versionId);
+
+    const deliverableId = feedback.version?.deliverableId;
+    if (deliverableId) {
+      socketService.emitToDeliverable(deliverableId, 'feedback:reaction', {
+        feedbackId,
+        userId: null,
+        guestEmail,
+        emoji,
+        action,
+        deliverableId,
+        reactions,
+      });
+    }
+
+    res.json({ success: true, data: { action, reactions } });
+  } catch (error: any) {
+    console.error('Toggle feedback reaction via share link error:', error);
+    res.status(500).json({ error: error.message || 'Failed to toggle reaction' });
+  }
+});
+
+/**
  * POST /api/v1/deliverable-share/:token/version/:versionId/downscale
  * Downscale video via share link (PUBLIC - no auth required)
  * Requires 'download' permission
  */
-router.post('/:token/version/:versionId/downscale', async (req: Request, res: Response) => {
+// Shared share-link gate. Returns either the verified version or sends
+// the appropriate 4xx and returns null.
+async function resolveShareForDownscale(
+  req: Request,
+  res: Response,
+  requireDownload: boolean
+): Promise<{ versionId: string } | null> {
+  const token = String(req.params.token);
+  const versionId = String(req.params.versionId);
+
+  const shareLink = await prisma.deliverableShareLink.findUnique({
+    where: { token },
+    include: {
+      deliverable: { include: { versions: { where: { id: versionId }, select: { id: true } } } },
+    },
+  });
+
+  if (!shareLink) {
+    res.status(404).json({ error: 'Invalid share link' });
+    return null;
+  }
+  if (!shareLink.isActive) {
+    res.status(403).json({ error: 'This share link has been disabled' });
+    return null;
+  }
+  if (shareLink.expiresAt && shareLink.expiresAt < new Date()) {
+    res.status(403).json({ error: 'This share link has expired' });
+    return null;
+  }
+  if (requireDownload && shareLink.permission !== 'download') {
+    res.status(403).json({ error: 'This share link does not allow downloading' });
+    return null;
+  }
+  if (!shareLink.deliverable.versions || shareLink.deliverable.versions.length === 0) {
+    res.status(404).json({ error: 'Version not found or does not belong to this deliverable' });
+    return null;
+  }
+
+  return { versionId };
+}
+
+router.post('/:token/version/:versionId/downscale', shareDownscaleLimiter, async (req: Request, res: Response) => {
+  try {
+    const { quality } = req.body as { quality?: string };
+    const retry = req.query.retry === '1' || req.query.retry === 'true';
+
+    if (!quality || !SUPPORTED_QUALITIES.includes(quality as never)) {
+      return res.status(400).json({
+        error: `Target quality is required and must be one of: ${SUPPORTED_QUALITIES.join(', ')}`,
+      });
+    }
+
+    const ctx = await resolveShareForDownscale(req, res, /* requireDownload */ true);
+    if (!ctx) return;
+
+    const job = await enqueueDownscale(ctx.versionId, quality, { retry });
+
+    if (job.status === 'DONE') {
+      return res.json({
+        success: true,
+        data: { quality, url: job.url, status: 'DONE', source: 'cached', jobId: job.jobId },
+      });
+    }
+
+    if (job.status === 'FAILED') {
+      return res.status(409).json({
+        success: false,
+        data: { quality, status: 'FAILED', jobId: job.jobId, error: job.error },
+      });
+    }
+
+    res.status(202).json({
+      success: true,
+      data: { quality, status: 'PROCESSING', jobId: job.jobId },
+    });
+  } catch (error: any) {
+    console.error('Downscale via share link error:', error);
+    res.status(500).json({ error: error.message || 'Failed to enqueue downscale' });
+  }
+});
+
+/**
+ * GET /api/v1/deliverable-share/:token/version/:versionId/downscale/:quality/status
+ * Polling endpoint for guests. `view` permission is enough — anyone who
+ * can open the share link can check whether the downscale is done. The
+ * actual URL is still only useful with `download` permission because we
+ * gate that on the POST.
+ */
+router.get('/:token/version/:versionId/downscale/:quality/status', async (req: Request, res: Response) => {
+  try {
+    const quality = String(req.params.quality);
+    if (!SUPPORTED_QUALITIES.includes(quality as never)) {
+      return res.status(400).json({ error: 'Unknown quality' });
+    }
+
+    const ctx = await resolveShareForDownscale(req, res, /* requireDownload */ false);
+    if (!ctx) return;
+
+    const view = await getDownscaleStatus(ctx.versionId, quality);
+    if (!view) {
+      return res.json({ success: true, data: { quality, status: 'NOT_STARTED' } });
+    }
+    res.json({
+      success: true,
+      data: {
+        quality,
+        status: view.status,
+        url: view.url,
+        error: view.error,
+        jobId: view.jobId,
+      },
+    });
+  } catch (error: any) {
+    console.error('Downscale status via share link error:', error);
+    res.status(500).json({ error: error.message || 'Failed to read downscale status' });
+  }
+});
+
+/**
+ * GET /api/v1/deliverable-share/:token/version/:versionId/download-original
+ * Signed URL for the ORIGINAL video, with response-header overrides
+ * forcing a save dialog (CD: attachment + application/octet-stream).
+ * Guest equivalent of the auth route — same logic, share-link gated.
+ */
+router.get('/:token/version/:versionId/download-original', async (req: Request, res: Response) => {
   try {
     const token = String(req.params.token);
     const versionId = String(req.params.versionId);
-    const { quality } = req.body;
 
-    console.log('🎬 POST /deliverable-share/:token/version/:versionId/downscale');
-    console.log('🔑 Token:', token.substring(0, 10) + '...');
-    console.log('📹 VersionId:', versionId);
-    console.log('🎯 Quality:', quality);
-
-    if (!quality) {
-      return res.status(400).json({ error: 'Target quality is required' });
-    }
-
-    // Verify share link exists and has download permission
     const shareLink = await prisma.deliverableShareLink.findUnique({
       where: { token },
       include: {
@@ -1279,88 +1870,41 @@ router.post('/:token/version/:versionId/downscale', async (req: Request, res: Re
           include: {
             versions: {
               where: { id: versionId },
+              select: { id: true, videoUrl: true },
             },
           },
         },
       },
     });
 
-    if (!shareLink) {
-      return res.status(404).json({ error: 'Invalid share link' });
-    }
-
-    // Check if link is active
-    if (!shareLink.isActive) {
-      return res.status(403).json({ error: 'This share link has been disabled' });
-    }
-
-    // Check expiration
+    if (!shareLink) return res.status(404).json({ error: 'Invalid share link' });
+    if (!shareLink.isActive) return res.status(403).json({ error: 'This share link has been disabled' });
     if (shareLink.expiresAt && shareLink.expiresAt < new Date()) {
       return res.status(403).json({ error: 'This share link has expired' });
     }
-
-    // Check permission - must be 'download' to downscale
     if (shareLink.permission !== 'download') {
       return res.status(403).json({ error: 'This share link does not allow downloading' });
     }
-
-    // Verify version belongs to the deliverable
     if (!shareLink.deliverable.versions || shareLink.deliverable.versions.length === 0) {
       return res.status(404).json({ error: 'Version not found or does not belong to this deliverable' });
     }
 
-    const version = shareLink.deliverable.versions[0];
+    const v = shareLink.deliverable.versions[0];
+    if (!v.videoUrl) return res.status(400).json({ error: 'Version has no video URL' });
 
-    // Check if version has metadata
-    const metadata = version.metadata as any;
-    if (!metadata || !metadata.width || !metadata.height) {
-      return res.status(400).json({ error: 'Video metadata not available' });
+    const u = new URL(v.videoUrl);
+    let objectName = u.pathname.replace(/^\/+/, '');
+    if (objectName.startsWith(`${BUCKET_NAME}/`)) {
+      objectName = objectName.slice(BUCKET_NAME.length + 1);
     }
+    const suggested =
+      (shareLink.deliverable.title?.replace(/[^a-zA-Z0-9-_]/g, '_') || 'video') + '.mp4';
 
-    // Check if already cached
-    const alternativeQualities = version.alternativeQualities as any;
-    if (alternativeQualities && alternativeQualities[quality]) {
-      console.log(`✅ Returning cached version for quality ${quality}`);
-      return res.json({
-        success: true,
-        data: {
-          quality,
-          url: alternativeQualities[quality],
-          source: 'cached',
-        },
-      });
-    }
-
-    // Downscale video
-    const { downscaleAndUploadVideo } = require('../../services/VideoMetadataService');
-
-    console.log(`🎬 Downscaling version ${versionId} to ${quality}...`);
-    const downscaledUrl = await downscaleAndUploadVideo(version.videoUrl, quality, metadata);
-
-    // Save to database
-    const updatedAlternatives = alternativeQualities || {};
-    updatedAlternatives[quality] = downscaledUrl;
-
-    await prisma.version.update({
-      where: { id: versionId },
-      data: { alternativeQualities: updatedAlternatives },
-    });
-
-    console.log(`✅ Version downscaled to ${quality}: ${downscaledUrl}`);
-
-    res.json({
-      success: true,
-      data: {
-        quality,
-        url: downscaledUrl,
-        source: 'generated',
-      },
-    });
+    const url = await getSignedDownloadUrl(objectName, suggested, 60);
+    return res.json({ success: true, data: { url, suggestedFilename: suggested } });
   } catch (error: any) {
-    console.error('Downscale via share link error:', error);
-    res.status(500).json({
-      error: error.message || 'Failed to downscale video',
-    });
+    console.error('Original download via share link error:', error);
+    res.status(500).json({ error: error.message || 'Failed to sign download URL' });
   }
 });
 

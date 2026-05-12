@@ -10,6 +10,10 @@ import * as storageController from '../controllers/storage';
 import * as membersController from '../controllers/members';
 import * as emailTemplatesController from '../controllers/emailTemplates';
 import * as aiPromptsController from '../controllers/aiPrompts';
+import * as plansController from '../controllers/plans';
+import * as subscriptionsController from '../controllers/subscriptions';
+import * as videoBackfillController from '../controllers/videoBackfill';
+import * as bictorysDebugController from '../controllers/bictorysDebug';
 
 const router = Router();
 
@@ -62,5 +66,24 @@ router.post('/email-templates/:id/preview', emailTemplatesController.previewEmai
 
 // AI prompt templates — edit
 router.patch('/ai-prompts/:id', aiPromptsController.updateAIPrompt);
+
+// Subscription plans — full CRUD (list incl. inactive + create/update/delete)
+router.get('/plans', plansController.listAdminPlans);
+router.post('/plans', plansController.createAdminPlan);
+router.patch('/plans/:id', plansController.updateAdminPlan);
+router.delete('/plans/:id', plansController.deleteAdminPlan);
+
+// Subscriptions — read + cancel + admin manual mark-paid override
+router.get('/subscriptions', subscriptionsController.listAdminSubscriptions);
+router.post('/subscriptions/:id/cancel', subscriptionsController.cancelAdminSubscription);
+router.post('/subscriptions/:id/mark-paid', subscriptionsController.markAdminPaymentPaid);
+
+// Video pipeline backfill — re-trigger faststart / HLS on legacy versions
+router.get('/videos/backfill-status', videoBackfillController.getBackfillStatus);
+router.post('/videos/backfill-faststart', videoBackfillController.backfillFaststart);
+router.post('/videos/backfill-hls', videoBackfillController.backfillHls);
+
+// Debug — probe Bictorys WAF behaviour without our fire-and-forget workaround
+router.post('/debug/bictorys-test-charge', bictorysDebugController.debugBictorysTestCharge);
 
 export default router;

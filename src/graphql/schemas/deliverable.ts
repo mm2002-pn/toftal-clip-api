@@ -114,13 +114,20 @@ export const deliverableTypeDefs = gql`
   }
 
   type FeedbackRead {
-    userId: ID!
+    # Null when the read receipt comes from a guest reader; in that
+    # case guestEmail is populated. Exactly one of the two is set.
+    userId: ID
+    guestEmail: String
     readAt: DateTime!
   }
 
   type FeedbackReaction {
     id: ID!
-    userId: ID!
+    # userId is null when the reaction was posted by a guest via a share link.
+    # In that case guestEmail/guestName are populated instead.
+    userId: ID
+    guestEmail: String
+    guestName: String
     emoji: String!
     createdAt: DateTime!
   }

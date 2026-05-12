@@ -149,6 +149,17 @@ export const projectResolvers = {
       }
 
       if (filter?.status) where.status = filter.status;
+      // Org scope filter — implements the Solo / Team workspace split.
+      //   filter.organizationId === 'PERSONAL'  → only projects with NULL org (Solo)
+      //   filter.organizationId === '<uuid>'    → only projects of that team
+      //   filter.organizationId omitted          → both (legacy "everything" behaviour)
+      if (typeof filter?.organizationId === 'string') {
+        if (filter.organizationId === 'PERSONAL') {
+          where.organizationId = null;
+        } else {
+          where.organizationId = filter.organizationId;
+        }
+      }
 
       const [data, total] = await Promise.all([
         prisma.project.findMany({
@@ -245,11 +256,18 @@ export const projectResolvers = {
         },
       };
 
+      // Stable ordering: newest first. Without this Prisma returned
+      // rows in primary-key order (UUID = random-looking), so a newly
+      // created deliverable landed at an unpredictable position in
+      // the list — the user had to hunt for it.
+      const orderBy = { createdAt: 'desc' as const };
+
       // If no user context, or ADMIN, or USER without talent mode, return all deliverables
       if (!user || user.role === 'ADMIN' || user.talentModeEnabled === false) {
         return prisma.deliverable.findMany({
           where: { projectId: parent.id },
           include: includeOptions,
+          orderBy,
         });
       }
 
@@ -266,12 +284,14 @@ export const projectResolvers = {
             ],
           },
           include: includeOptions,
+          orderBy,
         });
       }
 
       return prisma.deliverable.findMany({
         where: { projectId: parent.id },
         include: includeOptions,
+        orderBy,
       });
     },
 

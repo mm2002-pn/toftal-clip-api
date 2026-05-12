@@ -16,6 +16,7 @@ export type SocketEvent =
   | 'version:deleted'
   | 'feedback:new'
   | 'feedback:updated'
+  | 'feedback:deleted'
   | 'feedback:resolved'
   | 'mention:new'
   | 'project:new'
@@ -27,6 +28,8 @@ export type SocketEvent =
   | 'project:member:added'
   | 'project:member:removed'
   | 'project:member:role-updated'
+  | 'org:member:removed'
+  | 'org:member:joined'
   | 'deliverable:status'
   | 'deliverable:assigned'
   | 'deliverable:assignment:accepted'
@@ -41,7 +44,10 @@ export type SocketEvent =
   | 'typing:stopped'
   | 'feedback:read'
   | 'feedback:reaction'
-  | 'version:thumbnail';
+  | 'version:thumbnail'
+  | 'version:playback-ready'
+  | 'version:hls-ready'
+  | 'version:preview-ready';
 
 // Payload types for each event
 export interface NotificationPayload {
@@ -81,7 +87,8 @@ export interface ProjectNewPayload {
   id: string;
   title: string;
   clientId: string;
-  talentId?: string;
+  talentId?: string | null;
+  organizationId?: string | null;
 }
 
 export interface ProjectUpdatedPayload {
@@ -301,6 +308,30 @@ class SocketService {
           );
         });
 
+      // Same idea for organisation (team) rooms — emits like `project:new` for
+      // a project created in a team workspace go to `org:{id}` so every team
+      // member's project list refreshes without a page reload. Without this
+      // auto-join, a freshly-loaded tab wouldn't be in the room until the user
+      // manually navigated into the team scope.
+      prisma.organizationMember
+        .findMany({
+          where: { userId, status: 'ACTIVE' },
+          select: { organizationId: true },
+        })
+        .then((rows) => {
+          rows.forEach((m) => socket.join(`org:${m.organizationId}`));
+          logger.debug(
+            `[SOCKET] auto-joined ${rows.length} org rooms for user ${userId}`
+          );
+        })
+        .catch((err) => {
+          logger.warn(
+            `[SOCKET] auto-join org rooms failed for user ${userId}: ${
+              (err as Error)?.message ?? err
+            }`
+          );
+        });
+
       // Handle joining project rooms (idempotent — client still emits this
       // from useProjectRoom for projects created/joined during the session).
       socket.on('join:project', (projectId: string) => {
@@ -421,6 +452,52 @@ class SocketService {
     console.log(`[SOCKET EMIT] Emitting ${event} to project:${projectId} (${socketCount} sockets in room)`, data);
     this.io.to(`project:${projectId}`).emit(event, data);
     logger.debug(`Emitted ${event} to project:${projectId}`);
+  }
+
+  // Emit to every connected member of an organisation. Mirrors emitToProject
+  // but for team-wide events (new project in a team workspace, member joined,
+  // etc.). Relies on auto-join in the connection handler + addUserToOrgRoom
+  // for users that join an org mid-session.
+  emitToOrg<T>(organizationId: string, event: SocketEvent, data: T): void {
+    if (!this.io) {
+      logger.warn('Socket.io not initialized');
+      return;
+    }
+    const roomSockets = this.io.sockets.adapter.rooms.get(`org:${organizationId}`);
+    const socketCount = roomSockets?.size || 0;
+    console.log(`[SOCKET EMIT] Emitting ${event} to org:${organizationId} (${socketCount} sockets in room)`, data);
+    this.io.to(`org:${organizationId}`).emit(event, data);
+    logger.debug(`Emitted ${event} to org:${organizationId}`);
+  }
+
+  // Same idea as addUserToProjectRoom but for org rooms — used when a user
+  // accepts a team invitation: their already-open tabs must start receiving
+  // team-wide events immediately, without forcing a reconnect.
+  addUserToOrgRoom(userId: string, organizationId: string): void {
+    if (!this.io) return;
+    const socketIds = this.userSockets.get(userId);
+    if (!socketIds || socketIds.size === 0) return;
+    socketIds.forEach((sid) => {
+      this.io!.sockets.sockets.get(sid)?.join(`org:${organizationId}`);
+    });
+    logger.debug(
+      `[SOCKET] added user ${userId} (${socketIds.size} sockets) to org:${organizationId}`
+    );
+  }
+
+  // Symmetric — when a user is removed from a team, their tabs must stop
+  // hearing that org's events (otherwise they'd see new projects appear in a
+  // team they no longer belong to until the next reload).
+  removeUserFromOrgRoom(userId: string, organizationId: string): void {
+    if (!this.io) return;
+    const socketIds = this.userSockets.get(userId);
+    if (!socketIds || socketIds.size === 0) return;
+    socketIds.forEach((sid) => {
+      this.io!.sockets.sockets.get(sid)?.leave(`org:${organizationId}`);
+    });
+    logger.debug(
+      `[SOCKET] removed user ${userId} (${socketIds.size} sockets) from org:${organizationId}`
+    );
   }
 
   // Make every currently-connected socket of `userId` join the project room.
