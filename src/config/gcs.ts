@@ -235,6 +235,33 @@ export const getSignedUrl = async (
 };
 
 /**
+ * Signed URL for a download with response-header overrides. The CDN
+ * (when in front of GCS) and GCS itself honour these on a signed
+ * request even when the underlying object's stored metadata says
+ * something else. We use this to force a browser save dialog on the
+ * "Original" download path WITHOUT touching the playback URL of the
+ * same object (which still serves with video/mp4 + no CD for the
+ * player). Returns a fresh signed URL valid for `expiresInMinutes`.
+ */
+export const getSignedDownloadUrl = async (
+  fileName: string,
+  suggestedFilename: string,
+  expiresInMinutes: number = 60
+): Promise<string> => {
+  const file = bucket.file(fileName);
+  const [signedUrl] = await file.getSignedUrl({
+    version: 'v4',
+    action: 'read',
+    expires: Date.now() + expiresInMinutes * 60 * 1000,
+    responseDisposition: `attachment; filename="${suggestedFilename}"`,
+    // application/octet-stream so iOS Safari doesn't try to play the
+    // video inline — see DownloadContext for the rationale.
+    responseType: 'application/octet-stream',
+  });
+  return signedUrl;
+};
+
+/**
  * Generate a signed URL for upload (write)
  */
 export const getUploadSignedUrl = async (

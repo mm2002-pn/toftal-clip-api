@@ -13,6 +13,7 @@ import {
   getDownscaleStatus,
   SUPPORTED_QUALITIES,
 } from '../../services/downscaleJobsService';
+import { BUCKET_NAME, getSignedDownloadUrl } from '../../config/gcs';
 import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
@@ -1848,6 +1849,62 @@ router.get('/:token/version/:versionId/downscale/:quality/status', async (req: R
   } catch (error: any) {
     console.error('Downscale status via share link error:', error);
     res.status(500).json({ error: error.message || 'Failed to read downscale status' });
+  }
+});
+
+/**
+ * GET /api/v1/deliverable-share/:token/version/:versionId/download-original
+ * Signed URL for the ORIGINAL video, with response-header overrides
+ * forcing a save dialog (CD: attachment + application/octet-stream).
+ * Guest equivalent of the auth route — same logic, share-link gated.
+ */
+router.get('/:token/version/:versionId/download-original', async (req: Request, res: Response) => {
+  try {
+    const token = String(req.params.token);
+    const versionId = String(req.params.versionId);
+
+    const shareLink = await prisma.deliverableShareLink.findUnique({
+      where: { token },
+      include: {
+        deliverable: {
+          include: {
+            versions: {
+              where: { id: versionId },
+              select: { id: true, videoUrl: true },
+            },
+          },
+        },
+      },
+    });
+
+    if (!shareLink) return res.status(404).json({ error: 'Invalid share link' });
+    if (!shareLink.isActive) return res.status(403).json({ error: 'This share link has been disabled' });
+    if (shareLink.expiresAt && shareLink.expiresAt < new Date()) {
+      return res.status(403).json({ error: 'This share link has expired' });
+    }
+    if (shareLink.permission !== 'download') {
+      return res.status(403).json({ error: 'This share link does not allow downloading' });
+    }
+    if (!shareLink.deliverable.versions || shareLink.deliverable.versions.length === 0) {
+      return res.status(404).json({ error: 'Version not found or does not belong to this deliverable' });
+    }
+
+    const v = shareLink.deliverable.versions[0];
+    if (!v.videoUrl) return res.status(400).json({ error: 'Version has no video URL' });
+
+    const u = new URL(v.videoUrl);
+    let objectName = u.pathname.replace(/^\/+/, '');
+    if (objectName.startsWith(`${BUCKET_NAME}/`)) {
+      objectName = objectName.slice(BUCKET_NAME.length + 1);
+    }
+    const suggested =
+      (shareLink.deliverable.title?.replace(/[^a-zA-Z0-9-_]/g, '_') || 'video') + '.mp4';
+
+    const url = await getSignedDownloadUrl(objectName, suggested, 60);
+    return res.json({ success: true, data: { url, suggestedFilename: suggested } });
+  } catch (error: any) {
+    console.error('Original download via share link error:', error);
+    res.status(500).json({ error: error.message || 'Failed to sign download URL' });
   }
 });
 

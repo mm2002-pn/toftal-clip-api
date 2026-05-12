@@ -14,7 +14,7 @@ import {
   getDownscaleStatus,
   SUPPORTED_QUALITIES,
 } from '../../../services/downscaleJobsService';
-import { bucket, BUCKET_NAME } from '../../../config/gcs';
+import { bucket, BUCKET_NAME, getSignedDownloadUrl } from '../../../config/gcs';
 import { renderEmailFromDB } from '../../../services/templateResolver';
 
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
@@ -959,6 +959,68 @@ export const downscaleVersion = async (req: Request, res: Response, next: NextFu
     });
   } catch (error) {
     console.error('Error enqueuing downscale:', error);
+    next(error);
+  }
+};
+
+/**
+ * Returns a short-lived signed URL for the ORIGINAL video with
+ * Content-Disposition: attachment + Content-Type: application/octet-stream
+ * baked in via response-header overrides. The front anchor-clicks this
+ * URL so iOS Safari downloads to Files instead of OOM-ing on a 1 GB
+ * fetch+Blob (the old performDownload path).
+ *
+ * The underlying GCS object keeps its native video/mp4 + no CD so
+ * playback through the HTML5 player isn't affected.
+ */
+export const getOriginalDownloadUrl = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const { id: deliverableId, versionId } = req.params;
+    const versionIdStr = String(versionId);
+
+    const version = await prisma.version.findUnique({
+      where: { id: versionIdStr },
+      select: {
+        id: true,
+        deliverableId: true,
+        videoUrl: true,
+        deliverable: { select: { title: true } },
+      },
+    });
+    if (!version) {
+      ApiResponse.error(res, 'Version not found', 404);
+      return;
+    }
+    if (version.deliverableId !== deliverableId) {
+      ApiResponse.error(res, 'Version does not belong to this deliverable', 400);
+      return;
+    }
+    if (!version.videoUrl) {
+      ApiResponse.error(res, 'Version has no video URL', 400);
+      return;
+    }
+
+    // Derive the GCS object name from the public URL. Both CDN
+    // (`https://media.staging.toftalclip.io/videos/<file>`) and raw
+    // storage (`https://storage.googleapis.com/<bucket>/videos/<file>`)
+    // shapes are supported.
+    const u = new URL(version.videoUrl);
+    let objectName = u.pathname.replace(/^\/+/, '');
+    // Strip the bucket prefix if present (storage.googleapis.com case).
+    if (objectName.startsWith(`${BUCKET_NAME}/`)) {
+      objectName = objectName.slice(BUCKET_NAME.length + 1);
+    }
+
+    const suggested =
+      (version.deliverable?.title?.replace(/[^a-zA-Z0-9-_]/g, '_') || 'video') + '.mp4';
+
+    const url = await getSignedDownloadUrl(objectName, suggested, 60);
+    ApiResponse.success(res, { url, suggestedFilename: suggested }, 'Signed download URL');
+  } catch (error) {
     next(error);
   }
 };

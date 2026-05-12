@@ -38,6 +38,7 @@ router.post('/:id/versions', requireDeliverableAccess('edit'), validate(addVersi
 router.post('/:id/versions/:versionId/extract-metadata', requireDeliverableAccess('edit'), deliverablesController.extractVersionMetadata);
 router.post('/:id/versions/:versionId/downscale', requireDeliverableAccess('edit'), deliverablesController.downscaleVersion);
 router.get('/:id/versions/:versionId/downscale/:quality/status', requireDeliverableAccess('view'), deliverablesController.downscaleVersionStatus);
+router.get('/:id/versions/:versionId/download-original', requireDeliverableAccess('view'), deliverablesController.getOriginalDownloadUrl);
 
 // Media (Create only - Read via GraphQL) — edit permission required.
 router.post('/:id/media', requireDeliverableAccess('edit'), validate(addMediaValidation), deliverablesController.addMedia);
