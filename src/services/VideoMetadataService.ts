@@ -156,63 +156,110 @@ export const downscaleAndUploadVideo = async (
   const targetRes = qualityResolutions[targetQuality];
   if (!targetRes) throw new Error(`Quality ${targetQuality} not supported`);
 
-  try {
-    // Créer un fichier temporaire
-    const tempDir = process.env.TMPDIR || process.env.TEMP || '/tmp';
-    const tempOutputFile = path.join(tempDir, `video_${targetQuality}_${Date.now()}.mp4`);
+  const tempDir = process.env.TMPDIR || process.env.TEMP || '/tmp';
+  const ts = Date.now();
+  const tempSourceFile = path.join(tempDir, `source_${targetQuality}_${ts}.mp4`);
+  const tempOutputFile = path.join(tempDir, `video_${targetQuality}_${ts}.mp4`);
+  const progressFile = path.join(tempDir, `progress_${targetQuality}_${ts}.log`);
 
-    // Commander FFmpeg pour downscaler.
+  const cleanup = () => {
+    for (const f of [tempSourceFile, tempOutputFile, progressFile]) {
+      try {
+        if (fs.existsSync(f)) fs.unlinkSync(f);
+      } catch {
+        /* best-effort */
+      }
+    }
+  };
+
+  try {
+    // STEP 1 — pull the source to local SSD before encoding. Streaming
+    // ffmpeg directly from an HTTPS URL on long sources was flaky:
+    // GCS would slow-throttle, the HTTP connection would drop, ffmpeg
+    // would reconnect and slow to a crawl — eventually hitting the
+    // Cloud Run task timeout. Downloading first is bandwidth-bound
+    // (~30-60 s for a 1 GB source) and the encode then runs without
+    // any network in the loop, which makes it predictable.
+    console.log(`⬇️  Downloading source for ${targetQuality} encode...`);
+    const dlStart = Date.now();
+    // wget is in the production Dockerfile (curl isn't guaranteed).
+    // --tries=3 retries transient connection drops, --timeout=30
+    // limits stalled reads.
+    await execAsync(
+      `wget -q --tries=3 --timeout=30 -O "${tempSourceFile}" "${videoUrl}"`,
+      { timeout: 15 * 60 * 1000, maxBuffer: 10 * 1024 * 1024 }
+    );
+    if (!fs.existsSync(tempSourceFile)) {
+      throw new Error('Source download produced no file');
+    }
+    const sourceSizeMb = (fs.statSync(tempSourceFile).size / 1024 / 1024).toFixed(1);
+    console.log(`✅ Source on disk: ${sourceSizeMb} MB (${((Date.now() - dlStart) / 1000).toFixed(1)} s)`);
+
+    // STEP 2 — probe the source audio codec. If it's already AAC we
+    // can stream-copy it instead of re-encoding (saves ~10% of CPU).
+    let audioOpts = '-c:a aac -b:a 128k';
+    try {
+      const { stdout: probeOut } = await execAsync(
+        `ffprobe -v error -select_streams a:0 -show_entries stream=codec_name -of csv=p=0 "${tempSourceFile}"`,
+        { timeout: 30000 }
+      );
+      const audioCodec = probeOut.trim().toLowerCase();
+      if (audioCodec === 'aac') {
+        audioOpts = '-c:a copy';
+        console.log(`🔉 Audio already AAC → stream copy`);
+      } else {
+        console.log(`🔉 Audio is ${audioCodec || 'unknown'} → re-encode to AAC 128k`);
+      }
+    } catch (probeErr) {
+      console.warn(`[probe] audio codec detection failed, falling back to AAC re-encode: ${(probeErr as Error).message}`);
+    }
+
+    // STEP 3 — encode locally.
     //
-    // `-preset veryfast` + `-threads 0` (= all available cores) brings the
-    // encode rate from ~0.5× realtime to ~3-4× realtime on the Job's 2-vCPU
-    // sizing. Bitrate is capped per target so the file size stays under
-    // control even with a faster preset.
-    //
-    // `-vf scale=…:force_original_aspect_ratio=decrease,pad=…` keeps the
-    // aspect ratio and pads if needed — without it portrait 9/16 sources
-    // get squashed into landscape boxes.
-    //
-    // Audio is re-encoded with libfdk_aac unavailable on Debian → fall back
-    // to native `aac` at 128k which is fine for delivery-quality.
+    // - `-preset ultrafast` (was veryfast): ~30% faster, 5-10% bigger
+    //   output. Acceptable trade since output bitrate is capped.
+    // - `-tune fastdecode`: minor encode speed boost and lighter player
+    //   load — appropriate for download-and-watch-later artefacts.
+    // - `force_divisible_by=2` so libx264 doesn't reject odd dims for
+    //   portrait 9/16 sources after aspect-preserving scale.
+    // - No `pad` filter: with `force_original_aspect_ratio=decrease`
+    //   we keep the source AR; adding bars wastes CPU and bandwidth.
+    // - `-progress` writes key=value lines (frame=, out_time_ms=, …)
+    //   so we can tail the file during long runs to see progress.
     const ffmpegCommand = [
       `ffmpeg -hide_banner -loglevel error -nostdin`,
-      `-i "${videoUrl}"`,
-      `-vf "scale=${targetRes.width}:${targetRes.height}:force_original_aspect_ratio=decrease,pad=${targetRes.width}:${targetRes.height}:(ow-iw)/2:(oh-ih)/2"`,
-      `-c:v libx264 -preset veryfast -b:v ${targetRes.bitrate} -maxrate ${targetRes.bitrate} -bufsize ${parseInt(targetRes.bitrate) * 2}k`,
-      `-c:a aac -b:a 128k`,
+      `-i "${tempSourceFile}"`,
+      `-vf "scale=${targetRes.width}:${targetRes.height}:force_original_aspect_ratio=decrease:force_divisible_by=2"`,
+      `-c:v libx264 -preset ultrafast -tune fastdecode`,
+      `-b:v ${targetRes.bitrate} -maxrate ${targetRes.bitrate} -bufsize ${parseInt(targetRes.bitrate) * 2}k`,
+      audioOpts,
       `-movflags +faststart`,
       `-threads 0`,
+      `-progress "${progressFile}"`,
       `"${tempOutputFile}" -y`,
     ].join(' ');
 
-    console.log(`🎬 Downscaling video to ${targetQuality}...`);
-    // 50 min timeout — Cloud Run Job has a 1h ceiling and this MUST
-    // expire before the Job's own timeout so we get a clean error
-    // rather than a SIGKILL.
-    await execAsync(ffmpegCommand, { timeout: 50 * 60 * 1000, maxBuffer: 50 * 1024 * 1024 });
+    console.log(`🎬 Downscaling video to ${targetQuality} (preset=ultrafast, source on disk)...`);
+    const encodeStart = Date.now();
+    await execAsync(ffmpegCommand, { timeout: 55 * 60 * 1000, maxBuffer: 50 * 1024 * 1024 });
+    console.log(`✅ Encode finished in ${((Date.now() - encodeStart) / 1000).toFixed(1)} s`);
 
-    // Vérifier que le fichier existe
     if (!fs.existsSync(tempOutputFile)) {
       throw new Error('Output file not created');
     }
 
-    // Upload vers GCS with Content-Disposition: attachment so the
-    // browser always saves the file when the URL is opened, even on
-    // mobile cross-origin where the front can't force a download via
-    // JS. The filename here is just a fallback — the front sets a
-    // nicer one via the anchor `download` attribute.
+    // STEP 4 — upload with Content-Disposition: attachment so the
+    // browser saves the file natively (mobile can't force download
+    // via JS without OOM-ing on big files; see DownloadContext).
     console.log(`📤 Uploading ${targetQuality} version to GCS...`);
-    const filename = `video_${targetQuality}_${Date.now()}.mp4`;
+    const filename = `video_${targetQuality}_${ts}.mp4`;
     const gcsResult = await uploadVideoToGCS(
       tempOutputFile,
       filename,
       `attachment; filename="${filename}"`
     );
 
-    // Nettoyer le fichier temporaire
-    if (fs.existsSync(tempOutputFile)) {
-      fs.unlinkSync(tempOutputFile);
-    }
+    cleanup();
 
     console.log(`✅ ${targetQuality} version uploaded: ${gcsResult.url}`);
     return gcsResult.url;
@@ -227,6 +274,7 @@ export const downscaleAndUploadVideo = async (
     const stderrTail =
       typeof stderr === 'string' ? stderr.split('\n').slice(-10).join('\n') : '';
     console.error(`Error downscaling to ${targetQuality}:`, error);
+    cleanup();
     throw new Error(
       `Erreur lors du downscaling vers ${targetQuality}: ${detail}${
         stderrTail ? ` | ffmpeg stderr (tail): ${stderrTail}` : ''

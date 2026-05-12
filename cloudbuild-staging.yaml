@@ -239,8 +239,12 @@ steps:
       - 'run,downscale:run'
       - '--memory'
       - '16Gi'
+      # 8 vCPU — libx264 scales near-linearly up to 8 cores and the
+      # downscale path has to clear the Cloud Run 60-min timeout on
+      # long sources. Wall-clock at 8 vCPU is roughly half what it was
+      # at 4 vCPU.
       - '--cpu'
-      - '4'
+      - '8'
       - '--max-retries'
       - '0'
       - '--task-timeout'

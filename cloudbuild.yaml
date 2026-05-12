@@ -217,7 +217,7 @@ steps:
       - '--memory'
       - '16Gi'
       - '--cpu'
-      - '4'
+      - '8'
       - '--max-retries'
       - '0'
       - '--task-timeout'
