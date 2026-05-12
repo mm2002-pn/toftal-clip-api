@@ -90,10 +90,14 @@ export const createApp = async (): Promise<Application> => {
   // Trust Proxy (Required for Cloud Run)
   // ===================
 
-  // CRITICAL: Enable trust proxy for Cloud Run reverse proxy
-  // This allows Express to correctly read X-Forwarded-* headers
-  // Only enable in production to avoid rate limiter warnings in development
-  if (config.isProduction) {
+  // CRITICAL: Enable trust proxy for Cloud Run reverse proxy.
+  // Without this, express-rate-limit ignores X-Forwarded-For and
+  // identifies all users as the same proxy IP → one abusive user
+  // gets the entire fleet rate-limited. The flag is opt-in via the
+  // TRUST_PROXY env var (set in both cloudbuild yamls) so local dev
+  // doesn't emit the noisy ERR_ERL_UNEXPECTED_X_FORWARDED_FOR
+  // validation errors that would otherwise fire on every request.
+  if (process.env.TRUST_PROXY === 'true' || config.isProduction) {
     app.set('trust proxy', true);
   }
 
