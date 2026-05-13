@@ -281,6 +281,19 @@ router.get('/:token', async (req: Request, res: Response) => {
       return {
         ...deliverable,
         latestVideoUrl: latestVersion?.videoUrl || null,
+        // Match the GraphQL resolver shape — the frontend
+        // DeliverableGridCard reads these fields. Without
+        // latestThumbnailUrl the card never renders the <img> and
+        // guests had to hover each card before anything appeared
+        // (the hovered <video>'s first frame stood in for the
+        // missing thumbnail).
+        latestThumbnailUrl: latestVersion?.thumbnailUrl || null,
+        latestDuration:
+          typeof latestVersion?.metadata === 'object' &&
+          latestVersion?.metadata !== null &&
+          typeof (latestVersion.metadata as { duration?: unknown }).duration === 'number'
+            ? ((latestVersion.metadata as { duration: number }).duration)
+            : null,
         lastUploader: latestVersion?.uploadedBy ? {
           id: latestVersion.uploadedBy.id,
           name: latestVersion.uploadedBy.name,
