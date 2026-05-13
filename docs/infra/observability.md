@@ -195,3 +195,47 @@ s'ils cassent dans Amplitude) :
 
 Si l'un des trois explose son budget, vérifier d'abord le sample rate
 ou les `ignoreErrors`/filtres avant de payer un upgrade.
+
+## `IGNORE_ERRORS` Sentry — patterns accumulés
+
+Au fil des sessions, certains messages d'erreur reviennent souvent
+sans être actionnables. Pour rester dans le free tier (5k events /
+mois) et éviter le bruit, on les filtre côté SDK avant envoi. Le
+filtre est dans `services/sentry.ts` → `IGNORE_ERRORS`.
+
+| Pattern | Source | Pourquoi on ignore |
+|---|---|---|
+| `ResizeObserver loop limit exceeded` | Browser quirk | Bug connu de ResizeObserver, n'a aucune conséquence applicative |
+| `Non-Error promise rejection captured` | Promesse rejetée avec une valeur non-Error | Bruit, généralement aborts |
+| `/^AbortError/` | Fetch annulé | L'user a navigué ailleurs avant la fin de la requête, expected |
+| `/cancelled$/i` | idem | idem |
+| `NetworkError when attempting to fetch resource.` | Firefox Fetch cancelled | idem |
+| `/^Network Error$/` | axios cancelled | idem |
+| `The operation couldn't be completed` | Safari media playback | iOS Safari quirk pendant lecture vidéo, pas notre code |
+| `/xhr poll error/i` | Socket.io polling fallback | Reconnect Socket.io tournoie sur ces erreurs, finit par re-up tout seul |
+| `/^websocket error$/i` | Socket.io | idem |
+| `/transport close/i` | Socket.io | Le user a switché de réseau / fermé l'onglet |
+| `/transport error/i` | Socket.io | Network blip transitoire |
+| `Failed to fetch` | Browser fetch | Souvent un network blip ou nav |
+| `/Connection to Indexed Database server lost/i` | iOS Safari memory pressure | Safari ferme IDB préemptivement quand RAM faible |
+| `/database connection is closing/i` | idem | idem, side effect de la précédente |
+| `/chrome-extension:\/\//` + `/moz-extension:\/\//` | Browser extensions | L'extension d'un user inject du JS qui crashe, c'est pas notre code |
+
+### Patterns côté Amplitude
+
+Amplitude Session Replay est **désactivé sur iOS** (`isIOS` check dans
+`services/amplitudeService.ts`). Raison : sur iPhone, la sérialisation
+DOM continue du replay consomme la RAM de Safari et provoque les
+fermetures de WebSocket / IndexedDB qu'on filtre dans Sentry. On
+laisse le tracking analytique (page views, events), juste pas le replay.
+
+### Pour ajouter un pattern
+
+1. Vérifier qu'il revient au moins ~10 fois / semaine dans Sentry
+2. Confirmer qu'il n'est pas actionnable (= pas un vrai bug user-impactant)
+3. L'ajouter à `IGNORE_ERRORS` dans `services/sentry.ts`
+4. Commit + déployer le front
+5. Surveiller que le rate Sentry baisse comme prévu
+
+Une fois ignoré, le pattern n'apparaît **jamais** dans le dashboard
+Sentry — on peut le ré-activer en supprimant la ligne et redéployant.

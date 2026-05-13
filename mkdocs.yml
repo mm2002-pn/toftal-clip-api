@@ -78,6 +78,7 @@ nav:
       - Stack technique: architecture/tech-stack.md
   - Flows métier:
       - Upload vidéo: flows/video-upload.md
+      - Téléchargement vidéo: flows/download-flow.md
       - Paiements (Bictorys): flows/payments-bictorys.md
       - Authentification: flows/auth.md
       - Notifications (in-app, FCM, email): flows/notifications.md
@@ -89,6 +90,8 @@ nav:
       - Cloud Run: infra/cloud-run.md
       - Cloud Build (CI/CD + triggers): infra/cloud-build.md
       - Cloud SQL Proxy: infra/cloud-sql-proxy.md
+      - CDN média: infra/cdn.md
+      - Service Accounts IAM: infra/iam-service-accounts.md
       - Workers vidéo: infra/workers.md
       - Observabilité (Sentry, Amplitude, Logs): infra/observability.md
       - Secrets: infra/secrets.md
